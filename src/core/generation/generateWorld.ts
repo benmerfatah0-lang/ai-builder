@@ -5,7 +5,7 @@ import type {
   WorldObject,
   WorldPlan,
 } from '../world-plan/schema';
-import { MAX_WORLD_OBJECTS } from '../world-plan/schema';
+import { MAX_WORLD_OBJECTS, WORLD_PLAN_SCHEMA_VERSION } from '../world-plan/schema';
 import { createId } from '../utils/id';
 import { BIOME_PROFILES, SCALE_SETTINGS } from './biomes';
 import { mulberry32, range, pickWeighted, type Rng } from './rng';
@@ -198,7 +198,7 @@ function buildPlanShell(intent: WorldIntent): WorldPlan {
   const terrainStyle = profile.terrainStyle;
 
   return {
-    schemaVersion: 1,
+    schemaVersion: WORLD_PLAN_SCHEMA_VERSION,
     id: createId('world'),
     name: intent.name.slice(0, 80),
     description: `Generated from: “${intent.prompt}” (${intent.summary})`.slice(0, 500),
@@ -214,6 +214,7 @@ function buildPlanShell(intent: WorldIntent): WorldPlan {
       waterLevel: null,
       palette: { ...profile.palette },
     },
+    groups: [],
     objects: [],
   };
 }

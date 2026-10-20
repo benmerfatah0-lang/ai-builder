@@ -76,6 +76,7 @@ export function NumberField({
   suffix,
   disabled = false,
   compact = false,
+  ariaLabel,
 }: {
   value: number;
   onCommit: (value: number) => void;
@@ -86,6 +87,7 @@ export function NumberField({
   suffix?: string;
   disabled?: boolean;
   compact?: boolean;
+  ariaLabel?: string;
 }) {
   const [draft, setDraft] = useState(() => formatNumber(value));
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -116,6 +118,7 @@ export function NumberField({
           type="text"
           inputMode="decimal"
           value={draft}
+          aria-label={ariaLabel ?? label}
           disabled={disabled}
           step={step}
           onChange={(event) => setDraft(event.target.value)}

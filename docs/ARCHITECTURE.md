@@ -1,4 +1,4 @@
-# AI World Builder — Phase 1 Architecture Report
+# AI World Builder — Architecture Report (Phase 1 + Phase 2)
 
 **Date:** 2026-10-20
 **Branch:** `arena/98b7682d-ai-builder`
@@ -104,14 +104,16 @@ application at runtime.
 
 | Module | Path | Responsibility |
 | --- | --- | --- |
-| World plan | `src/core/world-plan/` | Versioned Zod schema, factories, validation, migrations, serialisation. |
+| World plan | `src/core/world-plan/schema.ts`, `factory.ts`, `migrate.ts` | Versioned Zod schema, factories, validation, migrations, serialisation. |
+| Hierarchy | `src/core/world-plan/hierarchy.ts` | Groups, parents, world transforms, visibility/lock inheritance, reparent/group/ungroup/duplicate as pure functions. |
+| Transform math | `src/core/world-plan/transformMath.ts` | Matrix compose/decompose and parent-relative conversion (degrees ↔ radians at the edge). |
 | Generation | `src/core/generation/` | Seeded RNG, terrain sampling, biome profiles, deterministic world assembly, first-run starter. |
 | Assets | `src/core/assets/catalog.ts` | Asset library descriptors and archetype factories. |
 | Persistence | `src/core/persistence/` | IndexedDB/memory repositories, `.world.json` file import/export. |
 | Export | `src/core/export/gltf.ts` | Binary glTF export + export target metadata. |
 | Scene builder | `src/core/scene/sceneBuilder.ts` | Pure Three.js geometry/lights shared by viewport and exporter. |
 | AI commands | `src/modules/ai/` | Intent types, provider contract, offline prompt interpreter. |
-| Editor | `src/modules/editor/` | Store, autosave, viewport, panels, workspace shell. |
+| Editor | `src/modules/editor/` | Reducer store, autosave, gizmo viewport, transform toolbar, hierarchy/inspector/asset/AI panels, workspace shell and keyboard shortcuts. |
 | UI primitives | `src/ui/` | Icons, controls, top bar, export menu, world library, toast, media query. |
 | App | `src/app/App.tsx` | Provider composition only. |
 
@@ -136,9 +138,23 @@ CLI export and testing straightforward.
 6. A debounced autosave writes the validated plan to IndexedDB. Exports produce a
    project JSON or a binary glTF file locally.
 
+**Manual editing flow (Phase 2):**
+
+1. A click/tap raycasts tagged meshes and dispatches `select`; the hierarchy
+   panel dispatches the same action, so both stay in sync.
+2. `TransformControls` attaches to the single unlocked selection. While dragging,
+   orbit controls are disabled and a frame-coalesced outline refresh runs.
+3. On gizmo release, `readTransform()` converts the Three.js object back into a
+   `Transform` (radians → degrees, values rounded to 1 mm) and dispatches
+   `setTransform`; the reducer sanitises it, updates the document and records undo.
+4. Grouping/ungrouping/reparenting run in `hierarchy.ts` and rewrite children's
+   local transforms with `transformRelativeTo`, so nothing moves on screen.
+5. The viewport effect rebuilds only when the plan object identity changes; the
+   inspector and tree re-render from the same document.
+
 ---
 
-## 5. WorldPlan v1 schema
+## 5. WorldPlan v2 schema
 
 Defined in `src/core/world-plan/schema.ts`; reference and example in
 [`docs/WORLDPLAN.md`](./WORLDPLAN.md). Generated JSON Schema:
@@ -148,27 +164,31 @@ Top level:
 
 ```ts
 {
-  schemaVersion: 1,
+  schemaVersion: 2,
   id, name, description, seed, createdAt, updatedAt,
   environment: { skyColor, fogColor, fogDensity, sunColor,
                  sunAzimuth, sunElevation, sunIntensity, ambientIntensity },
   terrain: { style, size, resolution, heightScale, waterLevel, palette },
-  objects: WorldObject[]   // max 1500
+  groups: WorldGroup[],     // max 200, nesting ≤ 8, nodeType: 'group'
+  objects: WorldObject[]    // max 1500
 }
 ```
 
-Object kinds: `primitive`, `tree`, `rock`, `building`, `lantern` — a
-discriminated union with a common `id`, `name`, `transform`, `visible`, `locked`
-and kind-specific fields.
+Every node carries `id`, `name`, `parentId`, `visible`, `locked` and a local
+`transform` (`position`, `rotation` in XYZ degrees, `scale`). Objects add a `kind`
+discriminant (`primitive`, `tree`, `rock`, `building`, `lantern`) plus kind-specific
+fields and an optional `material` (`roughness`, `metalness`, `emissiveIntensity`).
 
 Versioning policy:
 
-- `WORLD_PLAN_SCHEMA_VERSION = 1`.
+- `WORLD_PLAN_SCHEMA_VERSION = 2`.
 - Missing/unknown/newer versions produce explicit errors.
-- `MIGRATIONS` in `migrate.ts` is keyed by source version; a future v2 adds a
-  single migration and bumps the constant. The loader runs migrations before
-  validation and strips unknown fields.
-- New optional fields can remain inside v1; breaking changes require a new version.
+- `MIGRATIONS` is keyed by source version; v2 adds `migrateV1ToV2`
+  (`rotationY` → `[0, y, 0]`, `parentId: null`, `groups: []`). The loader runs
+  migrations before validation and strips unknown fields.
+- New optional fields can remain inside v2; breaking changes require a new version.
+- `checkHierarchyIntegrity` rejects duplicate IDs, dangling parents, object
+  parents, cycles and over-deep nesting before anything is saved.
 
 ---
 
@@ -212,14 +232,20 @@ by any JSON Schema tool.
 
 ## 8. Responsive layout
 
-- **Desktop (≥ 981 px)**: top bar; left 272 px sidebar with four tabs
-  (World / Objects / Assets / AI); centre WebGL viewport; right 300 px inspector.
+- **Desktop (≥ 981 px)**: top bar; left 288 px sidebar with five tabs
+  (Scene / World / Assets / AI / Inspect); centre WebGL viewport with a floating
+  transform toolbar (move/rotate/scale, world/local, snap, grid); right 300 px
+  inspector column containing the scene tree and the transform/material inspector.
 - **Mobile/tablet (≤ 980 px)**: full-height viewport, compact top bar, five-tab
-  bottom dock (World / Objects / Assets / AI / Inspect), and a bottom sheet that
-  hosts the same panels. The sheet auto-opens the inspector when an object is
-  tapped.
-- Touch: OrbitControls (`touch-action: none`) supports drag-orbit and pinch-zoom;
-  tap selection uses a movement/time threshold so orbiting does not select.
+  bottom dock (Scene / World / Assets / AI / Inspect), and a bottom sheet that
+  hosts the same panels. The transform toolbar moves to the bottom centre; the
+  sheet auto-opens the inspector when a node is tapped.
+- Touch: OrbitControls uses `TOUCH.ROTATE` for one finger and `TOUCH.DOLLY_PAN`
+  for two; `touch-action: none` avoids page scroll conflicts. Tap selection uses a
+  movement/time threshold so orbiting does not select, and pointer events from a
+  gizmo drag never select the mesh underneath.
+- The gizmo scales itself down on narrow viewports and supports local/world space
+  and snapping (0.5 units, 15°, 0.1 scale).
 - Safe areas: `env(safe-area-inset-*)` applied to top bar, dock, sheet and toast;
   `100dvh` avoids mobile browser chrome overflow.
 - Mobile text inputs use 16 px to prevent iOS focus zoom; controls have ≥ 44 px
@@ -234,7 +260,11 @@ by any JSON Schema tool.
 - Every plan entering storage or leaving as JSON is schema-validated.
 - All transform/environment/terrain patch values are finite, clamped and
   color-validated in the reducer; invalid colors are ignored.
-- Object count capped at 1500; counts are clamped during generation.
+- Object count capped at 1500, groups at 200, nesting at 8 levels; counts are
+  clamped during generation.
+- Imports use `parseWorldPlanLenient`: unreadable nodes are dropped with a
+  warning, orphans are re-rooted and cycles broken, so one damaged object cannot
+  destroy a project.
 - No `dangerouslySetInnerHTML`, no remote assets, no API keys, no telemetry.
 - Three.js geometries, materials, render targets and lights are disposed on
   scene rebuild/unmount; viewport has an explicit WebGL failure state.
@@ -248,35 +278,40 @@ by any JSON Schema tool.
 Commands run on this branch:
 
 ```
-npm run typecheck   # tsc --noEmit, strict
-npm test            # 41 tests in 6 files — all passed
+npm run typecheck   # tsc --noEmit, strict — clean
+npm test            # 81 tests in 10 files — all passed
 npm run build       # tsc + vite build — success
 npm run schema:export
 npm run dev         # HTTP 200 via preview proxy host
 npm run preview     # production build served, all chunks HTTP 200
 ```
 
-**Tests (41/41 passing):**
+**Tests (81/81 passing):**
 
-- 5 schema/versioning tests
-- 16 generation/interpreter/terrain/water tests
-- 6 persistence/file-format tests
-- 4 scene-builder/GLB-export tests (real binary GLB parsed)
-- 8 editor-store/undo/patch tests
-- 2 DOM runtime tests (desktop boot + generation + undo; mobile dock + sheet)
+| Area | Tests | What is covered |
+| --- | --- | --- |
+| Schema / versioning / repair | 13 | v2 validation, duplicate IDs, dangling parents, cycles, unknown kinds, v1→v2 migration, lenient repair |
+| Generation / interpreter / terrain | 16 | determinism, biome detection, water percentile, clamping |
+| Persistence / file format | 6 | IndexedDB CRUD and sort order, invalid-plan rejection, lossless JSON |
+| Scene builder + GLB export | 11 | transform bridge, hierarchy nesting, visibility inheritance, grid, materials, real binary GLB |
+| Hierarchy + transform math | 15 | group/ungroup/reparent world-preserving semantics, duplicate remapping, matrix round-trip |
+| Editor reducer | 12 | selection modes, undo/redo, grouping history, locked nodes, clamping |
+| Gizmo integration | 2 | TransformControls/OrbitControls mode, space, snap, axis constraints, attach/detach, touch config |
+| DOM runtime | 4 | boot + generation + undo; full desktop acceptance workflow; reload restores the last world; mobile dock, sheet and axis controls |
+| **End-to-end acceptance** | 1 | ground plane + cube + tree + house → edit → group → save to IndexedDB → reload → verify document **and** rendered scene graph |
 
 **Build output:**
 
 | Asset | Size | Gzip |
 | --- | --- | --- |
-| `index-*.js` | 318.67 kB | 98.39 kB |
-| `three-vendor-*.js` | 544.54 kB | 136.92 kB |
+| `index-*.js` | 374.15 kB | 112.98 kB |
+| `three-vendor-*.js` | 545.44 kB | 137.20 kB |
 | `validation-*.js` (Zod) | 92.54 kB | 26.39 kB |
 | `react-vendor-*.js` | 11.88 kB | 4.20 kB |
-| `GLTFExporter-*.js` (lazy) | 37.46 kB | 11.13 kB |
-| `index-*.css` | 30.48 kB | 6.65 kB |
+| `GLTFExporter-*.js` (lazy) | 37.47 kB | 11.14 kB |
+| `index-*.css` | 36.29 kB | 7.55 kB |
 
-Initial payload is roughly 266 kB gzipped, with the exporter deferred.
+Initial payload is roughly 288 kB gzipped, with the exporter deferred.
 
 **Runtime checks:**
 
@@ -284,6 +319,11 @@ Initial payload is roughly 266 kB gzipped, with the exporter deferred.
   JS chunks, including with a proxied `*.e2b.app` Host header (no host rejection,
   no `X-Frame-Options`).
 - happy-dom runtime boot, asset add, AI generation, undo and autosave all passed.
+- The full acceptance scenario runs through the real UI (add ground plane, cube,
+  tree, house → select each → numeric move/rotate/scale → rename → group → save →
+  reopen from the world library) and asserts the reloaded hierarchy.
+- The gizmo's API contract (modes, spaces, snapping, attach/detach, touch config)
+  is unit-tested; only the GPU rasterisation itself is untested.
 - A real WebGL context is not available in this sandbox, so the viewport's GPU
   rendering path could **not** be executed here; the graceful-failure path was
   verified instead. Real browser/Android visual QA remains outstanding.
@@ -338,7 +378,6 @@ src/modules/editor/useAutosave.ts
 src/modules/editor/Viewport.tsx
 src/modules/editor/Workspace.tsx
 src/modules/editor/panels/WorldPanel.tsx
-src/modules/editor/panels/ObjectsPanel.tsx
 src/modules/editor/panels/AssetsPanel.tsx
 src/modules/editor/panels/AiPanel.tsx
 src/modules/editor/panels/InspectorPanel.tsx
@@ -353,6 +392,44 @@ src/ui/useIsMobile.ts
 
 Approximately 6,400 lines of TypeScript/TSX plus 2,350 lines of CSS and 800 lines of documentation.
 
+### Phase 2 additions
+
+New files:
+
+```
+src/core/world-plan/hierarchy.ts          # groups, parents, world transforms, reparent/group/ungroup
+src/core/world-plan/transformMath.ts      # matrix compose/decompose, parent-relative conversion
+src/core/world-plan/hierarchy.test.ts
+src/core/scene/sceneBuilder.test.ts
+src/modules/editor/ViewportToolbar.tsx
+src/modules/editor/panels/HierarchyPanel.tsx
+src/modules/editor/panels/nodeMeta.ts
+src/modules/editor/transformControls.test.ts
+src/acceptance.test.ts
+```
+
+Substantially rewritten or extended:
+
+```
+src/core/world-plan/schema.ts             # v2: XYZ rotations, parentId, groups, material, integrity checks
+src/core/world-plan/migrate.ts            # v1→v2 migration + lenient repair (parseWorldPlanLenient)
+src/core/world-plan/factory.ts            # v2 empty plan
+src/core/assets/catalog.ts                # parentId on every asset, "Ground plane" primitive
+src/core/scene/sceneBuilder.ts            # hierarchy-aware build, applyTransform/readTransform, grid
+src/core/persistence/projectFile.ts       # lenient file import
+src/core/generation/generateWorld.ts      # v2 output
+src/modules/editor/store.tsx              # multi-select, grouping, duplication, hierarchy actions
+src/modules/editor/Viewport.tsx           # TransformControls gizmo, multi-select outlines, framing, touch
+src/modules/editor/Workspace.tsx          # 3-column layout, inspector panel, shortcuts, save-now
+src/modules/editor/panels/InspectorPanel.tsx  # local+world transforms, materials, group contents
+src/ui/Icon.tsx, TopBar.tsx, controls.tsx, WorldLibraryDialog.tsx
+src/styles/global.css                     # tree, toolbar, inspector and mobile sheet styling
+docs/WORLDPLAN.md, docs/worldplan.schema.json, README.md
+```
+
+Removed: `src/modules/editor/panels/ObjectsPanel.tsx` (superseded by the
+hierarchy tree, which shows the same data plus nesting, visibility and locks).
+
 Notable implementation decisions:
 
 - **No fake AI claim**: the panel is labelled as an offline rule-based
@@ -363,6 +440,14 @@ Notable implementation decisions:
 - **Deterministic IDs** for generated objects make worlds diffable and tests
   meaningful, while document IDs stay random to avoid silent overwrites.
 - **Zod-generated JSON Schema** gives external tooling a stable contract.
+- **Hierarchy operations are pure functions on the document**, not on Three.js
+  objects. The viewport only reads the document, so save/reopen and export can
+  never drift from what the user sees.
+- **World-preserving grouping**: `createGroupFromSelection` inserts an identity
+  group at the root and rewrites children with `transformRelativeTo`, so visuals
+  are unchanged at the moment of grouping.
+- **`nodeType: 'group'` discriminant** separates groups from objects at the type
+  level (objects are structurally similar, which otherwise defeats narrowing).
 
 ---
 
@@ -374,7 +459,9 @@ Notable implementation decisions:
 | Full object rebuild on any object change | Slider drags / large worlds may stutter, especially on phones | Dirty-object updates, `InstancedMesh`, geometry merging, LODs |
 | Many draw calls at high object counts | Mobile frame rate falls | Instancing/merging; adaptive quality; lower point-light/shadow budgets |
 | Terrain edits don't move existing objects | Objects can float or sink after reshaping | Add terrain-wide re-snap + a terrain height-change transaction |
-| No viewport gizmos | Editing relies on numeric fields; no drag-move on mobile | Add translate/rotate/scale gizmos with touch handles |
+| Gizmo rendering untested on real hardware | Handle sizes/overlap on high-DPI phones unverified | Real-device QA; per-device `setSize` tuning |
+| Numeric rotation edits create one history entry per keystroke | Undo may step through intermediate values | Coalesce history per field edit session |
+| Shadows on large scenes | Mobile GPU cost with 1500 casters | Shadow camera fit, culling, lower shadow resolution on mobile |
 | Rule-based interpreter, limited vocabulary | "AI" expectations may exceed actual capability | Add optional local LLM provider (WebLLM/Ollama) behind `PromptInterpreter`; keep offline fallback |
 | Autosave debounce 650 ms | A hard close within that window can lose the last edit | Flush on pagehide/visibilitychange; save-blocked UX; export reminders |
 | Browser storage eviction / private mode | Worlds can disappear | Memory fallback warning; project file export; future File System Access backup |
@@ -382,6 +469,7 @@ Notable implementation decisions:
 | GLB lacks lights/colliders/native formats | Game engines need manual light/collision setup | Add glTF lights (`KHR_lights_punctual`), collider metadata, Godot/Unity project exporters |
 | No thumbnails / search in world library | Library is plain at scale | Persist a generated preview thumbnail and tags |
 | Slider edits create one history entry per tick | Undo can step through many intermediate values | Coalesce history per drag gesture |
+| Group transforms are baked per child on ungroup | Very deep trees could accumulate rounding | Round to 1 mm; tested within 1e-3 |
 | Mobile Safari may block async `.glb` downloads | Exported model may not save on some iOS versions | Add Web Share/file-handle fallback and test on iOS |
 | Objective/automated visual regression absent | Styling regressions can slip through | Add Playwright screenshots; mobile viewport matrix |
 | No PWA/offline install yet | App requires a server or local dev | Add service worker + manifest after feature stabilisation |
@@ -392,8 +480,9 @@ Notable implementation decisions:
 
 1. **Real-device verification** — desktop Chrome/Firefox/Safari and Android
    Chrome; capture screenshots; validate touch orbit and performance.
-2. **Viewport interaction** — transform gizmos, click-to-place assets on terrain,
-   multi-select, terrain-wide snap.
+2. **Viewport interaction** — click-to-place assets on terrain, in-viewport drag
+   selection box, terrain-wide snap, pivot modes. (Gizmos, multi-select,
+   snapping, grouping, hierarchy and the inspector shipped in Phase 2.)
 3. **Performance pass** — dirty updates, instancing/merging, adaptive shadow and
    pixel-ratio budgets; profile with 500+ objects.
 4. **Generation depth** — rivers/roads, clustering, terrain sculpting, biome
@@ -410,5 +499,7 @@ Notable implementation decisions:
    performance budgets and CI workflow.
 10. **PWA** — manifest + service worker for installable offline use.
 
-Phase 1 is intentionally limited to foundations that could be verified. No
-placeholder buttons, mock exports or simulated AI results were shipped.
+Phase 2 is intentionally limited to an editor that can be verified: every
+transform operation, group operation and save/reopen path is covered by tests.
+No placeholder buttons, mock exports or simulated AI results were shipped, and
+Phase 3 has not been started (it is gated on desktop + Android acceptance).

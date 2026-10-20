@@ -26,10 +26,18 @@ export interface AssetDefinition {
 function baseObject(
   name: string,
   position: [number, number, number],
-): { id: string; name: string; transform: ReturnType<typeof createTransform>; visible: boolean; locked: boolean } {
+): {
+  id: string;
+  name: string;
+  parentId: null;
+  transform: ReturnType<typeof createTransform>;
+  visible: boolean;
+  locked: boolean;
+} {
   return {
     id: createId('obj'),
     name,
+    parentId: null,
     transform: createTransform(position),
     visible: true,
     locked: false,
@@ -42,6 +50,7 @@ function primitiveAsset(
   primitive: 'box' | 'sphere' | 'cylinder' | 'cone' | 'torus' | 'plane',
   color: string,
   description: string,
+  scale: [number, number, number] = [1, 1, 1],
 ): AssetDefinition {
   return {
     id,
@@ -53,6 +62,7 @@ function primitiveAsset(
       kind: 'primitive',
       primitive,
       color,
+      transform: { ...createTransform(position), scale },
     }),
   };
 }
@@ -74,7 +84,7 @@ export function createTree(variant: TreeVariant, position: [number, number, numb
     trunkColor: palette.trunk,
     transform: {
       ...createTransform(position),
-      rotationY: range(rng, 0, 360),
+      rotation: [0, range(rng, 0, 360), 0],
       scale: [range(rng, 0.8, 1.25), range(rng, 0.8, 1.35), range(rng, 0.8, 1.25)],
     },
   };
@@ -93,7 +103,7 @@ export function createRock(
     color,
     transform: {
       ...createTransform(position),
-      rotationY: range(rng, 0, 360),
+      rotation: [0, range(rng, 0, 360), 0],
       scale: [range(rng, 0.7, 1.5), range(rng, 0.55, 1.2), range(rng, 0.7, 1.5)],
     },
   };
@@ -114,7 +124,7 @@ export function createBuilding(
     roofColor: colors.roof,
     transform: {
       ...createTransform(position),
-      rotationY: range(rng, 0, 360),
+      rotation: [0, range(rng, 0, 360), 0],
       scale: [range(rng, 1, 1.3), range(rng, 0.9, 1.3), range(rng, 1, 1.3)],
     },
   };
@@ -135,6 +145,14 @@ export const ASSET_LIBRARY: AssetDefinition[] = [
   primitiveAsset('cone', 'Cone', 'cone', '#c28a5b', 'A cone for roofs and markers.'),
   primitiveAsset('torus', 'Torus', 'torus', '#c2a25b', 'A ring for arches and decorative props.'),
   primitiveAsset('plane', 'Slab', 'plane', '#8d9187', 'A thin slab for platforms and paths.'),
+  primitiveAsset(
+    'ground',
+    'Ground plane',
+    'plane',
+    '#6f7d54',
+    'A large flat surface for placing scenes on.',
+    [30, 1, 30],
+  ),
   {
     id: 'pine',
     label: 'Pine tree',

@@ -8,12 +8,12 @@ this format.
 - Zod source of truth: `src/core/world-plan/schema.ts`
 - Runtime validation / migration: `src/core/world-plan/migrate.ts`
 - Generated JSON Schema: [`worldplan.schema.json`](./worldplan.schema.json)
-- Current version: **1**
+- Current version: **2** (Phase 2; v1 documents migrate automatically)
 - File extension: `.world.json`
 - Coordinates: right-handed **Y-up**, 1 unit ≈ 1 metre (convention, not enforced)
 - Colours: `#rrggbb`
 - IDs: `^[A-Za-z0-9_-]+$`, max 80 characters
-- Maximum objects: **1500**
+- Maximum objects: **1500**, maximum groups: **200**, maximum nesting: **8 levels**
 
 ---
 
@@ -21,7 +21,7 @@ this format.
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `schemaVersion` | `1` | yes | Literal. Bumped on breaking changes. |
+| `schemaVersion` | `2` | yes | Literal. Bumped on breaking changes. |
 | `id` | string | yes | Stable project ID. Unique in local storage. |
 | `name` | string | yes | 1–80 characters. |
 | `description` | string | yes | Up to 500 characters. Generation provenance is appended here. |
@@ -30,6 +30,7 @@ this format.
 | `updatedAt` | ISO string | yes | Updated on each mutation. |
 | `environment` | object | yes | Sky, fog, sun and ambient settings. |
 | `terrain` | object | yes | Landform and palette. |
+| `groups` | array | yes | Up to 200 `WorldGroup`s (transform-only containers). |
 | `objects` | array | yes | Up to 1500 `WorldObject`s. May be empty. |
 
 ---
@@ -66,6 +67,21 @@ existing objects; use “Snap to ground” in the inspector.
 
 ---
 
+## `WorldGroup`
+
+A transform-only container used to organise the scene and move several nodes
+together. Groups never render on their own.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `nodeType` | `"group"` | Discriminant that separates groups from objects. |
+| `id` | string | Unique within the plan. |
+| `name` | string | 1–80 characters. |
+| `parentId` | string \| null | Parent group id, or null for the scene root. |
+| `transform` | object | Local transform, same shape as objects. |
+| `visible` | boolean | Hiding a group hides its whole subtree. |
+| `locked` | boolean | Locking a group locks its whole subtree. |
+
 ## `WorldObject`
 
 Every object has:
@@ -74,11 +90,13 @@ Every object has:
 | --- | --- | --- |
 | `id` | string | Unique within the plan. Generated objects use deterministic IDs. |
 | `name` | string | 1–80 characters; shown in the hierarchy. |
-| `transform.position` | `[x, y, z]` | **Base/origin** of the object, in world units. |
-| `transform.rotationY` | number | −360 – 360 degrees. |
-| `transform.scale` | `[x, y, z]` | Each component > 0 (and ≤ 100 via editor clamping). |
+| `parentId` | string \| null | Parent **group** id, or null for the scene root. |
+| `transform.position` | `[x, y, z]` | **Local** position (relative to the parent group). |
+| `transform.rotation` | `[x, y, z]` | Local Euler rotation in degrees, XYZ order, −3600 – 3600. |
+| `transform.scale` | `[x, y, z]` | Each component > 0 (editor clamps to 0.05 – 200). |
 | `visible` | boolean | Hidden objects are excluded from render and export. |
 | `locked` | boolean | Prevents accidental edits in the UI. |
+| `material` | object? | Optional `roughness`, `metalness`, `emissiveIntensity` overrides (0–1 / 0–5). |
 | `kind` | discriminator | One of the kinds below. |
 
 ### Common kind fields
@@ -96,11 +114,21 @@ or textures. This is why projects are small and can be regenerated anywhere.
 
 ---
 
+## Transform semantics
+
+`transform` is **local**: it is applied after the parent group's transform. The
+editor computes world transforms on demand (`worldTransformOf` in
+`src/core/world-plan/hierarchy.ts`) and converts between spaces when grouping,
+ungrouping or reparenting, so nodes never jump visually.
+
+The renderer, the inspector's “World space” section and game-engine exporters all
+agree because they use the same parent-chain composition.
+
 ## Example document
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "world_dfef0517b869",
   "name": "Example World",
   "description": "",
@@ -117,6 +145,21 @@ or textures. This is why projects are small and can be regenerated anywhere.
     "sunIntensity": 2.2,
     "ambientIntensity": 0.55
   },
+  "groups": [
+    {
+      "nodeType": "group",
+      "id": "grp_village",
+      "name": "Village",
+      "parentId": null,
+      "transform": {
+        "position": [2, 0, 2],
+        "rotation": [0, 20, 0],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "locked": false
+    }
+  ],
   "terrain": {
     "style": "islands",
     "size": 160,
@@ -132,9 +175,10 @@ or textures. This is why projects are small and can be regenerated anywhere.
     {
       "id": "obj_palm_1",
       "name": "Palm",
+      "parentId": "grp_village",
       "transform": {
         "position": [4, 1.82, -3],
-        "rotationY": 4.21,
+        "rotation": [0, 4.21, 0],
         "scale": [0.83, 1.34, 1.11]
       },
       "visible": true,
@@ -147,15 +191,17 @@ or textures. This is why projects are small and can be regenerated anywhere.
     {
       "id": "obj_lantern_1",
       "name": "Lantern",
+      "parentId": null,
       "transform": {
         "position": [-6, 0.4, 2],
-        "rotationY": 0,
+        "rotation": [0, 0, 0],
         "scale": [1, 1, 1]
       },
       "visible": true,
       "locked": false,
       "kind": "lantern",
-      "color": "#ffc46b"
+      "color": "#ffc46b",
+      "material": { "roughness": 0.4, "emissiveIntensity": 1.4 }
     }
   ]
 }
@@ -187,31 +233,58 @@ npm run schema:export   # writes docs/worldplan.schema.json
 The JSON Schema targets draft 2020-12 and uses `output` types (defaults resolved),
 so external validators see required, fully-populated documents.
 
+## Graceful repair
+
+`parseWorldPlanLenient` (used by file import) tolerates partially damaged files:
+
+- unreadable objects/groups are skipped and counted;
+- nodes whose parent is missing are re-rooted;
+- hierarchy cycles are broken;
+- every repair is reported as a warning in the UI.
+
+A file that is not a world document at all (no `schemaVersion`) is still rejected
+with a clear message.
+
 ---
 
 ## Rules and invariants
 
 1. `schemaVersion` must match the current version after migrations.
-2. The document must validate against the Zod schema before storage or export.
-3. Object IDs are unique within a plan; generated IDs are deterministic, manual
-   additions use random IDs.
-4. Numbers must be finite; colours must be six-digit hex; transforms are clamped
+2. The document must validate against the Zod schema **and** the structural
+   hierarchy checks before storage or export.
+3. IDs are unique across groups and objects; generated IDs are deterministic,
+   manually added nodes use random IDs. Editing a node never changes its ID.
+4. `parentId` must point to an existing **group** (or null). Cycles and nesting
+   deeper than 8 levels are rejected.
+5. Numbers must be finite; colours must be six-digit hex; transforms are clamped
    by the editor reducer before validation.
-5. At most 1500 objects per plan.
-6. Generation is deterministic for `(prompt interpretation, seed)`; metadata
+6. At most 1500 objects and 200 groups per plan.
+7. Generation is deterministic for `(prompt interpretation, seed)`; metadata
    (document ID and timestamps) is intentionally not deterministic.
-7. Hidden objects are excluded from the viewport and GLB export (unless an export
-   option explicitly includes them).
+8. Hidden nodes and their subtrees are excluded from the viewport and GLB export
+   (unless an export option explicitly includes them).
+9. A locked node (or any locked ancestor) rejects transform edits and deletion.
 
 ---
 
 ## Versioning and migrations
 
+### v1 → v2 (Phase 2)
+
+- `transform.rotationY` became `transform.rotation: [x, y, z]`
+  (v1 `rotationY` → `[0, rotationY, 0]`).
+- Every node gained `parentId` (default `null`).
+- The document gained `groups` (default `[]`).
+- Objects gained an optional `material` block.
+
+Migration is automatic when a v1 file is opened, saved or imported; v2 files
+load unchanged.
+
 `src/core/world-plan/migrate.ts` contains:
 
 ```ts
 const MIGRATIONS: Record<number, Migration> = {
-  // 1: (doc) => ({ ...doc, schemaVersion: 2, ... }),
+  1: migrateV1ToV2,
 };
 ```
 
@@ -222,8 +295,8 @@ Policy:
 
 - **Patch/minor additions** (new optional fields, new object kinds accepted by the
   current union) may stay within v1 if old documents still validate.
-- **Breaking changes** (renamed/removed fields, changed semantics) require
-  `WORLD_PLAN_SCHEMA_VERSION = 2`, a migration from v1, regenerated JSON Schema
-  and updated docs/tests.
+- **Breaking changes** (renamed/removed fields, changed semantics) require a new
+  version constant, a migration from the previous version, regenerated JSON
+  Schema and updated docs/tests.
 - Never silently reinterpret old data; fail with a clear message if a migration is
   unavailable.

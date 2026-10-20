@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createEmptyWorldPlan } from '../world-plan/factory';
 import { deserializeWorldPlan, serializeWorldPlan, WorldPlanValidationError } from '../world-plan/migrate';
+import { WORLD_PLAN_SCHEMA_VERSION } from '../world-plan/schema';
 import {
   createIndexedDbWorldRepository,
   createMemoryWorldRepository,
@@ -39,7 +40,7 @@ describe('IndexedDB repository', () => {
     const list = await repo.list();
     expect(list.map((entry) => entry.id)).toEqual(['world_newer', 'world_older']);
     expect(list[0]?.objectCount).toBe(0);
-    expect(list[0]?.schemaVersion).toBe(1);
+    expect(list[0]?.schemaVersion).toBe(WORLD_PLAN_SCHEMA_VERSION);
 
     expect(await repo.load('world_newer')).toEqual(newer);
 

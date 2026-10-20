@@ -1,7 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from 'react';
 import { createEmptyWorldPlan } from '../../core/world-plan/factory';
 import type { WorldPlan } from '../../core/world-plan/schema';
-import { readWorldFile } from '../../core/persistence/projectFile';
+import { readWorldFile, readWorldFileLenient } from '../../core/persistence/projectFile';
 import {
   createMemoryWorldRepository,
   getWorldRepository,
@@ -10,11 +16,19 @@ import {
   type WorldSummary,
 } from '../../core/persistence/worldRepository';
 import { createStarterWorld } from '../../core/generation/starter';
+import { createId } from '../../core/utils/id';
 import { useEditor } from './store';
 import { useAutosave } from './useAutosave';
-import { Viewport } from './Viewport';
+import {
+  ALL_AXES,
+  Viewport,
+  type AxisFilter,
+  type TransformSpace,
+  type TransformTool,
+} from './Viewport';
+import { ViewportToolbar } from './ViewportToolbar';
 import { WorldPanel } from './panels/WorldPanel';
-import { ObjectsPanel } from './panels/ObjectsPanel';
+import { HierarchyPanel } from './panels/HierarchyPanel';
 import { AssetsPanel } from './panels/AssetsPanel';
 import { AiPanel } from './panels/AiPanel';
 import { InspectorPanel } from './panels/InspectorPanel';
@@ -24,12 +38,12 @@ import { Icon, type IconName } from '../../ui/Icon';
 import { useToast } from '../../ui/useToast';
 import { useIsMobile } from '../../ui/useIsMobile';
 
-type DesktopTab = 'world' | 'objects' | 'assets' | 'ai';
+type DesktopTab = 'world' | 'scene' | 'assets' | 'ai';
 type MobilePanel = DesktopTab | 'inspector';
 
 const DESKTOP_TABS: { id: DesktopTab; label: string; icon: IconName }[] = [
   { id: 'world', label: 'World', icon: 'sliders' },
-  { id: 'objects', label: 'Objects', icon: 'layers' },
+  { id: 'scene', label: 'Scene', icon: 'layers' },
   { id: 'assets', label: 'Assets', icon: 'cube' },
   { id: 'ai', label: 'AI', icon: 'sparkles' },
 ];
@@ -41,7 +55,7 @@ const MOBILE_TABS: { id: MobilePanel; label: string; icon: IconName }[] = [
 
 const PANEL_TITLES: Record<MobilePanel, string> = {
   world: 'World',
-  objects: 'Objects',
+  scene: 'Scene',
   assets: 'Assets',
   ai: 'AI world',
   inspector: 'Inspector',
@@ -59,6 +73,11 @@ export function Workspace() {
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<DesktopTab>('world');
   const [mobilePanel, setMobilePanel] = useState<MobilePanel | null>(null);
+  const [tool, setTool] = useState<TransformTool>('translate');
+  const [space, setSpace] = useState<TransformSpace>('world');
+  const [snap, setSnap] = useState(false);
+  const [showGrid, setShowGrid] = useState(true);
+  const [axes, setAxes] = useState<AxisFilter>(ALL_AXES);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isMobile = useIsMobile();
   const { toast, notify } = useToast();
@@ -146,6 +165,20 @@ export function Workspace() {
     if (state.saveState === 'saved' && ready) void refreshWorlds();
   }, [state.saveState, ready, refreshWorlds]);
 
+  const saveNow = useCallback(async () => {
+    dispatch({ type: 'setSaveState', status: 'saving' });
+    try {
+      await repository.save(state.plan);
+      dispatch({ type: 'setSaveState', status: 'saved' });
+      notify('Project saved in this browser.', 'success');
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'The project could not be saved.';
+      dispatch({ type: 'setSaveState', status: 'error', error: message });
+      notify(message, 'danger');
+    }
+  }, [repository, state.plan, dispatch, notify]);
+
   const startNewWorld = useCallback(() => {
     const plan = createEmptyWorldPlan({ name: 'Untitled World' });
     dispatch({ type: 'replacePlan', plan });
@@ -168,6 +201,29 @@ export function Workspace() {
       notify(`Opened “${plan.name}”.`, 'success');
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Could not open that world.', 'danger');
+    }
+  };
+
+  const duplicateWorld = async (id: string) => {
+    try {
+      const source = await repository.load(id);
+      if (!source) {
+        notify('That world could not be found.', 'danger');
+        return;
+      }
+      const now = new Date().toISOString();
+      const copy: WorldPlan = {
+        ...source,
+        id: createId('world'),
+        name: `${source.name} copy`.slice(0, 80),
+        createdAt: now,
+        updatedAt: now,
+      };
+      await repository.save(copy);
+      await refreshWorlds();
+      notify(`Duplicated “${source.name}”.`, 'success');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not duplicate that world.', 'danger');
     }
   };
 
@@ -203,14 +259,35 @@ export function Workspace() {
       setMobilePanel(null);
       notify(`Imported “${plan.name}”.`, 'success');
     } catch (error) {
-      notify(error instanceof Error ? error.message : 'Could not import that file.', 'danger');
+      // A damaged file may still be partially recoverable.
+      try {
+        const repaired = await readWorldFileLenient(file);
+        dispatch({ type: 'replacePlan', plan: repaired.plan });
+        setLibraryOpen(false);
+        setMobilePanel(null);
+        notify(
+          repaired.warnings.length > 0
+            ? `Imported with repairs: ${repaired.warnings.join(' ')}`
+            : `Imported “${repaired.plan.name}”.`,
+          repaired.warnings.length > 0 ? 'neutral' : 'success',
+        );
+      } catch {
+        notify(error instanceof Error ? error.message : 'Could not import that file.', 'danger');
+      }
     }
   };
 
-  const handleSelect = (id: string | null) => {
-    dispatch({ type: 'select', id });
-    if (id && isMobile) setMobilePanel('inspector');
-  };
+  const handleSelect = useCallback(
+    (id: string | null, additive: boolean) => {
+      if (!id) {
+        if (!additive) dispatch({ type: 'select', ids: [], mode: 'replace' });
+        return;
+      }
+      dispatch({ type: 'select', ids: [id], mode: additive ? 'toggle' : 'replace' });
+      if (isMobile) setMobilePanel((current) => current ?? 'inspector');
+    },
+    [dispatch, isMobile],
+  );
 
   const handleGenerated = () => {
     if (isMobile) setMobilePanel(null);
@@ -229,8 +306,8 @@ export function Workspace() {
           setLibraryOpen(false);
         } else if (mobilePanel) {
           setMobilePanel(null);
-        } else if (state.selectedId) {
-          dispatch({ type: 'select', id: null });
+        } else if (state.selection.length > 0) {
+          dispatch({ type: 'select', ids: [], mode: 'replace' });
         }
         return;
       }
@@ -238,41 +315,102 @@ export function Workspace() {
       if (isTyping || libraryOpen) return;
 
       const modifier = event.metaKey || event.ctrlKey;
-      if (modifier && event.key.toLowerCase() === 'z') {
+      const key = event.key.toLowerCase();
+
+      if (modifier && key === 's') {
+        event.preventDefault();
+        void saveNow();
+        return;
+      }
+      if (modifier && key === 'z') {
         event.preventDefault();
         dispatch({ type: event.shiftKey ? 'redo' : 'undo' });
         return;
       }
-      if (modifier && event.key.toLowerCase() === 'y') {
+      if (modifier && key === 'y') {
         event.preventDefault();
         dispatch({ type: 'redo' });
         return;
       }
-      if ((event.key === 'Delete' || event.key === 'Backspace') && state.selectedId) {
-        const selected = state.plan.objects.find((object) => object.id === state.selectedId);
-        if (selected?.locked) {
-          notify('This object is locked. Unlock it before deleting.', 'danger');
-          return;
-        }
+      if (modifier && key === 'g') {
         event.preventDefault();
-        dispatch({ type: 'removeObject', id: state.selectedId });
+        if (event.shiftKey) {
+          const groupId = [...state.selection]
+            .reverse()
+            .find((id) => state.plan.groups.some((group) => group.id === id));
+          if (groupId) dispatch({ type: 'ungroup', id: groupId });
+        } else {
+          dispatch({ type: 'groupSelection' });
+        }
         return;
       }
-      if (!modifier && event.key.toLowerCase() === 'f') {
-        window.dispatchEvent(new Event('worldbuilder:frame'));
+      if (modifier && key === 'd') {
+        event.preventDefault();
+        dispatch({ type: 'duplicateSelection' });
+        return;
+      }
+      if (modifier && key === 'a') {
+        event.preventDefault();
+        const ids = [...state.plan.groups, ...state.plan.objects]
+          .filter((node) => node.parentId === null)
+          .map((node) => node.id);
+        dispatch({ type: 'select', ids, mode: 'replace' });
+        return;
+      }
+
+      if ((event.key === 'Delete' || event.key === 'Backspace') && state.selection.length > 0) {
+        event.preventDefault();
+        dispatch({ type: 'deleteSelection' });
+        return;
+      }
+
+      if (!modifier) {
+        if (key === 'g') {
+          setTool('translate');
+          return;
+        }
+        if (key === 'r') {
+          setTool('rotate');
+          return;
+        }
+        if (key === 's') {
+          setTool('scale');
+          return;
+        }
+        if (key === 'f') {
+          window.dispatchEvent(new Event('worldbuilder:focus'));
+          return;
+        }
+        if (key === 'x' || key === 'y' || key === 'z') {
+          setAxes((previous) => {
+            const next = { ...previous, [key]: !previous[key as keyof AxisFilter] };
+            // Always keep at least one axis editable.
+            if (!next.x && !next.y && !next.z) return ALL_AXES;
+            return next;
+          });
+          return;
+        }
       }
     };
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [dispatch, libraryOpen, mobilePanel, notify, state.plan.objects, state.selectedId]);
+  }, [
+    dispatch,
+    libraryOpen,
+    mobilePanel,
+    saveNow,
+    state.plan.groups,
+    state.plan.objects,
+    state.selection,
+  ]);
 
   const renderPanel = (panel: DesktopTab | 'inspector') => {
     switch (panel) {
       case 'world':
         return <WorldPanel onOpenLibrary={openLibrary} storageKind={storageKind} />;
-      case 'objects':
-        return <ObjectsPanel onShowAssets={() => setActiveTab('assets')} />;
+      case 'scene':
+        return <HierarchyPanel onShowAssets={() => setActiveTab('assets')} />;
       case 'assets':
         return (
           <AssetsPanel
@@ -311,13 +449,14 @@ export function Workspace() {
         onRename={(name) => dispatch({ type: 'renameWorld', name })}
         onUndo={() => dispatch({ type: 'undo' })}
         onRedo={() => dispatch({ type: 'redo' })}
+        onSaveNow={() => void saveNow()}
         onOpenLibrary={openLibrary}
         onNewWorld={startNewWorld}
         onImport={triggerImport}
         notify={notify}
       />
 
-      <main className="workspace">
+      <main className={`workspace ${isMobile && mobilePanel ? 'has-sheet' : ''}`}>
         <aside className="sidebar desktop-only" aria-label="Editor panels">
           <nav className="panel-tabs" role="tablist">
             {DESKTOP_TABS.map((tab) => (
@@ -338,7 +477,32 @@ export function Workspace() {
         </aside>
 
         <section className="viewport-wrap" aria-label="3D viewport">
-          <Viewport plan={state.plan} selectedId={state.selectedId} onSelect={handleSelect} />
+          <Viewport
+            plan={state.plan}
+            selection={state.selection}
+            tool={tool}
+            space={space}
+            snap={snap}
+            showGrid={showGrid}
+            axes={axes}
+            onSelect={handleSelect}
+            onTransformCommit={(id, transform) =>
+              dispatch({ type: 'setTransform', id, transform })
+            }
+          />
+          <ViewportToolbar
+            tool={tool}
+            space={space}
+            snap={snap}
+            showGrid={showGrid}
+            axes={axes}
+            selectionCount={state.selection.length}
+            onToolChange={setTool}
+            onSpaceChange={setSpace}
+            onSnapChange={setSnap}
+            onGridChange={setShowGrid}
+            onAxesChange={setAxes}
+          />
         </section>
 
         <aside className="inspector-panel desktop-only" aria-label="Inspector">
@@ -389,6 +553,7 @@ export function Workspace() {
         loading={libraryLoading}
         onClose={() => setLibraryOpen(false)}
         onOpenWorld={(id) => void openWorld(id)}
+        onDuplicateWorld={(id) => void duplicateWorld(id)}
         onDeleteWorld={(id) => void deleteWorld(id)}
         onNewWorld={startNewWorld}
         onImport={triggerImport}

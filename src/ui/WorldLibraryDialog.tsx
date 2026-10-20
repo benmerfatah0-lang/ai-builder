@@ -10,6 +10,7 @@ interface WorldLibraryDialogProps {
   loading: boolean;
   onClose: () => void;
   onOpenWorld: (id: string) => void;
+  onDuplicateWorld: (id: string) => void;
   onDeleteWorld: (id: string) => void;
   onNewWorld: () => void;
   onImport: () => void;
@@ -34,6 +35,7 @@ export function WorldLibraryDialog({
   loading,
   onClose,
   onOpenWorld,
+  onDuplicateWorld,
   onDeleteWorld,
   onNewWorld,
   onImport,
@@ -110,6 +112,7 @@ export function WorldLibraryDialog({
                   <button
                     type="button"
                     className="library-row-main"
+                    aria-label={`Open ${world.name}`}
                     onClick={() => onOpenWorld(world.id)}
                   >
                     <span className="library-thumb">
@@ -124,6 +127,16 @@ export function WorldLibraryDialog({
                         {world.objectCount} objects · updated {formatDate(world.updatedAt)}
                       </small>
                     </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => onDuplicateWorld(world.id)}
+                    aria-label={`Duplicate ${world.name}`}
+                    title="Duplicate world"
+                  >
+                    <Icon name="copy" size={16} />
                   </button>
 
                   {pendingDelete === world.id ? (

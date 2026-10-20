@@ -8,7 +8,7 @@ import {
 import { mulberry32 } from '../../../core/generation/rng';
 import { createTerrainSampler } from '../../../core/generation/terrain';
 import { MAX_WORLD_OBJECTS } from '../../../core/world-plan/schema';
-import { useEditor } from '../store';
+import { nextAvailableName, useEditor } from '../store';
 import { Icon, type IconName } from '../../../ui/Icon';
 import { EmptyState } from '../../../ui/controls';
 
@@ -63,10 +63,7 @@ export function AssetsPanel({
     const sampler = createTerrainSampler(state.plan.terrain, state.plan.seed);
     const position = placementForNewObject(state.plan, sampler, rng);
     const object = asset.create(rng, position);
-    const sameName = state.plan.objects.filter(
-      (entry) => entry.name === object.name || entry.name.startsWith(`${object.name} `),
-    ).length;
-    if (sameName > 0) object.name = `${object.name} ${sameName + 1}`;
+    object.name = nextAvailableName(state.plan, object.name);
     dispatch({ type: 'addObject', object });
     notify(`${asset.label} added to the world.`, 'success');
     onAdded?.();

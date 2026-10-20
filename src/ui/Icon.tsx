@@ -27,7 +27,13 @@ export type IconName =
   | 'frame'
   | 'menu'
   | 'sun'
-  | 'sliders';
+  | 'sliders'
+  | 'move'
+  | 'rotate'
+  | 'scale'
+  | 'magnet'
+  | 'grid'
+  | 'save';
 
 const PATHS: Record<IconName, ReactNode> = {
   cube: (
@@ -161,6 +167,41 @@ const PATHS: Record<IconName, ReactNode> = {
       <circle cx="5" cy="12" r="2" />
       <circle cx="12" cy="9" r="2" />
       <circle cx="19" cy="16" r="2" />
+    </>
+  ),
+  move: (
+    <>
+      <path d="M12 3v18M3 12h18" />
+      <path d="m8.5 6.5 3.5-3.5 3.5 3.5M8.5 17.5 12 21l3.5-3.5M6.5 8.5 3 12l3.5 3.5M17.5 8.5 21 12l-3.5 3.5" />
+    </>
+  ),
+  rotate: (
+    <>
+      <path d="M20 12a8 8 0 1 1-2.6-5.9" />
+      <path d="M20 4v5h-5" />
+    </>
+  ),
+  scale: (
+    <>
+      <path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7" />
+    </>
+  ),
+  magnet: (
+    <>
+      <path d="M5 4v8a7 7 0 0 0 14 0V4h-4v8a3 3 0 0 1-6 0V4H5Z" />
+      <path d="M5 8h4M15 8h4" />
+    </>
+  ),
+  grid: (
+    <>
+      <rect x="3.5" y="3.5" width="17" height="17" rx="1.5" />
+      <path d="M3.5 9.2h17M3.5 14.8h17M9.2 3.5v17M14.8 3.5v17" />
+    </>
+  ),
+  save: (
+    <>
+      <path d="M5 3.5h11L20.5 8v12.5h-15.5V3.5Z" />
+      <path d="M8 3.5v6h7v-6M8 20.5v-6h8v6" />
     </>
   ),
 };

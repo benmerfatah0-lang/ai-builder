@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { interpretPromptLocally } from '../../modules/ai/promptInterpreter';
 import { generateWorldPlan } from '../generation/generateWorld';
-import { buildWorldScene, disposeObject3D } from '../scene/sceneBuilder';
+import { buildWorldScene, disposeObject3D, findNodeObject } from '../scene/sceneBuilder';
 import { exportWorldToGlb } from './gltf';
 import { createLantern } from '../assets/catalog';
 import type { WorldPlan } from '../world-plan/schema';
@@ -19,9 +19,13 @@ describe('shared scene builder', () => {
   it('builds terrain and visible objects', () => {
     const plan = samplePlan();
     const root = buildWorldScene(plan, { includeLights: false });
-    const objectGroups = root.children.filter((child) => child.userData.worldObjectId);
-    expect(objectGroups).toHaveLength(plan.objects.length);
     expect(root.getObjectByName('terrain')).toBeDefined();
+    const nodesGroup = root.getObjectByName('world-nodes');
+    expect(nodesGroup).toBeDefined();
+    expect(nodesGroup?.children).toHaveLength(plan.objects.length);
+    for (const object of plan.objects) {
+      expect(findNodeObject(root, object.id)).not.toBeNull();
+    }
     disposeObject3D(root);
   });
 
@@ -31,22 +35,26 @@ describe('shared scene builder', () => {
     const plan: WorldPlan = { ...base, objects: [...base.objects, hidden] };
 
     const visibleOnly = buildWorldScene(plan, { includeLights: false });
-    const visibleGroups = visibleOnly.children.filter((child) => child.userData.worldObjectId);
-    expect(visibleGroups).toHaveLength(plan.objects.length - 1);
+    expect(visibleOnly.getObjectByName('world-nodes')?.children).toHaveLength(
+      plan.objects.length - 1,
+    );
+    expect(findNodeObject(visibleOnly, hidden.id)).toBeNull();
     disposeObject3D(visibleOnly);
 
     const everything = buildWorldScene(plan, { includeLights: false, includeHidden: true });
-    const allGroups = everything.children.filter((child) => child.userData.worldObjectId);
-    expect(allGroups).toHaveLength(plan.objects.length);
+    expect(everything.getObjectByName('world-nodes')?.children).toHaveLength(plan.objects.length);
+    expect(findNodeObject(everything, hidden.id)).not.toBeNull();
     disposeObject3D(everything);
   });
 
   it('tags meshes with their world object id for picking', () => {
     const plan = samplePlan();
     const root = buildWorldScene(plan, { includeLights: false });
-    const group = root.children.find((child) => child.userData.worldObjectId);
+    const first = plan.objects[0];
+    if (!first) throw new Error('expected objects');
+    const group = findNodeObject(root, first.id);
     expect(group).toBeDefined();
-    const id = group?.userData.worldObjectId as string;
+    const id = first.id;
     expect(plan.objects.some((object) => object.id === id)).toBe(true);
     let meshes = 0;
     group?.traverse((child) => {

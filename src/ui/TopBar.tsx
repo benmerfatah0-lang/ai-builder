@@ -16,6 +16,7 @@ interface TopBarProps {
   onUndo: () => void;
   onRedo: () => void;
   onOpenLibrary: () => void;
+  onSaveNow: () => void;
   onNewWorld: () => void;
   onImport: () => void;
   notify: (message: string, tone?: 'neutral' | 'success' | 'danger') => void;
@@ -77,6 +78,7 @@ export function TopBar({
   onUndo,
   onRedo,
   onOpenLibrary,
+  onSaveNow,
   onNewWorld,
   onImport,
   notify,
@@ -141,6 +143,13 @@ export function TopBar({
           />
         </div>
 
+        <IconButton
+          icon="save"
+          label="Save now (Ctrl/Cmd+S)"
+          onClick={onSaveNow}
+          className="hide-mobile"
+        />
+
         <ExportMenu plan={plan} notify={notify} />
 
         <div className="menu-anchor" ref={menuRef}>
@@ -179,6 +188,14 @@ export function TopBar({
               </button>
               <button type="button" className="menu-item" onClick={() => { onImport(); setMenuOpen(false); }}>
                 <Icon name="upload" size={16} /> Import project…
+              </button>
+              <button
+                type="button"
+                className="menu-item"
+                onClick={() => { onSaveNow(); setMenuOpen(false); }}
+              >
+                <Icon name="save" size={16} /> Save now
+                <span className="menu-shortcut">Ctrl S</span>
               </button>
               <div className="menu-divider" />
               <button

@@ -1,4 +1,9 @@
-import { deserializeWorldPlan, serializeWorldPlan } from '../world-plan/migrate';
+import {
+  deserializeWorldPlan,
+  deserializeWorldPlanLenient,
+  serializeWorldPlan,
+  type RepairResult,
+} from '../world-plan/migrate';
 import type { WorldPlan } from '../world-plan/schema';
 
 export const WORLD_FILE_EXTENSION = '.world.json';
@@ -35,4 +40,10 @@ export function downloadWorldPlan(plan: WorldPlan): string {
 export async function readWorldFile(file: File): Promise<WorldPlan> {
   const text = await file.text();
   return deserializeWorldPlan(text);
+}
+
+/** Import path for damaged or partially invalid files; reports what was skipped. */
+export async function readWorldFileLenient(file: File): Promise<RepairResult> {
+  const text = await file.text();
+  return deserializeWorldPlanLenient(text);
 }

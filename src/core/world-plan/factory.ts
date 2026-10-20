@@ -1,4 +1,5 @@
-import type { WorldEnvironment, Terrain, WorldPlan } from '../world-plan/schema';
+import type { Transform, WorldEnvironment, Terrain, WorldPlan } from '../world-plan/schema';
+import { WORLD_PLAN_SCHEMA_VERSION } from '../world-plan/schema';
 import { createId, hashString } from '../utils/id';
 import { mulberry32, intRange } from '../generation/rng';
 
@@ -36,7 +37,7 @@ export function createEmptyWorldPlan(options: CreateWorldOptions = {}): WorldPla
   const now = new Date().toISOString();
   const seed = options.seed ?? randomSeed();
   return {
-    schemaVersion: 1,
+    schemaVersion: WORLD_PLAN_SCHEMA_VERSION,
     id: createId('world'),
     name: options.name?.trim() || 'Untitled World',
     description: options.description ?? '',
@@ -48,15 +49,16 @@ export function createEmptyWorldPlan(options: CreateWorldOptions = {}): WorldPla
       ...DEFAULT_TERRAIN,
       palette: { ...DEFAULT_TERRAIN.palette },
     },
+    groups: [],
     objects: [],
   };
 }
 
-export function createTransform(position: [number, number, number] = [0, 0, 0]) {
+export function createTransform(position: [number, number, number] = [0, 0, 0]): Transform {
   return {
     position,
-    rotationY: 0,
-    scale: [1, 1, 1] as [number, number, number],
+    rotation: [0, 0, 0],
+    scale: [1, 1, 1],
   };
 }
 

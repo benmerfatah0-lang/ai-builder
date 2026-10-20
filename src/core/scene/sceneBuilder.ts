@@ -2,14 +2,19 @@ import * as THREE from 'three';
 import type {
   BuildingObject,
   LanternObject,
+  MaterialSettings,
   PrimitiveObject,
   RockObject,
+  SceneNode,
+  Transform,
   TreeObject,
   WorldEnvironment,
+  WorldGroup,
   WorldObject,
   WorldPlan,
 } from '../../core/world-plan/schema';
 import { createTerrainSampler } from '../../core/generation/terrain';
+import { isEffectivelyVisible } from '../../core/world-plan/hierarchy';
 
 export interface BuildSceneOptions {
   /** Adds sky/sun/hemisphere lights (the viewport needs them; exporters do not). */
@@ -57,6 +62,65 @@ function tagObject(group: THREE.Object3D, object: WorldObject): void {
   group.userData.worldObjectId = object.id;
   group.traverse((child) => {
     child.userData.worldObjectId = object.id;
+  });
+}
+
+function tagGroup(group: THREE.Object3D, node: WorldGroup): void {
+  group.name = node.name;
+  group.userData.worldGroupId = node.id;
+  group.traverse((child) => {
+    child.userData.worldGroupId = node.id;
+  });
+}
+
+/** Apply a node's local TRS to a Three.js object (degrees → radians). */
+export function applyTransform(target: THREE.Object3D, transform: Transform): void {
+  target.position.set(...transform.position);
+  target.rotation.set(
+    THREE.MathUtils.degToRad(transform.rotation[0]),
+    THREE.MathUtils.degToRad(transform.rotation[1]),
+    THREE.MathUtils.degToRad(transform.rotation[2]),
+    'XYZ',
+  );
+  target.scale.set(...transform.scale);
+}
+
+/** Read a Three.js object's local TRS back into a WorldPlan transform. */
+export function readTransform(source: THREE.Object3D): Transform {
+  const round = (value: number) => Math.round(value * 1000) / 1000;
+  return {
+    position: [round(source.position.x), round(source.position.y), round(source.position.z)],
+    rotation: [
+      round(THREE.MathUtils.radToDeg(source.rotation.x)),
+      round(THREE.MathUtils.radToDeg(source.rotation.y)),
+      round(THREE.MathUtils.radToDeg(source.rotation.z)),
+    ],
+    scale: [
+      Math.max(0.05, round(source.scale.x)),
+      Math.max(0.05, round(source.scale.y)),
+      Math.max(0.05, round(source.scale.z)),
+    ],
+  };
+}
+
+/** Override PBR values for every material in an object (shared materials untouched). */
+function applyMaterialSettings(object: THREE.Object3D, settings?: MaterialSettings): void {
+  if (!settings) return;
+  object.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    for (const entry of materials) {
+      if (!(entry instanceof THREE.MeshStandardMaterial)) continue;
+      if (settings.roughness !== undefined) entry.roughness = settings.roughness;
+      if (settings.metalness !== undefined) entry.metalness = settings.metalness;
+      if (
+        settings.emissiveIntensity !== undefined &&
+        entry.emissive !== undefined &&
+        entry.emissive.getHex() !== 0x000000
+      ) {
+        entry.emissiveIntensity = settings.emissiveIntensity;
+      }
+    }
   });
 }
 
@@ -334,10 +398,19 @@ export function createWorldObjectGroup(object: WorldObject, withLight: boolean):
       break;
   }
 
-  group.position.set(...object.transform.position);
-  group.rotation.y = THREE.MathUtils.degToRad(object.transform.rotationY);
-  group.scale.set(...object.transform.scale);
+  applyTransform(group, object.transform);
+  group.visible = object.visible;
+  applyMaterialSettings(group, object.material);
   tagObject(group, object);
+  return group;
+}
+
+/** Build a transform-only container node for a group. */
+export function createWorldGroupObject(node: WorldGroup): THREE.Group {
+  const group = new THREE.Group();
+  applyTransform(group, node.transform);
+  group.visible = node.visible;
+  tagGroup(group, node);
   return group;
 }
 
@@ -393,6 +466,72 @@ export function addEnvironmentLights(
  * exported file matches what the editor shows. Generated content only — no
  * textures, no network assets.
  */
+/**
+ * Blender-style reference grid aligned to the terrain. It is a viewport aid and
+ * is never exported.
+ */
+export function createGrid(plan: WorldPlan): THREE.Group {
+  const size = Math.min(plan.terrain.size, 400);
+  const divisions = Math.max(8, Math.min(120, Math.round(size / 4)));
+  const grid = new THREE.GridHelper(size, divisions, 0x6d7787, 0x3a4048);
+  const gridMaterial = grid.material as THREE.LineBasicMaterial;
+  gridMaterial.transparent = true;
+  gridMaterial.opacity = 0.32;
+  gridMaterial.depthWrite = false;
+  grid.position.y = (plan.terrain.waterLevel ?? 0) + 0.04;
+  grid.renderOrder = 2;
+  grid.name = 'world-grid';
+
+  const container = new THREE.Group();
+  container.name = 'world-grid-container';
+  container.add(grid);
+  return container;
+}
+
+interface BuildContext {
+  includeHidden: boolean;
+  maxPointLights: number;
+  pointLights: number;
+  nodeObjects: Map<string, THREE.Object3D>;
+  root: THREE.Group;
+}
+
+function buildNode(
+  plan: WorldPlan,
+  node: SceneNode,
+  parent: THREE.Object3D,
+  context: BuildContext,
+): void {
+  const effectivelyVisible = isEffectivelyVisible(plan, node.id);
+  if (!context.includeHidden && !effectivelyVisible) return;
+
+  if ('kind' in node) {
+    const withLight = node.kind === 'lantern' && context.pointLights < context.maxPointLights;
+    if (node.kind === 'lantern' && withLight) context.pointLights += 1;
+    const object = createWorldObjectGroup(node, withLight);
+    if (context.includeHidden) object.visible = effectivelyVisible;
+    parent.add(object);
+    context.nodeObjects.set(node.id, object);
+    return;
+  }
+
+  const group = createWorldGroupObject(node);
+  if (context.includeHidden) group.visible = effectivelyVisible;
+  parent.add(group);
+  context.nodeObjects.set(node.id, group);
+
+  for (const child of [...plan.groups, ...plan.objects]) {
+    if (child.parentId === node.id) buildNode(plan, child, group, context);
+  }
+}
+
+/**
+ * Builds the complete editable world as a Three.js graph.
+ *
+ * The viewport and the glTF exporter share this function, which guarantees the
+ * exported file matches what the editor shows. Generated content only — no
+ * textures, no network assets.
+ */
 export function buildWorldScene(plan: WorldPlan, options: BuildSceneOptions = {}): THREE.Group {
   const {
     includeLights = true,
@@ -406,8 +545,7 @@ export function buildWorldScene(plan: WorldPlan, options: BuildSceneOptions = {}
   root.name = 'world-root';
   root.userData.worldId = plan.id;
 
-  const terrain = createTerrainMesh(plan, terrainResolutionCap);
-  root.add(terrain);
+  root.add(createTerrainMesh(plan, terrainResolutionCap));
 
   const water = createWaterMesh(plan);
   if (water) root.add(water);
@@ -420,15 +558,37 @@ export function buildWorldScene(plan: WorldPlan, options: BuildSceneOptions = {}
     }
   }
 
-  let pointLights = 0;
-  for (const object of plan.objects) {
-    if (!includeHidden && !object.visible) continue;
-    const withLight = pointLights < maxPointLights;
-    if (object.kind === 'lantern' && withLight) pointLights += 1;
-    root.add(createWorldObjectGroup(object, withLight));
+  const nodes = new THREE.Group();
+  nodes.name = 'world-nodes';
+  root.add(nodes);
+
+  const context: BuildContext = {
+    includeHidden,
+    maxPointLights,
+    pointLights: 0,
+    nodeObjects: new Map(),
+    root,
+  };
+
+  for (const node of [...plan.groups, ...plan.objects]) {
+    if (node.parentId === null) buildNode(plan, node, nodes, context);
   }
 
+  root.userData.nodeObjects = context.nodeObjects;
   return root;
+}
+
+/** Locate the Object3D that represents a plan node inside a built scene. */
+export function findNodeObject(root: THREE.Object3D, id: string): THREE.Object3D | null {
+  const map = root.userData.nodeObjects as Map<string, THREE.Object3D> | undefined;
+  const mapped = map?.get(id);
+  if (mapped) return mapped;
+  let found: THREE.Object3D | null = null;
+  root.traverse((child) => {
+    if (found) return;
+    if (child.userData.worldObjectId === id || child.userData.worldGroupId === id) found = child;
+  });
+  return found;
 }
 
 /** Release GPU resources for a scene graph (geometries, materials, textures). */
