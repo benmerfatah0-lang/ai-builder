@@ -470,6 +470,13 @@ export function Viewport({
       clearObject3DGroup(lightsGroup);
       clearObject3DGroup(overlayGroup);
       renderer.dispose();
+      // Release the GPU context now instead of waiting for GC: browsers cap the
+      // number of live contexts, and the viewport is recreated on remount.
+      try {
+        renderer.forceContextLoss();
+      } catch {
+        /* ignore: context may already be gone */
+      }
       renderer.domElement.remove();
       runtimeRef.current = null;
       nodeObjectsRef.current = new Map();
