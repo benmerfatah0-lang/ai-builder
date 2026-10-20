@@ -33,9 +33,7 @@ as a project file or a glTF 2.0 model for Godot and Unity.
   values for grouped nodes. Snapping: 0.5 units, 15°, 0.1 scale.
 - **Editor operations** — group, ungroup, duplicate (deep copy with new IDs),
   delete, snap-to-ground, colour and material editing (roughness, metalness,
-  emissive), asset library, undo/redo and keyboard shortcuts
-  (`W/E/R` tools, `G/R/S`, `F` frame, `Ctrl/Cmd+S`, `Ctrl/Cmd+Z`,
-  `Ctrl/Cmd+Shift+Z`, `Ctrl/Cmd+D`, `Ctrl/Cmd+A`, `Delete`, `Esc`).
+  emissive), asset library, undo/redo and keyboard shortcuts (below).
 - **Local saving** — debounced autosave to IndexedDB, manual “Save now”, a
   multi-world library (open, duplicate, delete), in-app status, import/export of
   `.world.json` project files, and a session fallback when IndexedDB is blocked.
@@ -159,6 +157,42 @@ with a generated JSON Schema at
 - Lights, collision and LODs are not exported yet.
 
 **Export → Project file** is the lossless format for re-opening in this editor.
+
+---
+
+## Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `G` / `R` / `S` | Move / Rotate / Scale gizmo |
+| `X` / `Y` / `Z` | Toggle the X / Y / Z gizmo handles |
+| `F` | Frame the selection (or the whole world) |
+| `Ctrl/Cmd+S` | Save now |
+| `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` (or `Ctrl+Y`) | Undo / Redo |
+| `Ctrl/Cmd+G` / `Ctrl/Cmd+Shift+G` | Group / Ungroup selection |
+| `Ctrl/Cmd+D` | Duplicate selection |
+| `Ctrl/Cmd+A` | Select everything |
+| `Delete` / `Backspace` | Delete selection |
+| `Esc` | Clear selection / close the open panel |
+| `Enter` / `Space` / `F2` in the tree | Select / rename a focused node |
+
+On touch devices the same operations are available from the bottom dock, the
+scene tree's per-row buttons and the inspector.
+
+---
+
+## Try the acceptance scenario
+
+1. Open **Assets** and add **Ground plane**, **Cube**, **Pine tree** and **House**.
+2. Select each one in the **Scene** tree (or tap it in the viewport) and use the
+   gizmo — or type exact values in the **Inspect** panel: position, rotation
+   (XYZ degrees) and scale.
+3. Shift-click the tree and house, press **Group** (`Ctrl/Cmd+G`), then move and
+   rotate the group.
+4. Press **Save now** and reload the page: the world is restored from IndexedDB
+   with every transform and hierarchy entry intact.
+5. Repeat the transform steps on Android Chrome to confirm touch orbit,
+   tap selection and the inspector sheet.
 
 ---
 

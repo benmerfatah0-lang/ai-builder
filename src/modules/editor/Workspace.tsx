@@ -351,9 +351,7 @@ export function Workspace() {
       }
       if (modifier && key === 'a') {
         event.preventDefault();
-        const ids = [...state.plan.groups, ...state.plan.objects]
-          .filter((node) => node.parentId === null)
-          .map((node) => node.id);
+        const ids = [...state.plan.groups, ...state.plan.objects].map((node) => node.id);
         dispatch({ type: 'select', ids, mode: 'replace' });
         return;
       }
