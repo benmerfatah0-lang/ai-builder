@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { getObjectColor } from '../../core/world-plan/colors';
 import { createEmptyWorldPlan } from '../../core/world-plan/factory';
 import { createBuilding, createTree } from '../../core/assets/catalog';
 import { mulberry32 } from '../../core/generation/rng';
@@ -33,7 +34,7 @@ describe('editor reducer', () => {
       patch: { name: 'Old Pine', color: '#112233', material: { roughness: 0.4 } },
     });
     expect(renamed.plan.objects[0]?.name).toBe('Old Pine');
-    expect(renamed.plan.objects[0]?.color).toBe('#112233');
+    expect(getObjectColor(renamed.plan.objects[0]!)).toBe('#112233');
     expect(
       renamed.plan.objects[0]?.material?.roughness,
     ).toBeCloseTo(0.4, 3);
@@ -41,6 +42,49 @@ describe('editor reducer', () => {
     const removed = editorReducer(renamed, { type: 'deleteSelection' });
     expect(removed.plan.objects).toHaveLength(0);
     expect(removed.selection).toEqual([]);
+  });
+
+  it('marks edited objects and regenerates them in place', () => {
+    const { state, treeId } = withTree();
+    const edited = editorReducer(state, {
+      type: 'updateObject',
+      id: treeId,
+      patch: { color: '#336644' },
+    });
+    const editedTree = edited.plan.objects[0]!;
+    expect(editedTree.meta.status).toBe('edited');
+    expect(editedTree.meta.geometry).toBe('tree.pine');
+
+    const regenerated = editorReducer(edited, { type: 'regenerateObject', id: treeId });
+    const next = regenerated.plan.objects[0]!;
+    expect(next.id).toBe(treeId);
+    expect(next.transform).toEqual(editedTree.transform);
+    expect(next.meta.status).toBe('generated');
+    expect(next.meta.seed).not.toBe(editedTree.meta.seed);
+
+    const undone = editorReducer(regenerated, { type: 'undo' });
+    expect(undone.plan.objects[0]?.meta.status).toBe('edited');
+  });
+
+  it('regenerates one region and leaves locked nodes untouched', () => {
+    const plan = createEmptyWorldPlan({ seed: 9 });
+    const free = createTree('broadleaf', [0, 0, 0], mulberry32(21));
+    free.meta = { ...free.meta, region: 'landscape', seed: 1 };
+    const locked = createTree('broadleaf', [4, 0, 0], mulberry32(22));
+    locked.meta = { ...locked.meta, region: 'landscape', seed: 2 };
+    locked.locked = true;
+    const elsewhere = createTree('pine', [9, 0, 0], mulberry32(23));
+    elsewhere.meta = { ...elsewhere.meta, region: 'fields', seed: 3 };
+    plan.objects.push(free, locked, elsewhere);
+
+    const state = editorReducer(createInitialEditorState(plan), {
+      type: 'regenerateRegion',
+      region: 'landscape',
+    });
+    expect(state.plan.objects[1]).toBe(locked);
+    expect(state.plan.objects[2]).toBe(elsewhere);
+    expect(state.plan.objects[0]?.meta.seed).not.toBe(1);
+    expect(state.past).toHaveLength(1);
   });
 
   it('supports replace, add and toggle selection modes', () => {
@@ -100,7 +144,7 @@ describe('editor reducer', () => {
     expect(patched.transform.rotation[0]).toBe(1000);
     expect(patched.transform.rotation[1]).toBe(-2000);
     expect(patched.transform.scale[0]).toBe(0.05);
-    expect(patched.color).toBe(tree.color);
+    expect(getObjectColor(patched)).toBe(getObjectColor(tree));
 
     const clamped = editorReducer(state, {
       type: 'setTransform',

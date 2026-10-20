@@ -35,7 +35,7 @@ function legacyV1Document() {
   };
 }
 
-describe('WorldPlan schema v2', () => {
+describe('WorldPlan schema v3', () => {
   it('creates a valid empty plan with groups', () => {
     const plan = createEmptyWorldPlan({ name: 'Test World', seed: 42 });
     const result = validateWorldPlan(plan);
@@ -142,10 +142,10 @@ describe('WorldPlan schema v2', () => {
   });
 });
 
-describe('v1 → v2 migration', () => {
+describe('v1 → v3 migration', () => {
   it('converts rotationY into an XYZ rotation and adds groups/parents', () => {
     const migrated = parseWorldPlan(legacyV1Document());
-    expect(migrated.schemaVersion).toBe(2);
+    expect(migrated.schemaVersion).toBe(WORLD_PLAN_SCHEMA_VERSION);
     expect(migrated.groups).toEqual([]);
     expect(migrated.objects).toHaveLength(1);
     expect(migrated.objects[0]?.transform.rotation).toEqual([0, 90, 0]);
@@ -157,6 +157,34 @@ describe('v1 → v2 migration', () => {
     const migrated = parseWorldPlan(legacyV1Document());
     const restored = deserializeWorldPlan(serializeWorldPlan(migrated));
     expect(restored).toEqual(migrated);
+  });
+});
+
+describe('v2 → v3 migration', () => {
+  it('adds generation metadata to every legacy object', () => {
+    const plan = createEmptyWorldPlan({ name: 'Legacy farm' });
+    const tree = createTree('broadleaf', [2, 0, -1], mulberry32(11));
+    const { meta: _meta, ...treeWithoutMeta } = tree;
+    const legacy = {
+      ...plan,
+      schemaVersion: 2,
+      objects: [treeWithoutMeta],
+    };
+
+    const migrated = parseWorldPlan(legacy);
+    expect(migrated.schemaVersion).toBe(3);
+    const object = migrated.objects[0];
+    expect(object?.meta).toBeDefined();
+    expect(object?.meta.category).toBe('vegetation');
+    expect(object?.meta.geometry).toBe('tree.broadleaf');
+    expect(object?.meta.source).toBe('library');
+    expect(object?.meta.status).toBe('edited');
+    expect(object?.meta.dimensions.every((value) => value > 0)).toBe(true);
+  });
+
+  it('keeps v1 documents on the same path', () => {
+    const migrated = parseWorldPlan(legacyV1Document());
+    expect(migrated.objects[0]?.meta.geometry).toBe('tree.pine');
   });
 });
 

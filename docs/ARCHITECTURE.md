@@ -1,4 +1,4 @@
-# AI World Builder — Architecture Report (Phase 1 + Phase 2)
+# AI World Builder — Architecture Report (Phase 1 + Phase 2 + Phase 3)
 
 **Date:** 2026-10-20
 **Branch:** `arena/98b7682d-ai-builder`
@@ -74,13 +74,13 @@ application at runtime.
                                 │
                                 ▼
                 ┌────────────────────────────────────────────────┐
-                │ Procedural generator (seeded, deterministic)   │
-                │ terrain sampler · scatter · village placement  │
+                │ Planner (seeded, deterministic)                │
+                │ farm layout · scatter · collision ledger       │
                 └───────────────┬────────────────────────────────┘
                                 │
                                 ▼
                 ┌────────────────────────────────────────────────┐
-                │        WorldPlan v1 (Zod schema + types)       │
+                │        WorldPlan v3 (Zod schema + types)       │
                 └───────┬───────────────────────────┬────────────┘
                         │                           │
           ┌─────────────▼────────────┐   ┌──────────▼───────────────┐
@@ -91,8 +91,12 @@ application at runtime.
                         │                           │
                         ▼                           ▼
           ┌────────────────────────────────────────────────────────┐
+          │ Validate + repair (schema → semantics → recovery)      │
+          └───────────────┬────────────────────────────────────────┘
+                          ▼
+          ┌────────────────────────────────────────────────────────┐
           │ Shared scene builder (pure Three.js, no DOM/network)   │
-          │ terrain mesh · water · archetype geometry · lights      │
+          │ terrain · paths · fields (instanced) · buildings        │
           └───────────────┬───────────────────────┬────────────────┘
                           │                       │
                           ▼                       ▼
@@ -107,11 +111,13 @@ application at runtime.
 | World plan | `src/core/world-plan/schema.ts`, `factory.ts`, `migrate.ts` | Versioned Zod schema, factories, validation, migrations, serialisation. |
 | Hierarchy | `src/core/world-plan/hierarchy.ts` | Groups, parents, world transforms, visibility/lock inheritance, reparent/group/ungroup/duplicate as pure functions. |
 | Transform math | `src/core/world-plan/transformMath.ts` | Matrix compose/decompose and parent-relative conversion (degrees ↔ radians at the edge). |
-| Generation | `src/core/generation/` | Seeded RNG, terrain sampling, biome profiles, deterministic world assembly, first-run starter. |
-| Assets | `src/core/assets/catalog.ts` | Asset library descriptors and archetype factories. |
+| Generation | `src/core/generation/` | Seeded RNG, terrain sampling, biome profiles, scatter generator, structured farm planner, placement ledger, per-object/region regeneration. |
+| Validation | `src/core/world-plan/validateScene.ts`, `geometry.ts` | Semantic checks (bounds, overlaps, dependencies, unsupported geometry) and safe repair. |
+| Assets | `src/core/assets/catalog.ts`, `structures.ts` | Asset-library descriptors plus factories for barns, coops, silos, paths, fences, fields, rivers and bridges. |
+| Object colours | `src/core/world-plan/colors.ts` | Primary/secondary colour accessors shared by the inspector and reducer. |
 | Persistence | `src/core/persistence/` | IndexedDB/memory repositories, `.world.json` file import/export. |
 | Export | `src/core/export/gltf.ts` | Binary glTF export + export target metadata. |
-| Scene builder | `src/core/scene/sceneBuilder.ts` | Pure Three.js geometry/lights shared by viewport and exporter. |
+| Scene builder | `src/core/scene/sceneBuilder.ts`, `kit.ts`, `proceduralObjects.ts` | Pure Three.js geometry/lights shared by viewport and exporter; ribbons, fences, instanced crops and barn/coop builders. |
 | Renderer | `src/core/scene/renderer.ts` | WebGL 2 context creation with fallbacks, GPU capability profile, PNG capture. |
 | Sky | `src/core/scene/sky.ts` | Procedural GLSL sky dome (gradient + sun) driven by the environment. |
 | Water | `src/core/scene/water.ts` | Viewport-only animated ripple injected into the PBR water shader. |
@@ -183,7 +189,7 @@ risks).
 
 ---
 
-## 5. WorldPlan v2 schema
+## 5. WorldPlan v3 schema
 
 Defined in `src/core/world-plan/schema.ts`; reference and example in
 [`docs/WORLDPLAN.md`](./WORLDPLAN.md). Generated JSON Schema:
@@ -193,7 +199,7 @@ Top level:
 
 ```ts
 {
-  schemaVersion: 2,
+  schemaVersion: 3,
   id, name, description, seed, createdAt, updatedAt,
   environment: { skyColor, fogColor, fogDensity, sunColor,
                  sunAzimuth, sunElevation, sunIntensity, ambientIntensity },
@@ -204,20 +210,79 @@ Top level:
 ```
 
 Every node carries `id`, `name`, `parentId`, `visible`, `locked` and a local
-`transform` (`position`, `rotation` in XYZ degrees, `scale`). Objects add a `kind`
-discriminant (`primitive`, `tree`, `rock`, `building`, `lantern`) plus kind-specific
-fields and an optional `material` (`roughness`, `metalness`, `emissiveIntensity`).
+`transform` (`position`, `rotation` in XYZ degrees, `scale`). Every drawable
+object also carries required `meta`:
+
+```ts
+meta: {
+  category: 'structure' | 'vegetation' | 'rock' | 'prop' | 'field' | 'path' | 'water' | 'fence' | 'terrain',
+  geometry: string,              // e.g. 'building.barn', 'field.wheat'
+  dimensions: [w, h, d],         // base size before transform
+  source: 'procedural' | 'library' | 'manual',
+  status: 'generated' | 'edited',
+  role?, seed?, region?,
+  placement?: { anchor, avoidOverlap },
+  collision?: { shape: 'box' | 'none', blocking: boolean }
+}
+```
+
+The `kind` discriminant now covers `primitive`, `tree` (incl. `bush`), `rock`,
+`building` (incl. `barn`, `coop`), `lantern`, `path`, `river`, `fence`, `field`
+and `bridge`. Polyline kinds store 2–64 local points; the scene builder samples
+them into terrain-following ribbons/posts. Objects still carry an optional
+`material` override.
 
 Versioning policy:
 
-- `WORLD_PLAN_SCHEMA_VERSION = 2`.
+- `WORLD_PLAN_SCHEMA_VERSION = 3`.
 - Missing/unknown/newer versions produce explicit errors.
-- `MIGRATIONS` is keyed by source version; v2 adds `migrateV1ToV2`
-  (`rotationY` → `[0, y, 0]`, `parentId: null`, `groups: []`). The loader runs
-  migrations before validation and strips unknown fields.
-- New optional fields can remain inside v2; breaking changes require a new version.
+- `MIGRATIONS` is keyed by source version: `migrateV1ToV2` (`rotationY` →
+  `[0, y, 0]`, `parentId: null`, `groups: []`) and `migrateV2ToV3` (adds `meta`
+  inferred from each legacy object; marks them `library` / `edited`).
+- New optional fields can remain inside v3; breaking changes require a new version.
 - `checkHierarchyIntegrity` rejects duplicate IDs, dangling parents, object
   parents, cycles and over-deep nesting before anything is saved.
+
+## 5b. Prompt → world pipeline (Phase 3)
+
+```
+prompt
+  → localPromptInterpreter (biome · style · scale · density · farm features · seed)
+  → generateWorldPlanWithReport(intent)
+       ├─ intent.features.farm ? generateFarmPlan(...) : scatter generator
+       └─ validateScenePlan(plan) → warnings/errors
+  → editor.replacePlan / save
+```
+
+The **farm planner** (`src/core/generation/farm.ts`) authors a yard in local
+metres, mirrors it by seed, and places content in dependency order:
+buildings → fields → lanes → fences → water → vegetation → props. It keeps a
+uniform-grid `PlacementLedger` (`src/core/generation/placement.ts`) of rotated
+bounding footprints, so buildings/fields never intersect, trees clear lanes and
+yards, and the bridge only appears when a river exists. Long lanes are resampled
+every 4 m and their ribbon vertices take terrain heights, so paths follow hills.
+Every object records `meta.region` (`farmstead`, `fields`, `paths`, `boundary`,
+`landscape`, `water`), which powers regional regeneration.
+
+The **scatter generator** remains for biome prompts (forests, deserts, islands,
+ruins). Both return the same WorldPlan v3 contract.
+
+**Validation before execution**: schema + hierarchy, then semantic checks for
+unsupported geometry ids, objects outside the terrain, floating/buried solids,
+solid overlaps, bridges without rivers and near-limit object counts. Blocking
+errors stop generation; warnings are surfaced in the AI panel. `repairScenePlan`
+drops unbuildable objects and reseats floating ones for imported documents.
+
+**Regeneration**: `regenerateObjectInPlan` re-rolls one object's variation while
+preserving id, name, parent and transform; `regenerateRegion` does the same for a
+region and skips locked objects. The reducer commits both as single undo steps.
+The viewport diffs the plan against its built Three.js graph and rebuilds only
+changed subtrees, so regeneration is local in the scene graph too.
+
+**Instancing**: crop stalks per field are one `InstancedMesh` (≤1400 instances),
+path pebbles are instanced, and each building is built from merged/primitives —
+a 100-object farm renders in a handful of draw calls per object instead of
+thousands of meshes.
 
 ---
 
@@ -308,40 +373,43 @@ Commands run on this branch:
 
 ```
 npm run typecheck   # tsc --noEmit, strict — clean
-npm test            # 87 tests in 11 files — all passed
+npm test            # 113 tests in 13 files — all passed
 npm run build       # tsc + vite build — success
 npm run schema:export
 npm run dev         # HTTP 200 via preview proxy host
 npm run preview     # production build served, all chunks HTTP 200
 ```
 
-**Tests (87/87 passing):**
+**Tests (113/113 passing):**
 
 | Area | Tests | What is covered |
 | --- | --- | --- |
-| Schema / versioning / repair | 13 | v2 validation, duplicate IDs, dangling parents, cycles, unknown kinds, v1→v2 migration, lenient repair |
+| Schema / versioning / repair | 15 | v3 validation, duplicate IDs, dangling parents, cycles, unknown kinds, v1→v2→v3 migration, meta inference, lenient repair |
 | Generation / interpreter / terrain | 16 | determinism, biome detection, water percentile, clamping |
+| Farm planner / validation / regeneration | 16 | farm prompt features, structures, grounding, non-overlap, path connectivity, lane/crop separation, field fencing, lanterns, determinism, river+bridge, unsupported geometry, floating repair, object/region regeneration |
+| Procedural scene graph | 5 | every farm object builds meshes, barn/coop silhouettes grounded, instanced crops, path/fence/river/bridge geometry, transform parity |
 | Persistence / file format | 6 | IndexedDB CRUD and sort order, invalid-plan rejection, lossless JSON |
 | Scene builder + GLB export | 11 | transform bridge, hierarchy nesting, visibility inheritance, grid, materials, real binary GLB |
 | Hierarchy + transform math | 15 | group/ungroup/reparent world-preserving semantics, duplicate remapping, matrix round-trip |
-| Editor reducer | 12 | selection modes, undo/redo, grouping history, locked nodes, clamping |
+| Editor reducer | 15 | selection modes, undo/redo, grouping history, locked nodes, clamping, colour channels |
 | Gizmo integration | 2 | TransformControls/OrbitControls mode, space, snap, axis constraints, attach/detach, touch config |
 | WebGL bootstrap | 6 | context-failure error, sky shader/uniforms, camera-following dome, water-shader injection |
-| DOM runtime | 4 | boot + generation + undo; full desktop acceptance workflow; reload restores the last world; mobile dock, sheet and axis controls |
+| DOM runtime | 5 | boot + generation + undo; desktop acceptance workflow; **farm generate → edit two objects → regenerate → save → reopen**; reload restores the last world; mobile dock, sheet and axis controls |
 | **End-to-end acceptance** | 1 | ground plane + cube + tree + house → edit → group → save to IndexedDB → reload → verify document **and** rendered scene graph |
 
 **Build output:**
 
 | Asset | Size | Gzip |
 | --- | --- | --- |
-| `index-*.js` | 381.42 kB | 115.76 kB |
-| `three-vendor-*.js` | 546.06 kB | 137.43 kB |
+| `index-*.js` | 433.07 kB | 132.33 kB |
+| `three-vendor-*.js` | 549.21 kB | 138.22 kB |
 | `validation-*.js` (Zod) | 92.54 kB | 26.39 kB |
 | `react-vendor-*.js` | 11.88 kB | 4.20 kB |
-| `GLTFExporter-*.js` (lazy) | 37.47 kB | 11.14 kB |
-| `index-*.css` | 36.92 kB | 7.66 kB |
+| `GLTFExporter-*.js` (lazy) | 37.48 kB | 11.14 kB |
+| `index-*.css` | 37.38 kB | 7.77 kB |
 
-Initial payload is roughly 291 kB gzipped, with the exporter deferred.
+Initial payload is roughly 309 kB gzipped, with the exporter deferred. Farm
+planning/geometry adds ~16 kB gzip to the main chunk versus Phase 2.
 
 **Runtime checks:**
 
@@ -349,6 +417,13 @@ Initial payload is roughly 291 kB gzipped, with the exporter deferred.
   JS chunks, including with a proxied `*.e2b.app` Host header (no host rejection,
   no `X-Frame-Options`).
 - happy-dom runtime boot, asset add, AI generation, undo and autosave all passed.
+- The Phase 3 UI acceptance test prompts the exact farm brief, verifies the
+  generated hierarchy (Farmstead, Barn, Farmhouse, Chicken coop, Wheat field),
+  moves and rotates the farmhouse, regenerates the barn, saves, reopens from the
+  world library and re-checks the edited transform and surviving farm content.
+- Generator tests verify determinism, grounded buildings, non-intersecting solid
+  footprints, path connectivity, and that the object/region regeneration paths
+  preserve identity and placement.
 - The full acceptance scenario runs through the real UI (add ground plane, cube,
   tree, house → select each → numeric move/rotate/scale → rename → group → save →
   reopen from the world library) and asserts the reloaded hierarchy.
@@ -423,6 +498,44 @@ src/ui/useIsMobile.ts
 
 Approximately 6,400 lines of TypeScript/TSX plus 2,350 lines of CSS and 800 lines of documentation.
 
+### Phase 3 additions
+
+New files:
+
+```
+src/core/world-plan/objectMeta.ts          # meta builders + legacy inference
+src/core/world-plan/geometry.ts            # supported geometry registry
+src/core/world-plan/colors.ts              # primary/secondary colour accessors
+src/core/world-plan/validateScene.ts       # semantic validation + safe repair
+src/core/generation/placement.ts           # spatial grid + rotated footprints
+src/core/generation/farm.ts                # structured farm planner (yard, fields, fences, water)
+src/core/generation/regenerate.ts          # per-object and per-region regeneration
+src/core/assets/structures.ts              # barn/coop/silo/path/fence/field/river/bridge factories
+src/core/scene/kit.ts                      # shared materials, meshes, ribbons, polyline sampling
+src/core/scene/proceduralObjects.ts        # barn, coop, bush, path, river, fence, field, bridge geometry
+src/core/generation/farm.test.ts
+src/core/scene/proceduralScene.test.ts
+```
+
+Substantially extended:
+
+```
+src/core/world-plan/schema.ts              # v3: meta, new kinds/variants, path/river/fence/field/bridge
+src/core/world-plan/migrate.ts             # v2→v3 migration
+src/core/assets/catalog.ts                 # meta on every asset; bush/barn/coop/dirt path/fence/field/bridge
+src/core/generation/generateWorld.ts       # generation report + farm routing + semantic validation
+src/core/scene/sceneBuilder.ts             # new kind switch, house plinth, shared kit
+src/modules/ai/promptInterpreter.ts        # farm features, style/density detection
+src/modules/ai/types.ts                    # FarmFeatures, WorldStyle, WorldDensity
+src/modules/editor/store.tsx               # edited status, regenerate object/region actions
+src/modules/editor/Viewport.tsx            # plan↔scene diffing (rebuild only changed nodes)
+src/modules/editor/panels/InspectorPanel.tsx  # "Generated" section + regeneration buttons
+src/modules/editor/panels/AiPanel.tsx      # farm examples, stats, validation warnings
+src/ui/Icon.tsx                            # path/water/fence/field/bridge icons
+src/styles/global.css                      # planner warning styles
+docs/WORLDPLAN.md, docs/worldplan.schema.json, README.md
+```
+
 ### Phase 2 additions
 
 New files:
@@ -496,8 +609,8 @@ Notable implementation decisions:
 | Risk | Impact | Mitigation / next step |
 | --- | --- | --- |
 | No real GPU/browser test in this sandbox | Viewport visuals, shadows, touch orbit untested on real hardware | Run Playwright with Chromium + Android Chrome/manual device QA; add screenshot tests |
-| Full object rebuild on any object change | Slider drags / large worlds may stutter, especially on phones | Dirty-object updates, `InstancedMesh`, geometry merging, LODs |
-| Many draw calls at high object counts | Mobile frame rate falls | Instancing/merging; adaptive quality; lower point-light/shadow budgets |
+| Object edits rebuild a subtree | Regenerating a large group still rebuilds its members | The viewport diffs by node identity and only rebuilds changed nodes; regions are coarse by design |
+| Many draw calls in dense farms | Mobile frame rate falls | Instanced crops/pebbles, merged geometry, adaptive quality; farm briefs stay near 100 objects |
 | Terrain edits don't move existing objects | Objects can float or sink after reshaping | Add terrain-wide re-snap + a terrain height-change transaction |
 | Gizmo rendering untested on real hardware | Handle sizes/overlap on high-DPI phones unverified | Real-device QA; per-device `setSize` tuning |
 | Custom GLSL cannot be compiled in this sandbox | A shader syntax/API change could degrade sky or water on a real GPU | Shaders kept small and GLSL ES 1.00; sky failure still leaves the flat scene background; verify on device |
@@ -505,7 +618,7 @@ Notable implementation decisions:
 | Adaptive resolution lowers quality on slow devices | Blurrier image instead of stutter | Only steps down when FPS < 28 for 1.5 s; never oscillates |
 | Numeric rotation edits create one history entry per keystroke | Undo may step through intermediate values | Coalesce history per field edit session |
 | Shadows on large scenes | Mobile GPU cost with 1500 casters | Shadow camera fit, culling, lower shadow resolution on mobile |
-| Rule-based interpreter, limited vocabulary | "AI" expectations may exceed actual capability | Add optional local LLM provider (WebLLM/Ollama) behind `PromptInterpreter`; keep offline fallback |
+| Rule-based interpreter, limited vocabulary | "AI" expectations may exceed actual capability | Farm grammar covers structures/relations; add optional local LLM provider behind `PromptInterpreter` |
 | Autosave debounce 650 ms | A hard close within that window can lose the last edit | Flush on pagehide/visibilitychange; save-blocked UX; export reminders |
 | Browser storage eviction / private mode | Worlds can disappear | Memory fallback warning; project file export; future File System Access backup |
 | Import preserves IDs | Re-import can overwrite an existing library entry | Import-as-copy / ID remap option |
@@ -528,10 +641,11 @@ Notable implementation decisions:
    snapping, grouping, hierarchy and the inspector shipped in Phase 2.)
 3. **Performance pass** — dirty updates, instancing/merging, adaptive shadow and
    pixel-ratio budgets; profile with 500+ objects.
-4. **Generation depth** — rivers/roads, clustering, terrain sculpting, biome
-   blending, regenerate-in-place from stored intent + seed.
+4. **Generation depth** — terrain sculpting (flatten a building pad), biome
+   blending, richer crop varieties, larger settlements with road graphs.
 5. **AI expansion** — optional local-LLM provider with schema-constrained output,
-   prompt history and conversational edits; no paid API requirement.
+   prompt history and conversational edits; no paid API requirement. The current
+   planner is a deterministic grammar, not an LLM.
 6. **Asset pipeline** — more archetypes, material presets, optional user glTF
    asset import, thumbnails and a searchable library.
 7. **Engine exports** — glTF lights, collider metadata, Godot scene/import
@@ -542,7 +656,8 @@ Notable implementation decisions:
    performance budgets and CI workflow.
 10. **PWA** — manifest + service worker for installable offline use.
 
-Phase 2 is intentionally limited to an editor that can be verified: every
-transform operation, group operation and save/reopen path is covered by tests.
-No placeholder buttons, mock exports or simulated AI results were shipped, and
-Phase 3 has not been started (it is gated on desktop + Android acceptance).
+Phases 1–3 are implemented and verified in-sandbox: transforms, grouping,
+save/reopen, the farm planner, semantic validation, regeneration and the full
+prompt → plan → scene pipeline. No placeholder buttons, mock exports or simulated
+AI results were shipped. The remaining gate is real-browser/Android visual QA,
+which this sandbox cannot perform (no GPU/WebGL), plus the polish items above.

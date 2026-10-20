@@ -71,6 +71,7 @@ export function touchWorld(plan: WorldPlan, now = new Date().toISOString()): Wor
   return { ...plan, updatedAt: now };
 }
 
+/** Object counts keyed by kind (`tree`, `building`, …) plus `total`. */
 export function countObjects(plan: WorldPlan): Record<string, number> {
   const counts: Record<string, number> = { total: plan.objects.length };
   for (const object of plan.objects) {

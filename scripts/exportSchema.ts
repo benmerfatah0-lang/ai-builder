@@ -21,10 +21,10 @@ const jsonSchema = z.toJSONSchema(worldPlanSchema, {
 
 const document = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
-  $id: 'https://ai-world-builder.local/schemas/worldplan-v1.json',
-  title: 'AI World Builder — WorldPlan v1',
+  $id: 'https://ai-world-builder.local/schemas/worldplan-v3.json',
+  title: 'AI World Builder — WorldPlan v3',
   description:
-    'Versioned world document produced by AI World Builder. Schema version 1.',
+    'Versioned world document produced by AI World Builder. Schema version 3.',
   ...jsonSchema,
 };
 

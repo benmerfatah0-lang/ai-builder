@@ -11,7 +11,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "schema:export": "tsx scripts/exportSchema.ts"
+    "schema:export": "tsx scripts/exportSchema.ts",
+    "render:preview": "tsx scripts/renderPreview.ts",
+    "site": "node website/server.mjs",
+    "site:demo": "esbuild website/src/demo.ts --bundle --minify --format=esm --target=es2020 --legal-comments=none --outfile=website/public/demo.js",
+    "site:demo:watch": "esbuild website/src/demo.ts --bundle --format=esm --target=es2020 --outfile=website/public/demo.js --watch",
+    "site:app": "tsc --noEmit && vite build --base=/app/ --outDir=website/public/app --emptyOutDir",
+    "site:build": "npm run site:demo && npm run site:app"
   },
   "dependencies": {
     "react": "^19.3.1",

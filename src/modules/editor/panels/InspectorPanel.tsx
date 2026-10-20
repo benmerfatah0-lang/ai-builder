@@ -3,12 +3,18 @@ import { countObjects } from '../../../core/world-plan/factory';
 import {
   getAncestors,
   getNode,
+  getSubtreeIds,
   isEffectivelyLocked,
   worldTransformOf,
 } from '../../../core/world-plan/hierarchy';
 import { isGroup, type Transform } from '../../../core/world-plan/schema';
 import { useEditor } from '../store';
 import { Icon } from '../../../ui/Icon';
+import {
+  getObjectColor,
+  getObjectSecondaryColor,
+  secondaryColorLabel,
+} from '../../../core/world-plan/colors';
 import {
   Badge,
   ColorField,
@@ -57,11 +63,11 @@ function EmptyInspector() {
             <span className="stat-label">Groups</span>
           </div>
           <div className="stat">
-            <span className="stat-value">{counts.trees ?? 0}</span>
+            <span className="stat-value">{counts.tree ?? 0}</span>
             <span className="stat-label">Trees</span>
           </div>
           <div className="stat">
-            <span className="stat-value">{counts.buildings ?? 0}</span>
+            <span className="stat-value">{counts.building ?? 0}</span>
             <span className="stat-label">Buildings</span>
           </div>
         </div>
@@ -172,11 +178,15 @@ function MultiInspector() {
 function ParentSelect({ id }: { id: string }) {
   const { state, dispatch } = useEditor();
   const { plan } = state;
-  const ancestors = getAncestors(plan, id).map((node) => node.id);
+  // A node can move to any group except itself and its own descendants (which
+  // would create a cycle). Ancestors are valid targets: moving a child out to a
+  // grandparent is a legitimate reparent, and the current parent must always be
+  // listed or the select would render the wrong option.
+  const blocked = new Set(getSubtreeIds(plan, id));
   const options = [
     { value: '__root__', label: 'World root' },
     ...plan.groups
-      .filter((group) => group.id !== id && !ancestors.includes(group.id))
+      .filter((group) => !blocked.has(group.id))
       .map((group) => ({ value: group.id, label: group.name })),
   ];
   const node = getNode(plan, id);
@@ -276,7 +286,13 @@ function TransformSection({ id, transform, disabled }: { id: string; transform: 
   );
 }
 
-export function InspectorPanel({ onDeleted }: { onDeleted?: () => void }) {
+export function InspectorPanel({
+  onDeleted,
+  notify,
+}: {
+  onDeleted?: () => void;
+  notify?: (message: string, tone?: 'neutral' | 'success' | 'danger') => void;
+}) {
   const { state, dispatch } = useEditor();
   const { plan, selection } = state;
 
@@ -288,6 +304,9 @@ export function InspectorPanel({ onDeleted }: { onDeleted?: () => void }) {
 
   const groupNode = isGroup(node);
   const locked = isEffectivelyLocked(plan, id);
+  const secondaryLabel = groupNode ? null : secondaryColorLabel(node);
+  const secondaryColor = groupNode ? null : getObjectSecondaryColor(node);
+
   const worldTransform = worldTransformOf(plan, id);
   const parents = getAncestors(plan, id);
   const children = [...plan.groups, ...plan.objects].filter((entry) => entry.parentId === id);
@@ -365,27 +384,75 @@ export function InspectorPanel({ onDeleted }: { onDeleted?: () => void }) {
       </Section>
 
       {!groupNode && (
+        <Section title="Generated" icon="sparkles" defaultOpen={false}>
+          <div className="kv-row">
+            <span>Geometry</span>
+            <strong className="mono small">{node.meta.geometry}</strong>
+          </div>
+          <div className="kv-row">
+            <span>Source</span>
+            <strong>
+              {node.meta.source === 'procedural' ? 'Procedural' : node.meta.source === 'library' ? 'Library' : 'Manual'} · {node.meta.status}
+            </strong>
+          </div>
+          <div className="kv-row">
+            <span>Region</span>
+            <strong>{node.meta.region ?? '—'}</strong>
+          </div>
+          <div className="kv-row">
+            <span>Variation seed</span>
+            <span className="mono small">{node.meta.seed ?? '—'}</span>
+          </div>
+          <div className="inspector-button-row">
+            <button
+              type="button"
+              className="btn btn-small"
+              disabled={locked}
+              onClick={() => {
+                dispatch({ type: 'regenerateObject', id });
+                notify?.(`Regenerated “${node.name}”.`, 'success');
+              }}
+            >
+              <Icon name="sparkles" size={14} /> Regenerate
+            </button>
+            <button
+              type="button"
+              className="btn btn-small"
+              disabled={locked || !node.meta.region}
+              title={
+                node.meta.region
+                  ? `Regenerate every object in “${node.meta.region}”`
+                  : 'This object has no generation region'
+              }
+              onClick={() => {
+                if (!node.meta.region) return;
+                dispatch({ type: 'regenerateRegion', region: node.meta.region });
+                notify?.(`Regenerated region “${node.meta.region}”.`, 'success');
+              }}
+            >
+              <Icon name="layers" size={14} /> Region
+            </button>
+          </div>
+          <p className="hint-text">
+            Regeneration re-rolls this object’s variation in place. Your transform and hierarchy
+            stay exactly as they are.
+          </p>
+        </Section>
+      )}
+
+      {!groupNode && (
         <Section title="Material" icon="sliders">
           <ColorField
             label="Base color"
-            value={node.color}
+            value={getObjectColor(node)}
             onChange={(color) => dispatch({ type: 'updateObject', id, patch: { color } })}
           />
-          {node.kind === 'tree' && (
+          {secondaryLabel && secondaryColor && (
             <ColorField
-              label="Trunk"
-              value={node.trunkColor}
-              onChange={(trunkColor) =>
-                dispatch({ type: 'updateObject', id, patch: { trunkColor } })
-              }
-            />
-          )}
-          {node.kind === 'building' && (
-            <ColorField
-              label="Roof"
-              value={node.roofColor}
-              onChange={(roofColor) =>
-                dispatch({ type: 'updateObject', id, patch: { roofColor } })
+              label={secondaryLabel}
+              value={secondaryColor}
+              onChange={(secondaryColor) =>
+                dispatch({ type: 'updateObject', id, patch: { secondaryColor } })
               }
             />
           )}

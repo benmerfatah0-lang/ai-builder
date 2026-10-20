@@ -1,3 +1,4 @@
+import { inferMetaForObject } from './objectMeta';
 import {
   WORLD_PLAN_SCHEMA_VERSION,
   checkHierarchyIntegrity,
@@ -57,9 +58,27 @@ const migrateV1ToV2: Migration = (input) => {
   };
 };
 
+/**
+ * v2 → v3: every drawable object gains generation metadata. Legacy objects are
+ * considered library assets with `status: 'edited'`, so regeneration never
+ * silently replaces hand-edited content.
+ */
+const migrateV2ToV3: Migration = (input) => {
+  const rawObjects = Array.isArray(input.objects) ? input.objects : [];
+  const objects = rawObjects.map((entry) => {
+    if (typeof entry !== 'object' || entry === null) return entry;
+    const object = entry as Record<string, unknown>;
+    const meta = object.meta ?? inferMetaForObject(object as never);
+    return { ...object, meta };
+  });
+
+  return { ...input, schemaVersion: 3, objects };
+};
+
 /** Registered upgrades keyed by the version they migrate FROM. */
 const MIGRATIONS: Record<number, Migration> = {
   1: migrateV1ToV2,
+  2: migrateV2ToV3,
 };
 
 function readVersion(input: unknown): number | null {

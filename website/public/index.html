@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>AI World Builder — prompt to editable 3D world, entirely in your browser</title>
+    <script>
+      // Reveal-on-scroll is progressive enhancement: without this flag every
+      // section stays visible for no-JS visitors, crawlers and print.
+      document.documentElement.classList.add('js');
+    </script>
+    <meta
+      name="description"
+      content="AI World Builder turns a sentence into a structured, validated, editable low-poly 3D world. Runs entirely in the browser — no paid AI APIs, no API keys, no uploads."
+    />
+    <meta name="theme-color" content="#0b0f14" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <meta property="og:title" content="AI World Builder" />
+    <meta
+      property="og:description"
+      content="Describe a world. Get a validated, editable low-poly scene you can orbit, edit, save and export. Zero paid APIs."
+    />
+    <meta property="og:image" content="/img/farm-hero.png" />
+    <meta property="og:type" content="website" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header" id="top">
+      <div class="wrap header-inner">
+        <a class="brand" href="#top" aria-label="AI World Builder home">
+          <svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true">
+            <path d="M20 3 35 11.5v17L20 37 5 28.5v-17Z" fill="none" stroke="currentColor" stroke-width="2" />
+            <path d="M20 3v34M5 11.5 20 20l15-8.5" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".55" />
+            <path d="M20 13.5 26 17v6l-6 3.5-6-3.5v-6Z" fill="currentColor" opacity=".9" />
+          </svg>
+          <span>AI World Builder</span>
+        </a>
+
+        <nav class="nav" id="nav" aria-label="Primary">
+          <a href="#pipeline">Pipeline</a>
+          <a href="#playground">Playground</a>
+          <a href="#farm">Farm</a>
+          <a href="#editor">Editor</a>
+          <a href="#engineering">Engineering</a>
+          <a href="#run">Run it</a>
+          <a class="nav-docs" href="https://github.com/benmerfatah0-lang/ai-builder" target="_blank" rel="noreferrer">GitHub ↗</a>
+        </nav>
+
+        <div class="header-actions">
+          <a class="btn btn-primary btn-sm" href="/app/">Open the editor</a>
+          <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="nav" aria-label="Toggle navigation">
+            <span></span><span></span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- ------------------------------------------------------------ hero -->
+      <section class="hero">
+        <div class="hero-glow" aria-hidden="true"></div>
+        <div class="wrap hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow"><span class="dot" aria-hidden="true"></span> Phase 3 · prompt → world pipeline</p>
+            <h1>Describe a world.<br /><em>Then shape it.</em></h1>
+            <p class="lede">
+              A sentence becomes a <strong>WorldPlan</strong>: validated JSON describing terrain, buildings,
+              fields, lanes, fences and trees. The editor turns that plan into a real Three.js scene you can
+              orbit, edit object by object, save, and export — with no paid AI service anywhere in the loop.
+            </p>
+            <div class="cta-row">
+              <a class="btn btn-primary" href="/app/">Open the editor <span aria-hidden="true">→</span></a>
+              <a class="btn btn-ghost" href="#playground">Try the generator</a>
+            </div>
+            <ul class="hero-chips" aria-label="Key facts">
+              <li>0 API keys</li>
+              <li>WorldPlan JSON v3</li>
+              <li>113 automated tests</li>
+              <li>Desktop + Android</li>
+            </ul>
+          </div>
+
+          <figure class="hero-shot reveal">
+            <img
+              src="/img/farm-hero.png"
+              width="1200"
+              height="750"
+              alt="A low-poly farm with a farmhouse, red barn, fenced wheat fields, dirt lanes and trees, seen from above at an angle."
+            />
+            <figcaption>
+              <span class="badge">Live plan · seed 20261020</span>
+              <span>The exact farm from the acceptance brief, rendered from the scene graph the editor builds.</span>
+            </figcaption>
+          </figure>
+        </div>
+
+        <div class="wrap stats-strip" aria-label="Project statistics">
+          <div><strong>180</strong><span>objects in the sample farm</span></div>
+          <div><strong>28</strong><span>procedural geometry types</span></div>
+          <div><strong>≈6 ms</strong><span>to plan + validate a farm</span></div>
+          <div><strong>113</strong><span>tests green in 13 files</span></div>
+        </div>
+      </section>
+
+      <!-- -------------------------------------------------------- pipeline -->
+      <section class="section" id="pipeline">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">The pipeline</p>
+            <h2>One sentence in. One structured world out.</h2>
+            <p class="section-lede">
+              Natural language never touches the renderer directly. It is interpreted into a versioned
+              document, checked against the schema and against the scene itself, then built by procedural
+              generators that know how a barn, a fence run or a wheat field should be made.
+            </p>
+          </div>
+
+          <div class="pipeline-grid">
+            <ol class="steps">
+              <li>
+                <h3>Prompt</h3>
+                <p>Rules-based local interpreter detects biome, scale, time of day and farm features. Optional selects override size, style and density.</p>
+              </li>
+              <li>
+                <h3>WorldPlan v3</h3>
+                <p>Stable IDs, transforms, materials, dimensions, parent groups, generation metadata and placement hints — all in one JSON document.</p>
+              </li>
+              <li>
+                <h3>Validation</h3>
+                <p>Zod schema plus semantic checks: unsupported geometry, orphan parents, floating or buried objects, overlaps, missing dependencies.</p>
+              </li>
+              <li>
+                <h3>Generation</h3>
+                <p>A layout planner for farms and a seeded scatter generator for everything else. Deterministic, reproducible, budgeted.</p>
+              </li>
+              <li>
+                <h3>Assembly</h3>
+                <p>Real geometry: gabled roofs, board fences, crop instances, ribbon paths that follow the terrain, rivers and bridges.</p>
+              </li>
+              <li>
+                <h3>Editing</h3>
+                <p>The viewport builds only what changed. Edit, regenerate one object or a whole region, save to IndexedDB, export glTF.</p>
+              </li>
+            </ol>
+
+            <div class="code-card">
+              <div class="code-card-head">
+                <span class="traffic" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span>world.world.json</span>
+                <span class="code-tag">v3</span>
+              </div>
+              <pre><code>{
+  "schemaVersion": 3,
+  "seed": 20261020,
+  "terrain": { "style": "hills", "size": 240, "resolution": 160 },
+  "groups": [
+    { "id": "grp_farmstead", "name": "Farmstead", "parentId": null }
+  ],
+  "objects": [
+    {
+      "id": "obj_9m2x1_3",
+      "name": "Barn",
+      "kind": "building",
+      "variant": "barn",
+      "parentId": "grp_farmstead",
+      "transform": {
+        "position": [-18.2, 1.4, 2.1],
+        "rotation": [0, 90, 0],
+        "scale": [1, 1, 1]
+      },
+      "color": "#a5483b",
+      "roofColor": "#5d4736",
+      "meta": {
+        "category": "structure",
+        "geometry": "building.barn",
+        "dimensions": [6.2, 5.4, 7.4],
+        "source": "procedural",
+        "status": "generated",
+        "region": "farmstead",
+        "seed": 1170328047
+      }
+    }
+  ]
+}</code></pre>
+              <div class="code-card-foot">
+                <span class="pill pill-good">schema ✓</span>
+                <span class="pill pill-good">geometry registry ✓</span>
+                <span class="pill pill-good">placements ✓</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------ playground -->
+      <section class="section section-alt" id="playground">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">Playground · runs in this tab</p>
+            <h2>Prompt a world. Watch the plan appear.</h2>
+            <p class="section-lede">
+              This is the real interpreter and the real generator from the app, compiled for the browser.
+              Nothing is sent anywhere: the plan, the validation report and the map below are produced by the
+              same code that runs behind <em>Generate world</em> in the editor.
+            </p>
+          </div>
+
+          <div class="playground">
+            <form id="playground-form" class="pg-form">
+              <label class="field-label" for="prompt">Describe your world</label>
+              <textarea id="prompt" name="prompt" rows="3" spellcheck="false">Create a large cartoon low-poly farm with a farmhouse, barn, wheat fields, a chicken coop, fences, trees, and connected dirt paths</textarea>
+
+              <div id="examples" class="chips" aria-label="Example prompts"></div>
+
+              <div class="controls">
+                <label class="control">
+                  <span>Seed</span>
+                  <span class="seed-row">
+                    <input id="seed" type="number" min="0" max="4294967295" step="1" value="20261020" />
+                    <button id="shuffle" class="btn btn-quiet btn-sm" type="button" title="Random seed" aria-label="Randomise seed">⟳</button>
+                  </span>
+                </label>
+                <label class="control">
+                  <span>Style</span>
+                  <select id="style">
+                    <option value="auto">auto (from prompt)</option>
+                    <option value="cartoon">cartoon</option>
+                    <option value="stylized">stylized</option>
+                    <option value="natural">natural</option>
+                  </select>
+                </label>
+                <label class="control">
+                  <span>World size</span>
+                  <select id="scale">
+                    <option value="auto">auto</option>
+                    <option value="small">small</option>
+                    <option value="medium">medium</option>
+                    <option value="large">large</option>
+                  </select>
+                </label>
+                <label class="control">
+                  <span>Density</span>
+                  <select id="density">
+                    <option value="auto">auto</option>
+                    <option value="sparse">sparse</option>
+                    <option value="normal">normal</option>
+                    <option value="dense">dense</option>
+                  </select>
+                </label>
+                <button class="btn btn-primary generate" type="submit">Generate world</button>
+              </div>
+
+              <p id="playground-status" class="status" role="status" aria-live="polite">Ready.</p>
+            </form>
+
+            <div class="pg-results">
+              <div id="stats" class="stat-grid" aria-label="Plan summary"></div>
+
+              <div class="pg-columns">
+                <figure id="map-figure" class="map-card">
+                  <div class="map-wrap">
+                    <canvas id="map" width="640" height="640" aria-label="Top-down map of the generated world"></canvas>
+                    <div id="map-tooltip" class="map-tooltip" hidden></div>
+                  </div>
+                  <figcaption>
+                    <span id="map-caption">Top-down plan view</span>
+                    <span class="map-hint">Hover an object to inspect it</span>
+                  </figcaption>
+                  <div id="legend" class="legend" aria-hidden="true"></div>
+                </figure>
+
+                <div class="pg-side">
+                  <h3 class="mini-head">Object breakdown</h3>
+                  <div id="breakdown" class="bars"></div>
+                  <h3 class="mini-head">Validation</h3>
+                  <div id="notes" class="notes"></div>
+                  <button id="download" class="btn btn-ghost btn-block" type="button" disabled>
+                    Download .world.json
+                  </button>
+                  <p class="hint">
+                    In the editor: <strong>Project menu → Import project…</strong> loads this file as an
+                    editable world.
+                  </p>
+                </div>
+              </div>
+
+              <details class="json-details">
+                <summary>Show the generated plan (first 64 lines)</summary>
+                <pre><code id="json">Generate a world to inspect its plan.</code></pre>
+              </details>
+            </div>
+          </div>
+
+          <p class="fine-print">
+            The map is an honest top-down projection of the plan’s coordinates — not a screenshot. Full 3D
+            rendering needs WebGL, which the <a href="/app/">editor</a> uses directly.
+          </p>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------- gallery -->
+      <section class="section" id="gallery">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">Same generator, different briefs</p>
+            <h2>Time of day, water and terrain are part of the plan.</h2>
+            <p class="section-lede">
+              Sun position, sky, fog and water come from the same document as the geometry, so a night farm
+              with lanterns is a plan-level change rather than a shader trick.
+            </p>
+          </div>
+
+          <div class="gallery">
+            <button class="shot reveal" type="button" data-title="Farmstead close-up" data-caption="Yard, lanes and gabled buildings. Every lane terminates at a door; fences leave gates where the lanes cross.">
+              <img src="/img/farmstead.png" width="1200" height="750" alt="Close view of the farmhouse, barn, coop and dirt lanes crossing the yard." loading="lazy" />
+              <span class="shot-label">Farmstead detail</span>
+            </button>
+            <button class="shot reveal" type="button" data-title="Creek and bridge" data-caption="Adding “a river with a bridge” to the brief produces a meandering creek, an east meadow lane and a bridge aligned across the water.">
+              <img src="/img/river.png" width="1200" height="750" alt="A farm with a creek running along the far edge and a small bridge crossing it." loading="lazy" />
+              <span class="shot-label">River + bridge</span>
+            </button>
+            <button class="shot reveal" type="button" data-title="Farm at night" data-caption="“At night” changes the plan environment: low sun intensity, cool key light, lantern posts with point lights down the main lane.">
+              <img src="/img/night.png" width="1200" height="750" alt="The same farm at night with dim blue light and glowing lanterns along the lane." loading="lazy" />
+              <span class="shot-label">Night + lanterns</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------------- farm -->
+      <section class="section section-alt" id="farm">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">Anatomy of the acceptance farm</p>
+            <h2>Not one giant cube. Not a pile of primitives.</h2>
+            <p class="section-lede">
+              The brief asks for a farmhouse, a barn, wheat fields, a chicken coop, fences, trees and
+              connected dirt paths. The planner lays them out in dependency order and keeps track of every
+              footprint it has used.
+            </p>
+          </div>
+
+          <div class="farm-grid">
+            <div class="table-card">
+              <table>
+                <caption>Generated groups for the sample farm (seed 20261020)</caption>
+                <thead>
+                  <tr><th scope="col">Group</th><th scope="col">Objects</th><th scope="col">What is in it</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>Farmstead</td><td>3</td><td>Farmhouse with chimney and lit window, gabled hay barn, coop with ramp, nesting box and a run of three chickens</td></tr>
+                  <tr><td>Wheat fields</td><td>3</td><td>Fenced crop beds with instanced wheat stalks, soil base and border ridges</td></tr>
+                  <tr><td>Paths</td><td>5</td><td>Main lane from the south edge, spurs to each building and the fields</td></tr>
+                  <tr><td>Fences</td><td>12</td><td>Yard enclosure with gates, field enclosure, orchard rail</td></tr>
+                  <tr><td>Landscape</td><td>152</td><td>Orchard rows, windbreaks, hedgerows, scattered trees, rocks, bushes</td></tr>
+                  <tr><td>Pond &amp; crossings</td><td>0</td><td>Only created when the brief mentions a stream</td></tr>
+                </tbody>
+              </table>
+              <p class="table-note">
+                Totals: <strong>180 objects</strong>, 6 groups, ~91,500 triangles, 699 instanced props,
+                <strong>0 warnings</strong> and a clean validation report.
+              </p>
+            </div>
+
+            <ul class="quality-list">
+              <li>
+                <h3>Silhouettes</h3>
+                <p>Barns have gable roofs and a hay door; the coop has a run; the silo is a cylinder with a cap. Each generator is a small composition, not a scaled box.</p>
+              </li>
+              <li>
+                <h3>Proportions</h3>
+                <p>Dimensions live in the plan: 6.2 × 5.4 × 7.4 m barn, 3.4 × 4.3 × 3 m farmhouse. Placement, collision checks and the inspector all read the same numbers.</p>
+              </li>
+              <li>
+                <h3>Materials</h3>
+                <p>Wall, roof, crop, soil, deck, rail and post colours are separate values per object, re-rolled by palette when you regenerate.</p>
+              </li>
+              <li>
+                <h3>Relationships</h3>
+                <p>Buildings are grounded on sampled terrain, fields sit inside their fence, gates align with lanes, and the bridge only exists if a river does.</p>
+              </li>
+              <li>
+                <h3>Overlap control</h3>
+                <p>An 8 m spatial hash rejects collisions between buildings, fields, fences and lanes while vegetation finds free ground around them.</p>
+              </li>
+              <li>
+                <h3>Determinism</h3>
+                <p>The same prompt and seed always produce the same farm — down to which side of the yard the barn is on — so a shared JSON file reopens identically.</p>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ----------------------------------------------------------- editor -->
+      <section class="section" id="editor">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">The editor</p>
+            <h2>Generated, then edited like a Blender scene.</h2>
+            <p class="section-lede">
+              Generation is the starting point. The viewport, hierarchy and inspector are the same editor
+              built in Phase 2 — the new objects simply arrive inside it, fully editable.
+            </p>
+          </div>
+
+          <figure class="editor-shot reveal">
+            <img
+              src="/img/app/editor-barn.png"
+              width="1600"
+              height="1000"
+              alt="The editor in a desktop browser: scene hierarchy on the left, 3D viewport with the generated farm in the middle, inspector on the right."
+              loading="lazy"
+            />
+            <figcaption>
+              <span class="badge">Real WebGL 2 capture</span>
+              <span>The generated farm in the running editor: 180 objects in 6 groups, the barn selected, parent shown as <em>Farmstead</em>, move gizmo attached.</span>
+            </figcaption>
+          </figure>
+
+          <div class="editor-grid">
+            <div class="feature-cards">
+              <article>
+                <h3>Orbit, pan, zoom, snap</h3>
+                <p>OrbitControls and a transform gizmo with world/local space, snapping and axis constraints. Touch gestures included.</p>
+              </article>
+              <article>
+                <h3>Hierarchy that survives edits</h3>
+                <p>Rename, hide, lock, group, ungroup and reparent. Group transforms compose correctly; hide propagates down the tree.</p>
+              </article>
+              <article>
+                <h3>Inspector with real values</h3>
+                <p>Type exact position, rotation and scale. Change base, secondary, roughness, metalness and emission per object.</p>
+              </article>
+              <article>
+                <h3>Regenerate, not rebuild</h3>
+                <p>Re-roll a tree’s species and tint, a rock’s shape, a building’s palette or a field’s crop — alone or by region — without moving anything.</p>
+              </article>
+              <article>
+                <h3>Local projects</h3>
+                <p>IndexedDB autosave, project library, JSON import/export. Reopening a project restores transforms, hierarchy and generated metadata.</p>
+              </article>
+              <article>
+                <h3>Export to engines</h3>
+                <p>One shared scene builder feeds the viewport and a real binary glTF 2.0 exporter, so what you see is what you ship.</p>
+              </article>
+            </div>
+
+            <aside class="editor-cta">
+              <p class="eyebrow">Try it now</p>
+              <h3>The full editor is one click away.</h3>
+              <p>
+                A browser with WebGL 2 gets the real viewport: shader sky, sun shadows, instanced crops and
+                the gizmo. Everything runs locally in this deployment.
+              </p>
+              <a class="btn btn-primary btn-block" href="/app/">Launch the editor <span aria-hidden="true">→</span></a>
+              <figure class="mobile-shot">
+                <img
+                  src="/img/app/editor-mobile.png"
+                  width="804"
+                  height="1748"
+                  alt="The same project on a phone-width viewport: dock at the bottom, the farm framed in the viewport."
+                  loading="lazy"
+                />
+                <figcaption>402 × 874 · touch orbit, tap-select, bottom sheet</figcaption>
+              </figure>
+              <ul class="kbd-list">
+                <li><kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd><span>select / move / rotate</span></li>
+                <li><kbd>R</kbd><span>scale</span><span class="kbd-gap"></span><kbd>G</kbd><span>group</span></li>
+                <li><kbd>F</kbd><span>focus selection</span><kbd>Shift</kbd><span>multi-select</span></li>
+                <li><kbd>Ctrl</kbd><kbd>S</kbd><span>save</span><kbd>Ctrl</kbd><kbd>Z</kbd><span>undo</span></li>
+              </ul>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------- validation -->
+      <section class="section section-alt" id="validation">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">Validation &amp; recovery</p>
+            <h2>Nothing reaches the editor unchecked.</h2>
+            <p class="section-lede">
+              Two layers run on every plan: the document schema, then semantic checks against the scene
+              itself. A failed step is reported, not hidden — and a damaged file can still be recovered.
+            </p>
+          </div>
+
+          <div class="validation-grid">
+            <div class="issue-card">
+              <h3>Hard errors</h3>
+              <ul>
+                <li><code>schema</code> — missing or mistyped fields, bad colours, out-of-range transforms</li>
+                <li><code>unsupported-geometry</code> — declared <em>and</em> derived geometry ids checked against the registry</li>
+                <li><code>orphan-parent</code> — an object pointing at a group that does not exist</li>
+                <li><code>missing-dependency</code> — a bridge with no river to cross</li>
+              </ul>
+            </div>
+            <div class="issue-card">
+              <h3>Warnings worth reading</h3>
+              <ul>
+                <li>out-of-bounds objects near the terrain edge</li>
+                <li>floating more than 1.5 m, or buried more than 1.2 m</li>
+                <li>buildings overlapping by more than 0.2 m, fields by 0.5 m</li>
+                <li>a plan within 15% of the 1,500-object ceiling</li>
+              </ul>
+            </div>
+            <div class="issue-card">
+              <h3>Safe recovery</h3>
+              <p>
+                <code>repairScenePlan</code> drops unbuildable objects, re-grounds floaters and reports what
+                it touched. Imports try strict parsing first, then lenient repair — with a warning rather
+                than a blank screen.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------- engineering -->
+      <section class="section" id="engineering">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">Engineering</p>
+            <h2>Modular by construction.</h2>
+            <p class="section-lede">
+              The WorldPlan document is the only source of truth. React never owns scene objects outside the
+              viewport, and every hierarchy edit is a pure function over the document.
+            </p>
+          </div>
+
+          <div class="eng-grid">
+            <div class="arch-card">
+              <h3>Module map</h3>
+              <pre class="modules"><code>src/
+  core/
+    world-plan/   schema · migration · hierarchy · validation
+    generation/   rng · terrain · biomes · farm · placement · regenerate
+    assets/       catalog + structures (barn, fence, path, field…)
+    scene/        scene builder · kit · procedural geometry
+    persistence/  IndexedDB repositories · project files
+    export/       glTF 2.0 (.glb)
+  modules/
+    ai/           intent types · provider contract · local interpreter
+    editor/       store · viewport · panels · autosave
+  ui/             top bar · library · inspector controls</code></pre>
+            </div>
+
+            <div class="verify-card">
+              <h3>Verification</h3>
+              <table>
+                <tbody>
+                  <tr><th scope="row">Type-check</th><td>clean · strict + <code>noUncheckedIndexedAccess</code></td></tr>
+                  <tr><th scope="row">Tests</th><td>113 passing in 13 files</td></tr>
+                  <tr><th scope="row">Build</th><td>success · initial ≈ 309 kB gzip</td></tr>
+                  <tr><th scope="row">Acceptance</th><td>generate → edit two objects → regenerate → save → reopen</td></tr>
+                  <tr><th scope="row">Runtime</th><td>WebGL 2 with graceful fallback message</td></tr>
+                </tbody>
+              </table>
+              <p class="table-note">
+                The browser runtime test drives the real UI: it types the farm brief, verifies the
+                hierarchy, moves the farmhouse and rescales the coop, regenerates the barn, saves to
+                IndexedDB and reopens the project.
+              </p>
+            </div>
+          </div>
+
+          <div class="link-row">
+            <a class="link-card" href="https://github.com/benmerfatah0-lang/ai-builder" target="_blank" rel="noreferrer">
+              <span>Source code</span><strong>github.com/benmerfatah0-lang/ai-builder ↗</strong>
+            </a>
+            <a class="link-card" href="https://github.com/benmerfatah0-lang/ai-builder/blob/main/docs/WORLDPLAN.md" target="_blank" rel="noreferrer">
+              <span>WorldPlan reference</span><strong>docs/WORLDPLAN.md ↗</strong>
+            </a>
+            <a class="link-card" href="https://github.com/benmerfatah0-lang/ai-builder/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noreferrer">
+              <span>Architecture report</span><strong>docs/ARCHITECTURE.md ↗</strong>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------------ self-host -->
+      <section class="section" id="run">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">Run it yourself</p>
+            <h2>Clone it, build it, open it.</h2>
+            <p class="section-lede">
+              This site is part of the repository. The editor is a Vite build served under
+              <code>/app/</code>; the playground bundle is compiled from the same TypeScript sources.
+            </p>
+          </div>
+
+          <div class="run-grid">
+            <div class="cmd-card">
+              <h3>Development</h3>
+              <pre><code>git clone https://github.com/benmerfatah0-lang/ai-builder.git
+cd ai-builder
+npm ci
+npm run site        # site + editor at http://localhost:8080</code></pre>
+              <p class="hint">
+                <code>npm run dev</code> alone starts the editor on
+                <code>:5173</code> if you only want the app.
+              </p>
+            </div>
+            <div class="cmd-card">
+              <h3>Rebuild the site assets</h3>
+              <pre><code>npm run site:build  # demo bundle + editor build
+npm test            # 113 tests
+npm run typecheck</code></pre>
+              <p class="hint">
+                <code>npm run render:preview</code> regenerates the farm images from the
+                scene graph with a software rasteriser.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------------------------------------------ limits -->
+      <section class="section section-alt" id="limits">
+        <div class="wrap">
+          <div class="section-head">
+            <p class="eyebrow">Honest limits</p>
+            <h2>What this is — and what it is not.</h2>
+          </div>
+          <ul class="limits">
+            <li>
+              <strong>Not an LLM.</strong> The offline interpreter maps language cues to a structured intent.
+              Unknown briefs fall back to the scatter generator rather than inventing features.
+            </li>
+            <li>
+              <strong>Farm layouts are curated.</strong> Seeded variation, mirroring and palettes keep them
+              interesting, but this is a designed planner, not a general architecture solver.
+            </li>
+            <li>
+              <strong>WebGL is required for 3D.</strong> The site and the plan playground work without it;
+              the viewport explains what to enable if a context cannot be created.
+            </li>
+            <li>
+              <strong>Device QA is ongoing.</strong> Rendering is unit-tested and previewed with a software
+              rasteriser; physical desktop and Android testing remains manual.
+            </li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="wrap footer-inner">
+        <div>
+          <p class="footer-brand">AI World Builder</p>
+          <p class="muted">Local-first 3D world authoring · React 19 · Three.js r186 · Zod 4 · IndexedDB</p>
+        </div>
+        <div class="footer-links">
+          <a href="/app/">Open the editor</a>
+          <a href="#playground">Playground</a>
+          <a href="#engineering">Engineering</a>
+          <a href="https://github.com/benmerfatah0-lang/ai-builder" target="_blank" rel="noreferrer">GitHub ↗</a>
+        </div>
+      </div>
+      <div class="wrap footer-note">
+        <span>No paid APIs. No analytics. No uploads — generation runs in your browser.</span>
+        <span>Built with Arena Agent.</span>
+      </div>
+    </footer>
+
+    <dialog id="lightbox" class="lightbox" aria-labelledby="lightbox-title">
+      <form method="dialog"><button class="lightbox-close" aria-label="Close">×</button></form>
+      <img id="lightbox-img" src="/img/app/editor-barn.png" alt="" />
+      <div>
+        <h3 id="lightbox-title"></h3>
+        <p id="lightbox-caption"></p>
+      </div>
+    </dialog>
+
+    <script type="module" src="/site.js"></script>
+    <script type="module" src="/demo.js"></script>
+  </body>
+</html>

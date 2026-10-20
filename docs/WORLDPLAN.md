@@ -1,14 +1,16 @@
-# WorldPlan v1 — Document Reference
+# WorldPlan v3 — Document Reference
 
 WorldPlan is the single source of truth for a world. Terrain, objects, colours,
-lighting and the seed that generated them all live in one validated JSON
-document. The editor, generator, persistence layer and exporters all operate on
-this format.
+lighting, generation metadata and the seed that produced them all live in one
+validated JSON document. The planner, generator, editor, persistence layer and
+exporters all operate on this format.
 
 - Zod source of truth: `src/core/world-plan/schema.ts`
 - Runtime validation / migration: `src/core/world-plan/migrate.ts`
+- Semantic validation and repair: `src/core/world-plan/validateScene.ts`
+- Generation pipeline: `src/core/generation/{farm,generateWorld,regenerate}.ts`
 - Generated JSON Schema: [`worldplan.schema.json`](./worldplan.schema.json)
-- Current version: **2** (Phase 2; v1 documents migrate automatically)
+- Current version: **3** (Phase 3; v1 and v2 documents migrate automatically)
 - File extension: `.world.json`
 - Coordinates: right-handed **Y-up**, 1 unit ≈ 1 metre (convention, not enforced)
 - Colours: `#rrggbb`
@@ -21,7 +23,7 @@ this format.
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `schemaVersion` | `2` | yes | Literal. Bumped on breaking changes. |
+| `schemaVersion` | `3` | yes | Literal. Bumped on breaking changes. |
 | `id` | string | yes | Stable project ID. Unique in local storage. |
 | `name` | string | yes | 1–80 characters. |
 | `description` | string | yes | Up to 500 characters. Generation provenance is appended here. |
@@ -97,20 +99,52 @@ Every object has:
 | `visible` | boolean | Hidden objects are excluded from render and export. |
 | `locked` | boolean | Prevents accidental edits in the UI. |
 | `material` | object? | Optional `roughness`, `metalness`, `emissiveIntensity` overrides (0–1 / 0–5). |
+| `meta` | object | **Required in v3.** Generation metadata (below). |
 | `kind` | discriminator | One of the kinds below. |
 
-### Common kind fields
+### `meta` — generation metadata
+
+`meta` is what makes a generated object reproducible, re-rollable and
+machine-checkable. It is required for every drawable object, including objects
+added from the asset library.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `category` | enum | `structure`, `vegetation`, `rock`, `prop`, `field`, `path`, `water`, `fence`, `terrain`. |
+| `geometry` | string | Geometry id, e.g. `building.barn`, `field.wheat`, `water.river`. Must be in the supported registry. |
+| `dimensions` | `[w, h, d]` | Base size **before** the transform; all components > 0. Used for footprints. |
+| `source` | enum | `procedural`, `library`, `manual`. |
+| `status` | enum | `generated` until the user edits the object, then `edited`. |
+| `role` | string? | Semantic role, e.g. `barn`, `crossing`, `windbreak`. |
+| `seed` | integer? | Per-object variation seed, independent of the world seed. |
+| `region` | string? | Logical region used by region regeneration, e.g. `fields`. |
+| `placement` | object? | `{ anchor: 'ground' \| 'terrain' \| 'water', avoidOverlap: boolean }`. |
+| `collision` | object? | `{ shape: 'box' \| 'none', blocking: boolean }`. Paths, rivers and fields opt out of blocking. |
+
+Supported geometry ids: `primitive.*`, `tree.{pine,broadleaf,palm,cactus,bush}`,
+`rock.{boulder,crag}`, `building.{house,tower,ruin,barn,coop}`,
+`structure.{bridge,silo}`, `path.{dirt,stone,gravel}`,
+`fence.{wood,stone,rail}`, `field.wheat`, `water.river`, `prop.lantern`.
+
+### Kinds
 
 | Kind | Extra fields | Allowed values |
 | --- | --- | --- |
 | `primitive` | `primitive`, `color` | `box`, `sphere`, `cylinder`, `cone`, `torus`, `plane` |
-| `tree` | `variant`, `color` (foliage), `trunkColor` | `pine`, `broadleaf`, `palm`, `cactus` |
+| `tree` | `variant`, `color` (foliage), `trunkColor` | `pine`, `broadleaf`, `palm`, `cactus`, `bush` |
 | `rock` | `variant`, `color` | `boulder`, `crag` |
-| `building` | `variant`, `color` (walls), `roofColor` | `house`, `tower`, `ruin` |
+| `building` | `variant`, `color` (walls), `roofColor` | `house`, `tower`, `ruin`, `barn`, `coop` |
 | `lantern` | `color` | Emissive lamp prop |
+| `path` | `points`, `width`, `color`, `style` | `dirt`, `stone`, `gravel` |
+| `river` | `points`, `width`, `color` | Water ribbon |
+| `fence` | `points`, `height`, `style`, `postColor`, `railColor` | `wood`, `stone`, `rail` |
+| `field` | `width`, `depth`, `rows`, `density`, `cropColor`, `soilColor`, `seed` | Instanced crop field |
+| `bridge` | `length`, `width`, `deckColor`, `railColor` | Planked crossing |
 
-All geometry is procedural at runtime; the document stores parameters, not meshes
-or textures. This is why projects are small and can be regenerated anywhere.
+`points` are polyline vertices in the object's **local** space (2–64 points).
+The scene builder samples them and adds terrain-following geometry. All geometry
+is procedural at runtime; the document stores parameters, not meshes or
+textures. This is why projects are small and can be regenerated anywhere.
 
 ---
 
@@ -126,82 +160,138 @@ agree because they use the same parent-chain composition.
 
 ## Example document
 
+A trimmed farm document. Real plans contain ~100 objects; this shows one of each
+generation shape.
+
 ```json
 {
-  "schemaVersion": 2,
-  "id": "world_dfef0517b869",
-  "name": "Example World",
-  "description": "",
-  "seed": 123456,
+  "schemaVersion": 3,
+  "id": "world_9f2c11a4",
+  "name": "Cartoon Farm",
+  "description": "Generated from: “a cartoon farm with a barn, wheat fields and fences”",
+  "seed": 20261020,
   "createdAt": "2026-10-20T19:17:13.331Z",
   "updatedAt": "2026-10-20T19:17:13.331Z",
   "environment": {
-    "skyColor": "#8fb8d8",
-    "fogColor": "#adc6d6",
-    "fogDensity": 0.0022,
-    "sunColor": "#fff2dc",
-    "sunAzimuth": 220,
-    "sunElevation": 52,
-    "sunIntensity": 2.2,
-    "ambientIntensity": 0.55
+    "skyColor": "#93c4e2",
+    "fogColor": "#c6dce6",
+    "fogDensity": 0.0019,
+    "sunColor": "#fff3da",
+    "sunAzimuth": 216,
+    "sunElevation": 54,
+    "sunIntensity": 2.15,
+    "ambientIntensity": 0.62
+  },
+  "terrain": {
+    "style": "hills",
+    "size": 170,
+    "resolution": 128,
+    "heightScale": 2.6,
+    "waterLevel": null,
+    "palette": { "low": "#688a4b", "high": "#a8bd78" }
   },
   "groups": [
     {
       "nodeType": "group",
-      "id": "grp_village",
-      "name": "Village",
+      "id": "grp_farmstead",
+      "name": "Farmstead",
       "parentId": null,
       "transform": {
-        "position": [2, 0, 2],
-        "rotation": [0, 20, 0],
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
         "scale": [1, 1, 1]
       },
       "visible": true,
       "locked": false
     }
   ],
-  "terrain": {
-    "style": "islands",
-    "size": 160,
-    "resolution": 128,
-    "heightScale": 9,
-    "waterLevel": 0.5,
-    "palette": {
-      "low": "#7e9164",
-      "high": "#c7bb8d"
-    }
-  },
   "objects": [
     {
-      "id": "obj_palm_1",
-      "name": "Palm",
-      "parentId": "grp_village",
+      "id": "obj_kg2_1",
+      "name": "Barn",
+      "parentId": "grp_farmstead",
       "transform": {
-        "position": [4, 1.82, -3],
-        "rotation": [0, 4.21, 0],
-        "scale": [0.83, 1.34, 1.11]
+        "position": [-18, 0.62, 2],
+        "rotation": [0, 90, 0],
+        "scale": [1, 1, 1]
       },
       "visible": true,
       "locked": false,
-      "kind": "tree",
-      "variant": "palm",
-      "color": "#4e7e46",
-      "trunkColor": "#8a6b45"
+      "kind": "building",
+      "variant": "barn",
+      "color": "#a4503f",
+      "roofColor": "#5b4436",
+      "meta": {
+        "category": "structure",
+        "geometry": "building.barn",
+        "dimensions": [6.2, 5.4, 7.4],
+        "source": "procedural",
+        "status": "generated",
+        "region": "farmstead",
+        "placement": { "anchor": "terrain", "avoidOverlap": true },
+        "collision": { "shape": "box", "blocking": true }
+      }
     },
     {
-      "id": "obj_lantern_1",
-      "name": "Lantern",
-      "parentId": null,
+      "id": "obj_kg2_7",
+      "name": "Lane to the barn",
+      "parentId": "grp_paths",
       "transform": {
-        "position": [-6, 0.4, 2],
+        "position": [0, 0.4, 6],
         "rotation": [0, 0, 0],
         "scale": [1, 1, 1]
       },
       "visible": true,
       "locked": false,
-      "kind": "lantern",
-      "color": "#ffc46b",
-      "material": { "roughness": 0.4, "emissiveIntensity": 1.4 }
+      "kind": "path",
+      "points": [
+        [0, 0, 0],
+        [4, -0.02, -2.4],
+        [12, 0.1, -4]
+      ],
+      "width": 2.8,
+      "color": "#b3946b",
+      "style": "dirt",
+      "meta": {
+        "category": "path",
+        "geometry": "path.dirt",
+        "dimensions": [22, 0.08, 2.8],
+        "source": "procedural",
+        "status": "generated",
+        "region": "paths",
+        "placement": { "anchor": "terrain", "avoidOverlap": false },
+        "collision": { "shape": "none", "blocking": false }
+      }
+    },
+    {
+      "id": "obj_kg2_12",
+      "name": "Wheat field (west)",
+      "parentId": "grp_fields",
+      "transform": {
+        "position": [-12, 0.48, -26],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      },
+      "visible": true,
+      "locked": false,
+      "kind": "field",
+      "width": 18,
+      "depth": 11,
+      "rows": 8,
+      "density": 0.92,
+      "cropColor": "#dcb457",
+      "soilColor": "#7c5f42",
+      "seed": 2472883186,
+      "meta": {
+        "category": "field",
+        "geometry": "field.wheat",
+        "dimensions": [18, 1.1, 11],
+        "source": "procedural",
+        "status": "generated",
+        "region": "fields",
+        "placement": { "anchor": "terrain", "avoidOverlap": false },
+        "collision": { "shape": "none", "blocking": false }
+      }
     }
   ]
 }
@@ -211,17 +301,32 @@ agree because they use the same parent-chain composition.
 
 ## Validation
 
+Two layers run before a plan reaches the renderer:
+
+1. **Structural** — `validateWorldPlan` (Zod + hierarchy checks) answers “is this
+   a WorldPlan?”.
+2. **Semantic** — `validateScenePlan` answers “can this world be built and does
+   it make sense?”. It checks supported geometry ids, terrain bounds, solid
+   overlaps, floating/buried objects, missing dependencies (a bridge without a
+   river) and object-count limits.
+
 ```ts
 import { validateWorldPlan } from './src/core/world-plan/schema';
 import { parseWorldPlan, serializeWorldPlan } from './src/core/world-plan/migrate';
+import { validateScenePlan, repairScenePlan } from './src/core/world-plan/validateScene';
 
 const result = validateWorldPlan(untrusted);
 if (!result.success) {
   console.error(result.issues); // [{ path: 'terrain.size', message: 'Too big: ...' }]
 }
 
-const plan = parseWorldPlan(untrusted); // migrates then validates; throws on failure
-const json = serializeWorldPlan(plan);  // validates, stable pretty-print
+const plan = parseWorldPlan(untrusted); // migrate + validate; throws on failure
+const scene = validateScenePlan(plan);
+if (!scene.valid) console.error(scene.errors); // blocking issues
+console.warn(scene.warnings);                 // recoverable notes
+
+const repaired = repairScenePlan(plan); // drops unbuildable objects, reseats floaters
+const json = serializeWorldPlan(repaired.plan);
 ```
 
 For non-TypeScript tools:
@@ -242,28 +347,74 @@ so external validators see required, fully-populated documents.
 - hierarchy cycles are broken;
 - every repair is reported as a warning in the UI.
 
+`repairScenePlan` (used by the generator/import pipeline) additionally:
+
+- drops objects whose declared or derived geometry is unsupported;
+- re-roots nodes whose parent group is missing;
+- clamps objects back inside the terrain and reseats solids that float or sink;
+- reports what it removed and moved.
+
 A file that is not a world document at all (no `schemaVersion`) is still rejected
 with a clear message.
+
+---
+
+## Generation pipeline
+
+```
+prompt
+  → local interpreter (biome, style, scale, density, farm features, seed)
+  → planner (structured farm layout, or the biome scatter generator)
+  → WorldPlan v3
+  → structural validation → semantic validation
+  → safe repair (warnings only)
+  → scene assembly (Three.js) → editable world
+```
+
+Both planners are deterministic: the same interpretation and seed rebuild the
+same plan. Only document metadata (`id`, timestamps) is random. The farm planner
+places buildings, fields, lanes, fences, water and vegetation in dependency order
+and uses a uniform-grid collision ledger so solids never intersect and trees keep
+clear of lanes and yards. Field crops, pebbles and bridge planks are instanced or
+merged, so a 100-object farm stays inside a mobile GPU budget.
+
+## Regeneration
+
+Every object carries `meta.seed` and `meta.region`. The editor exposes two
+operations that never rebuild the world:
+
+- **Regenerate object** — re-rolls species/shape/palette/crop variation in place,
+  preserving id, name, parent, transform and visibility.
+- **Regenerate region** — re-rolls every object with the same `meta.region`
+  (for example all of `fields` or `landscape`), preserving everything else.
+  Locked objects are skipped.
+
+The viewport diffs the plan against its built graph and rebuilds only the affected
+nodes, so regeneration is a local operation in both the document and the scene.
 
 ---
 
 ## Rules and invariants
 
 1. `schemaVersion` must match the current version after migrations.
-2. The document must validate against the Zod schema **and** the structural
+2. Every drawable object has valid `meta`; `meta.geometry` must be in the registry.
+3. The document must validate against the Zod schema **and** the structural
    hierarchy checks before storage or export.
-3. IDs are unique across groups and objects; generated IDs are deterministic,
+4. IDs are unique across groups and objects; generated IDs are deterministic,
    manually added nodes use random IDs. Editing a node never changes its ID.
-4. `parentId` must point to an existing **group** (or null). Cycles and nesting
+5. `parentId` must point to an existing **group** (or null). Cycles and nesting
    deeper than 8 levels are rejected.
-5. Numbers must be finite; colours must be six-digit hex; transforms are clamped
+6. Numbers must be finite; colours must be six-digit hex; transforms are clamped
    by the editor reducer before validation.
-6. At most 1500 objects and 200 groups per plan.
-7. Generation is deterministic for `(prompt interpretation, seed)`; metadata
+7. At most 1500 objects and 200 groups per plan.
+8. Generation is deterministic for `(prompt interpretation, seed)`; metadata
    (document ID and timestamps) is intentionally not deterministic.
-8. Hidden nodes and their subtrees are excluded from the viewport and GLB export
+9. Hidden nodes and their subtrees are excluded from the viewport and GLB export
    (unless an export option explicitly includes them).
-9. A locked node (or any locked ancestor) rejects transform edits and deletion.
+10. A locked node (or any locked ancestor) rejects transform edits, regeneration
+    and deletion.
+11. Regeneration preserves object identity and placement; it may change
+    `meta.geometry`, `meta.seed` and the kind-specific visual fields.
 
 ---
 
@@ -277,24 +428,34 @@ with a clear message.
 - The document gained `groups` (default `[]`).
 - Objects gained an optional `material` block.
 
-Migration is automatic when a v1 file is opened, saved or imported; v2 files
-load unchanged.
+### v2 → v3 (Phase 3)
+
+- Every drawable object gained required `meta` (category, geometry id, base
+  dimensions, source, status, optional role/seed/region/placement/collision).
+- Objects created before v3 are treated as `source: "library"` and
+  `status: "edited"`, so they are never silently replaced by regeneration.
+- New kinds `path`, `river`, `fence`, `field`, `bridge`; new variants `bush`,
+  `barn`, `coop`; groups still have no `meta`.
+
+Migration is automatic when a file is opened, saved or imported.
 
 `src/core/world-plan/migrate.ts` contains:
 
 ```ts
 const MIGRATIONS: Record<number, Migration> = {
   1: migrateV1ToV2,
+  2: migrateV2ToV3,
 };
 ```
 
 Loading flow: read `schemaVersion` → reject missing/newer versions → apply
-migrations in order → validate current schema → strip unknown fields.
+migrations in order → validate current schema → run semantic checks → strip
+unknown fields.
 
 Policy:
 
 - **Patch/minor additions** (new optional fields, new object kinds accepted by the
-  current union) may stay within v1 if old documents still validate.
+  current union) may stay within v3 if old documents still validate.
 - **Breaking changes** (renamed/removed fields, changed semantics) require a new
   version constant, a migration from the previous version, regenerated JSON
   Schema and updated docs/tests.

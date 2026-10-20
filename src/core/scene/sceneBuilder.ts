@@ -15,6 +15,8 @@ import type {
 } from '../../core/world-plan/schema';
 import { createTerrainSampler } from '../../core/generation/terrain';
 import { isEffectivelyVisible } from '../../core/world-plan/hierarchy';
+import { addMesh, material, mergeStaticMeshes } from './kit';
+import { buildBarn, buildBush, buildBridge, buildCoop, buildFence, buildField, buildPath, buildRiver } from './proceduralObjects';
 
 export interface BuildSceneOptions {
   /** Adds sky/sun/hemisphere lights (the viewport needs them; exporters do not). */
@@ -29,33 +31,6 @@ export interface BuildSceneOptions {
 }
 
 const MAX_DEFAULT_POINT_LIGHTS = 12;
-
-function material(
-  color: string,
-  options: THREE.MeshStandardMaterialParameters = {},
-): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.86,
-    metalness: 0,
-    flatShading: false,
-    ...options,
-  });
-}
-
-function addMesh(
-  parent: THREE.Object3D,
-  geometry: THREE.BufferGeometry,
-  meshMaterial: THREE.Material,
-  position: [number, number, number] = [0, 0, 0],
-): THREE.Mesh {
-  const mesh = new THREE.Mesh(geometry, meshMaterial);
-  mesh.position.set(...position);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  parent.add(mesh);
-  return mesh;
-}
 
 function tagObject(group: THREE.Object3D, object: WorldObject): void {
   group.name = object.name;
@@ -234,6 +209,8 @@ function buildTree(object: TreeObject): THREE.Group {
   const foliage = material(object.color, { roughness: 0.94, flatShading: true });
   const trunk = material(object.trunkColor, { roughness: 1, flatShading: true });
 
+  if (object.variant === 'bush') return buildBush(object);
+
   if (object.variant === 'pine') {
     addMesh(group, new THREE.CylinderGeometry(0.16, 0.27, 1.7, 7), trunk, [0, 0.85, 0]);
     addMesh(group, new THREE.ConeGeometry(1.18, 1.8, 8), foliage, [0, 1.95, 0]);
@@ -326,6 +303,8 @@ function buildBuilding(object: BuildingObject): THREE.Group {
   });
 
   if (object.variant === 'house') {
+    // Stone sill under the walls; the door front stays proud of it.
+    addMesh(group, new THREE.BoxGeometry(3.55, 0.34, 3.15), material('#8d8579', { roughness: 1 }), [0, 0.1, 0]);
     addMesh(group, new THREE.BoxGeometry(3.4, 2.6, 3.0), wall, [0, 1.3, 0]);
     const roofMesh = addMesh(group, new THREE.ConeGeometry(2.55, 1.7, 4), roof, [0, 3.45, 0]);
     roofMesh.rotation.y = Math.PI / 4;
@@ -343,6 +322,9 @@ function buildBuilding(object: BuildingObject): THREE.Group {
     addMesh(group, new THREE.BoxGeometry(0.4, 0.7, 0.12), glow, [0, 3.6, 1.48]);
     return group;
   }
+
+  if (object.variant === 'barn') return buildBarn(object.color, object.roofColor);
+  if (object.variant === 'coop') return buildCoop(object.color, object.roofColor);
 
   // ruin: broken walls and a fallen column
   addMesh(group, new THREE.BoxGeometry(3.6, 2.5, 0.32), wall, [0, 1.25, -1.7]);
@@ -396,7 +378,26 @@ export function createWorldObjectGroup(object: WorldObject, withLight: boolean):
     case 'lantern':
       group = buildLantern(object, withLight);
       break;
+    case 'path':
+      group = buildPath(object);
+      break;
+    case 'river':
+      group = buildRiver(object);
+      break;
+    case 'fence':
+      group = buildFence(object);
+      break;
+    case 'field':
+      group = buildField(object);
+      break;
+    case 'bridge':
+      group = buildBridge(object);
+      break;
   }
+
+  // Collapse each object's static boxes into one mesh per material before the
+  // node transform is applied. Instanced crops/pebbles are left intact.
+  mergeStaticMeshes(group);
 
   applyTransform(group, object.transform);
   group.visible = object.visible;

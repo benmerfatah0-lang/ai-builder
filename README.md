@@ -4,11 +4,12 @@ A free-first, local-first 3D world editor for the browser. Describe a world in
 text, inspect and edit it in a Three.js viewport, save it locally, and export it
 as a project file or a glTF 2.0 model for Godot and Unity.
 
-> **Phase 2 status:** the editor now has a Blender-inspired workflow — transform
-> gizmos, multi-selection, a scene hierarchy with groups, and a full inspector.
-> The project began (Phase 1) from a repository containing only a one-line
-> README. Full audit, architecture, risks and remaining work are in
-> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+> **Phase 3 status:** prompts now become a validated, versioned WorldPlan that is
+> built by a structured procedural planner — including a complete cartoon farm
+> with a farmhouse, barn, wheat fields, chicken coop, fences, lanes, orchard and
+> optional river/bridge. Every generated object is editable, and one object or a
+> whole region can be re-rolled in place. Full audit, architecture, risks and
+> remaining work are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ---
 
@@ -25,10 +26,22 @@ as a project file or a glTF 2.0 model for Godot and Unity.
 - **Procedural worlds** — five terrain styles (hills, flat, mountains, dunes,
   islands), seeded object scatter, settlements, ruins, lanterns, palms, cacti,
   biome palettes and day/sunset/night lighting.
+- **Structured farm generation** — the planner lays out a real farm instead of
+  scattering primitives: a grounded farmhouse, gabled barn with lean-to and hay,
+  grain silo, chicken coop with run and chickens, fenced wheat fields with
+  instanced crops, connecting dirt lanes that follow the terrain, an orchard,
+  windbreak trees, and an optional creek with a planked bridge. Footprints are
+  collision-checked against a spatial grid, so solids do not intersect.
 - **Text-to-world generation** — a deterministic, fully offline interpreter maps
-  descriptions to biomes, time of day, scale, water and object counts. The same
-  description and seed rebuild the same world. The matched cues are shown in the
-  UI, so behaviour is transparent.
+  descriptions to biome, style, scale, density, time of day, water and farm
+  features, then a seeded planner produces a **WorldPlan v3**. The same
+  description and seed rebuild the same world; matched cues and generation
+  warnings are shown in the UI.
+- **Validate before build** — every plan is checked structurally (Zod +
+  hierarchy) and semantically (unsupported geometry, out-of-bounds objects,
+  floating/buried solids, overlapping buildings, a bridge without a river).
+  Blocking errors stop generation; warnings are reported and recoverable
+  problems can be repaired.
 - **Scene hierarchy** — a real tree (`role="tree"`) with groups, parent/child
   nesting up to 8 levels, inline rename, filter, per-node visibility and lock
   (both inherited by children), multi-select and reparent-by-grouping.
@@ -37,7 +50,13 @@ as a project file or a glTF 2.0 model for Godot and Unity.
   values for grouped nodes. Snapping: 0.5 units, 15°, 0.1 scale.
 - **Editor operations** — group, ungroup, duplicate (deep copy with new IDs),
   delete, snap-to-ground, colour and material editing (roughness, metalness,
-  emissive), asset library, undo/redo and keyboard shortcuts (below).
+  emissive), asset library (now incl. barn, coop, bush, dirt path, fence, wheat
+  field and bridge), undo/redo and keyboard shortcuts (below).
+- **Regenerate in place** — the inspector shows each object's geometry id,
+  source, status, region and variation seed. **Regenerate** re-rolls that
+  object's species/shape/palette/crop pattern without moving it; **Region**
+  re-rolls every generated object in the same region. Both are single undo steps
+  and only the affected scene nodes are rebuilt.
 - **Local saving** — debounced autosave to IndexedDB, manual “Save now”, a
   multi-world library (open, duplicate, delete), in-app status, import/export of
   `.world.json` project files, and a session fallback when IndexedDB is blocked.
@@ -54,20 +73,18 @@ rendering, saving and exporting happens in the browser.
 
 ### What is deliberately not there yet
 
-This phase ships only verified foundations — no placeholder buttons or mock
-features:
+No placeholder buttons or mock features are shipped:
 
-- The “AI” is currently a **rule-based offline interpreter**, not an LLM. A local
-  LLM can implement the existing `PromptInterpreter` interface later.
-- No click-to-place on terrain, box selection or terrain sculpting yet.
+- The “AI” is a **deterministic rule-based planner**, not an LLM. A local LLM can
+  implement the existing `PromptInterpreter` interface later.
+- No click-to-place on terrain, box selection or terrain sculpting yet. Buildings
+  are grounded, but terrain edits do not re-snap existing objects.
 - GLB export has geometry/materials/vertex colours but no lights, colliders,
   LODs or native Godot/Unity project files.
-- Terrain edits do not automatically move existing objects (per-object “Snap to
-  ground” is available).
-- Phase 3 has not been started: it is gated on the Phase 2 editor being accepted
-  on desktop and Android browsers.
 - The WebGL rendering path could not be visually tested in the development
-  sandbox; real desktop/Android QA is the first remaining task.
+  sandbox (no GPU); real desktop/Android QA remains the first task.
+- Farm layouts are authored around one yard template with seeded mirroring and
+  variation; larger settlements/road graphs are future work.
 
 Full risk list and roadmap: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -100,9 +117,12 @@ npm run preview    # serves dist/ on http://localhost:4173
 | `npm run build` | Strict type-check, then production build to `dist/`. |
 | `npm run preview` | Preview the production build. |
 | `npm run typecheck` | `tsc --noEmit` with strict settings. |
-| `npm test` | Vitest: schema, generation, persistence, export, store, DOM runtime. |
+| `npm test` | Vitest: schema/migration, farm + scatter generation, validation/repair, regeneration, persistence, export, store, procedural scene, DOM runtime. |
 | `npm run test:watch` | Watch mode. |
 | `npm run schema:export` | Regenerate `docs/worldplan.schema.json` from the Zod schema. |
+| `npm run render:preview` | Render a generated world to a PNG with a dependency-free software rasteriser (visual QA without a GPU). |
+| `npm run site` | Serve the project website and the editor at `http://localhost:4173` (`/app/`). |
+| `npm run site:build` | Rebuild the site playground bundle and the editor build in `website/public/`. |
 
 ---
 
@@ -112,12 +132,14 @@ npm run preview    # serves dist/ on http://localhost:4173
 src/
   app/                 React entry composition
   core/
-    world-plan/        WorldPlan v2 schema, factory, migration, hierarchy, transform math
-    generation/        seeded RNG, terrain sampler, biomes, generator, starter
-    assets/            procedural asset library + placement helpers
+    world-plan/        WorldPlan v3 schema, factory, migration, hierarchy, transform math,
+                       generation metadata, geometry registry, semantic validation, colours
+    generation/        seeded RNG, terrain sampler, biomes, scatter generator, farm planner,
+                       spatial placement ledger, per-object/region regeneration, starter
+    assets/            procedural asset library, structures (barn/coop/silo/path/fence/field/river/bridge)
     persistence/       IndexedDB/memory repositories, project file I/O
     export/            glTF 2.0 (.glb) exporter + export target metadata
-    scene/             shared Three.js scene builder (viewport + exporter)
+    scene/             shared Three.js scene builder (viewport + exporter), kit + Phase 3 geometry
     utils/             IDs, hashing, clamping
   modules/
     ai/                intent types, provider contract, offline interpreter
@@ -125,7 +147,8 @@ src/
   ui/                  icons, controls, top bar, library dialog, export menu, toast
   styles/              design tokens + responsive CSS
   test/                Vitest setup (fake IndexedDB, GLB FileReader shim)
-scripts/               schema export
+scripts/               schema export, offline preview renderer
+website/               project site (static page + in-browser playground + static server)
 docs/                  architecture report, WorldPlan reference, JSON Schema
 ```
 
@@ -205,6 +228,27 @@ scene tree's per-row buttons and the inspector.
 
 ## Try the acceptance scenario
 
+### Farm pipeline (Phase 3)
+
+![Generated farm, rendered from the real scene graph](docs/farm-preview.png)
+
+*The farm brief above, generated deterministically (seed 20261020) and rendered
+straight from the scene graph that the viewport builds. Reproduce it with
+`npm run render:preview`.*
+
+1. Open **AI** and use the first example: *“Create a large cartoon low-poly farm
+   with a farmhouse, barn, wheat fields, a chicken coop, fences, trees, and
+   connected dirt paths.”* Press **Generate world**.
+2. Inspect the result in **Scene**: Farmstead (Barn, Farmhouse, Chicken coop),
+   Wheat fields, Paths, Fences and Landscape groups.
+3. Select the farmhouse and change position/rotation in **Inspect**; open
+   **Generated** and press **Regenerate** on the barn, or **Region** to re-roll
+   every field.
+4. Press **Save now**, reopen the project from the library, and confirm the farm
+   and your edits are intact.
+
+### Editor baseline (Phase 2)
+
 1. Open **Assets** and add **Ground plane**, **Cube**, **Pine tree** and **House**.
 2. Select each one in the **Scene** tree (or tap it in the viewport) and use the
    gizmo — or type exact values in the **Inspect** panel: position, rotation
@@ -218,6 +262,27 @@ scene tree's per-row buttons and the inspector.
 
 ---
 
+## Project website
+
+`website/` is a static site that ships with the repository:
+
+- a landing page explaining the pipeline with renders taken from the real scene
+  graph and real WebGL 2 screenshots of the editor;
+- a **playground** that runs the actual prompt interpreter and farm generator in
+  the browser (`website/src/demo.ts` → `website/public/demo.js` by esbuild) and
+  draws the resulting WorldPlan as a top-down map — no server, no API key;
+- the compiled editor served under `/app/`.
+
+```bash
+npm run site:build   # playground bundle + editor build
+npm run site         # http://localhost:4173/  (site)  ·  /app/ (editor)
+```
+
+The zero-dependency server (`website/server.mjs`) binds `0.0.0.0`, so the same
+command works behind a preview proxy and from a phone on the local network.
+
+---
+
 ## Tech stack
 
 React 19 · TypeScript 5.9 · Vite 7 · Three.js r186 · Zod 4 · IndexedDB · Vitest ·
@@ -225,18 +290,20 @@ Testing Library · happy-dom · fake-indexeddb. All open source, no paid service
 
 ---
 
-## Verification (Phase 2)
+## Verification (Phase 3)
 
 - `npm run typecheck` — clean (strict, `noUncheckedIndexedAccess`).
-- `npm test` — **87 tests / 11 files passing**, including a real binary GLB parse,
-  IndexedDB CRUD, deterministic generation, hierarchy/transform math, the gizmo's
-  API contract, DOM runtime flows on desktop and mobile widths, and a full
-  **acceptance test**: ground plane + cube + tree + house → select, move, resize,
-  rotate each → group → save to IndexedDB → reload → verify every transform and
-  hierarchy entry in both the document and the rendered scene graph, plus a
-  full-page reload that restores the last world. Renderer bootstrap, shader-sky
-  uniforms and water-shader injection are unit-tested headlessly.
-- `npm run build` — success. Initial gzip payload ≈ 291 kB; exporter is deferred.
+- `npm test` — **113 tests / 13 files passing**, including a real binary GLB
+  parse, IndexedDB CRUD, deterministic generation, farm planning, semantic
+  validation/repair, regeneration, hierarchy/transform math, the gizmo's API
+  contract, and DOM runtime flows on desktop and mobile widths.
+- **Farm acceptance (UI)**: prompt → plan → generated hierarchy → edit the
+  farmhouse (position/rotation) and the chicken coop (position/scale) →
+  regenerate the barn → save → reopen → all edits and farm content verified.
+- **Editor acceptance**: ground plane + cube + tree + house → move/resize/rotate
+  → group → save → reload → every transform and hierarchy entry verified in the
+  document **and** the rendered scene graph.
+- `npm run build` — success. Initial gzip payload ≈ 309 kB; exporter deferred.
 - Dev and preview servers return HTTP 200 for all assets through a proxied host.
 - Real WebGL/GPU and physical-device testing remains outstanding (see risks).
 
@@ -244,8 +311,8 @@ Testing Library · happy-dom · fake-indexeddb. All open source, no paid service
 
 ## Roadmap
 
-Phase 2 is complete pending real-device acceptance on desktop and Android.
-After that: click-to-place and terrain snapping → performance (instancing/dirty
-updates) → deeper procedural generation → optional local-LLM provider → asset
-pipeline → native engine exports → PWA/offline install. Details and acceptance
-criteria are tracked in the architecture report.
+Phases 1–3 are complete pending real-device acceptance on desktop and Android.
+Next: click-to-place and terrain snapping → terrain sculpting/flattened building
+pads → performance profiling at 500+ objects → optional local-LLM provider →
+richer asset pipeline → native engine exports → PWA/offline install. Details and
+acceptance criteria are tracked in the architecture report.
