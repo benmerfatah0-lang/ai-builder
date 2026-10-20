@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AI World Builder">
+  <rect width="64" height="64" rx="14" fill="#17181b"/>
+  <g fill="none" stroke="#e2703a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M32 10 50 19v19L32 47 14 38V19Z"/>
+    <path d="M14 19l18 9 18-9M32 28v19"/>
+  </g>
+</svg>
