@@ -232,9 +232,12 @@ export function Viewport({
       clearObject3DGroup(overlayGroup);
       const ids = selectionRef.current;
       const map = nodeObjectsRef.current;
+      const plan = planRef.current;
       ids.forEach((id, index) => {
         const object = map.get(id);
         if (!object) return;
+        // A hidden node has no visible geometry, so an outline would float in space.
+        if (!isEffectivelyVisible(plan, id)) return;
         object.updateWorldMatrix(true, true);
         const box = new THREE.Box3().setFromObject(object);
         if (box.isEmpty()) return;
