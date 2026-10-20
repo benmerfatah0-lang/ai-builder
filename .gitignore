@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+*.local
+*.log
+.DS_Store
+.vite/
+.arena/
+.env
+.env.*
+!.env.example
