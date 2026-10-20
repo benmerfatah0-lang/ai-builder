@@ -14,10 +14,14 @@ as a project file or a glTF 2.0 model for Godot and Unity.
 
 ## What works today
 
-- **3D viewport** — Three.js WebGL renderer, orbit/pan/zoom (mouse and touch),
-  perspective camera, grid and ground plane, terrain, water, shadows, sky/fog,
-  click/tap selection with outlines, double-click to frame a node, and a
-  move/rotate/scale **gizmo** with world/local space and snapping.
+- **3D viewport (real WebGL 2)** — a live `THREE.WebGLRenderer` on a WebGL 2
+  context with ACES filmic tone mapping, sRGB output, PCF soft shadows, a
+  procedural **shader sky** (gradient + sun disc that follows the world sun),
+  **animated water** (GLSL ripple injected into the PBR material), orbit/pan/zoom
+  for mouse and touch, grid and ground plane, terrain, click/tap selection with
+  outlines, double-click framing, and a move/rotate/scale **gizmo** with
+  world/local space and snapping. The HUD reports the live GPU API, FPS and draw
+  calls, and the camera button exports the current frame as a PNG.
 - **Procedural worlds** — five terrain styles (hills, flat, mountains, dunes,
   islands), seeded object scatter, settlements, ruins, lanterns, palms, cacti,
   biome palettes and day/sunset/night lighting.
@@ -160,6 +164,24 @@ with a generated JSON Schema at
 
 ---
 
+## Rendering
+
+The viewport is a genuine WebGL 2 renderer, not a 2D fallback:
+
+| Layer | Implementation |
+| --- | --- |
+| Context | `WebGLRenderer` with WebGL 2; retries with simpler attributes if a device rejects antialiasing or `high-performance` |
+| Colour | ACES filmic tone mapping, sRGB output, PCF soft shadows |
+| Sky | Custom GLSL dome: zenith/horizon gradient plus a physically aligned sun disc and glow |
+| Water | PBR water with a per-pixel ripple injected into the standard shader (no textures, no extra pass) |
+| Performance | Pixel-ratio cap, lower shadow resolution and point-light budget on phones, automatic resolution step-down if FPS stays below 28 |
+| Resilience | GPU context-loss recovery, clear WebGL 2 error message with a retry button |
+| Proof | Live HUD: `WebGL 2 · <fps> fps · <draws> draws`; hover for the GPU/vendor string. Camera button exports a PNG of the current frame |
+
+Everything is local: no textures, CDNs or network requests are involved.
+
+---
+
 ## Keyboard shortcuts
 
 | Shortcut | Action |
@@ -206,14 +228,15 @@ Testing Library · happy-dom · fake-indexeddb. All open source, no paid service
 ## Verification (Phase 2)
 
 - `npm run typecheck` — clean (strict, `noUncheckedIndexedAccess`).
-- `npm test` — **81 tests / 10 files passing**, including a real binary GLB parse,
+- `npm test` — **87 tests / 11 files passing**, including a real binary GLB parse,
   IndexedDB CRUD, deterministic generation, hierarchy/transform math, the gizmo's
   API contract, DOM runtime flows on desktop and mobile widths, and a full
   **acceptance test**: ground plane + cube + tree + house → select, move, resize,
   rotate each → group → save to IndexedDB → reload → verify every transform and
   hierarchy entry in both the document and the rendered scene graph, plus a
-  full-page reload that restores the last world.
-- `npm run build` — success. Initial gzip payload ≈ 288 kB; exporter is deferred.
+  full-page reload that restores the last world. Renderer bootstrap, shader-sky
+  uniforms and water-shader injection are unit-tested headlessly.
+- `npm run build` — success. Initial gzip payload ≈ 291 kB; exporter is deferred.
 - Dev and preview servers return HTTP 200 for all assets through a proxied host.
 - Real WebGL/GPU and physical-device testing remains outstanding (see risks).
 

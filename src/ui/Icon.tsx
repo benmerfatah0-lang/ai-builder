@@ -33,7 +33,8 @@ export type IconName =
   | 'scale'
   | 'magnet'
   | 'grid'
-  | 'save';
+  | 'save'
+  | 'camera';
 
 const PATHS: Record<IconName, ReactNode> = {
   cube: (
@@ -202,6 +203,12 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="M5 3.5h11L20.5 8v12.5h-15.5V3.5Z" />
       <path d="M8 3.5v6h7v-6M8 20.5v-6h8v6" />
+    </>
+  ),
+  camera: (
+    <>
+      <path d="M3.5 8.5A2.5 2.5 0 0 1 6 6h2l1.4-2h5.2L16 6h2a2.5 2.5 0 0 1 2.5 2.5v8A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5v-8Z" />
+      <circle cx="12" cy="12.5" r="3.4" />
     </>
   ),
 };

@@ -15,6 +15,16 @@ import {
   readTransform,
 } from '../../core/scene/sceneBuilder';
 import { isEffectivelyLocked, isEffectivelyVisible } from '../../core/world-plan/hierarchy';
+import {
+  WebGLUnavailableError,
+  captureViewportPng,
+  createViewportRenderer,
+  downloadBlob,
+  type RendererProfile,
+} from '../../core/scene/renderer';
+import { createSkyDome, placeSkyDome, type SkyHandle } from '../../core/scene/sky';
+import { animateWater, type WaterAnimation } from '../../core/scene/water';
+import { Icon } from '../../ui/Icon';
 
 export type TransformTool = 'translate' | 'rotate' | 'scale';
 export type TransformSpace = 'world' | 'local';
@@ -46,6 +56,8 @@ interface Runtime {
   objectsGroup: THREE.Group;
   lightsGroup: THREE.Group;
   overlayGroup: THREE.Group;
+  sky: SkyHandle;
+  profile: RendererProfile;
   frameWorld: () => void;
   frameSelection: (ids: string[]) => void;
   refreshOverlay: () => void;
@@ -78,6 +90,10 @@ export function Viewport({
   const gizmoRef = useRef({ tool, space, snap });
   const [status, setStatus] = useState<Status>('loading');
   const [errorMessage, setErrorMessage] = useState('');
+  const [profile, setProfile] = useState<RendererProfile | null>(null);
+  const [stats, setStats] = useState({ fps: 0, calls: 0, triangles: 0 });
+  const [notice, setNotice] = useState('');
+  const waterRef = useRef<WaterAnimation | null>(null);
 
   planRef.current = plan;
   selectionRef.current = selection;
@@ -89,25 +105,24 @@ export function Viewport({
     const container = containerRef.current;
     if (!container) return;
 
+    const narrow = isNarrowViewport();
     let renderer: THREE.WebGLRenderer;
+    let rendererProfile: RendererProfile;
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      ({ renderer, profile: rendererProfile } = createViewportRenderer(narrow));
     } catch (error) {
       setStatus('error');
       setErrorMessage(
-        error instanceof Error
+        error instanceof WebGLUnavailableError
           ? error.message
-          : 'WebGL is unavailable. Try enabling hardware acceleration.',
+          : error instanceof Error
+            ? error.message
+            : 'WebGL is unavailable. Try enabling hardware acceleration.',
       );
       return;
     }
+    setProfile(rendererProfile);
 
-    const narrow = isNarrowViewport();
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, narrow ? 1.65 : 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.04;
     renderer.domElement.classList.add('viewport-canvas');
     renderer.domElement.tabIndex = 0;
     container.appendChild(renderer.domElement);
@@ -116,6 +131,10 @@ export function Viewport({
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#9ab6c8');
     scene.fog = new THREE.FogExp2('#9ab6c8', 0.002);
+
+    // Real shader sky: gradient + sun disc, kept in sync with the world lights.
+    const sky = createSkyDome(planRef.current.environment);
+    scene.add(sky.mesh);
 
     const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 5000);
     camera.position.set(90, 70, 110);
@@ -267,10 +286,49 @@ export function Viewport({
     resize();
 
     let animationFrame = 0;
+    let frameCount = 0;
+    let statsSince = performance.now();
+    let lowFpsSamples = 0;
+    // Adaptive resolution: step the pixel ratio down if the device cannot keep up
+    // (common on older Android phones). It never goes back up, so it cannot oscillate.
+    let qualityScale = 1;
+    const startedAt = performance.now();
+    const clock = new THREE.Clock();
+
     const animate = () => {
       animationFrame = window.requestAnimationFrame(animate);
       controls.update();
+
+      const elapsed = clock.getElapsedTime();
+      waterRef.current?.update(elapsed);
+      placeSkyDome(sky, camera);
       renderer.render(scene, camera);
+
+      frameCount += 1;
+      const now = performance.now();
+      if (now - statsSince >= 500) {
+        const fps = Math.round((frameCount * 1000) / (now - statsSince));
+        setStats({
+          fps,
+          calls: renderer.info.render.calls,
+          triangles: renderer.info.render.triangles,
+        });
+        frameCount = 0;
+        statsSince = now;
+
+        // Ignore the first two seconds (shader compilation, first uploads).
+        if (now - startedAt > 2000) {
+          lowFpsSamples = fps < 28 ? lowFpsSamples + 1 : 0;
+          if (lowFpsSamples >= 3 && qualityScale > 0.6) {
+            lowFpsSamples = 0;
+            qualityScale = Math.max(0.55, qualityScale - 0.15);
+            renderer.setPixelRatio(
+              Math.min(window.devicePixelRatio || 1, narrow ? 1.65 : 2) * qualityScale,
+            );
+            resize();
+          }
+        }
+      }
     };
     animate();
 
@@ -329,15 +387,46 @@ export function Viewport({
     };
 
     const onContextLost = (event: Event) => {
+      // Preventing the default lets the browser restore the context automatically.
       event.preventDefault();
       setStatus('error');
-      setErrorMessage('The WebGL context was lost. Reload the page to restore the viewport.');
+      setErrorMessage(
+        'The GPU context was lost (this can happen after a driver reset or when the tab ' +
+          'was in the background for a long time). Waiting for the browser to restore it…',
+      );
+    };
+
+    const onContextRestored = () => {
+      setErrorMessage('');
+      setStatus('ready');
+      resize();
+    };
+
+    let noticeTimer = 0;
+    const showNotice = (message: string) => {
+      setNotice(message);
+      window.clearTimeout(noticeTimer);
+      noticeTimer = window.setTimeout(() => setNotice(''), 2600);
+    };
+
+    const onCapture = async () => {
+      try {
+        const blob = await captureViewportPng(renderer, scene, camera);
+        const name = (planRef.current.name || 'world').replace(/[^a-z0-9-_]+/gi, '-');
+        downloadBlob(blob, `${name}-viewport.png`);
+        showNotice('Viewport PNG exported');
+      } catch (error) {
+        console.error('Could not capture the viewport.', error);
+        showNotice('Could not save the image');
+      }
     };
 
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
     renderer.domElement.addEventListener('dblclick', onDoubleClick);
     renderer.domElement.addEventListener('webglcontextlost', onContextLost);
+    renderer.domElement.addEventListener('webglcontextrestored', onContextRestored);
+    window.addEventListener('worldbuilder:capture', onCapture);
 
     runtimeRef.current = {
       renderer,
@@ -349,6 +438,8 @@ export function Viewport({
       objectsGroup,
       lightsGroup,
       overlayGroup,
+      sky,
+      profile: rendererProfile,
       frameWorld,
       frameSelection,
       refreshOverlay,
@@ -362,7 +453,14 @@ export function Viewport({
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       renderer.domElement.removeEventListener('dblclick', onDoubleClick);
       renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', onContextRestored);
+      window.removeEventListener('worldbuilder:capture', onCapture);
       if (overlayFrame) window.cancelAnimationFrame(overlayFrame);
+      window.clearTimeout(noticeTimer);
+      waterRef.current?.dispose();
+      waterRef.current = null;
+      scene.remove(sky.mesh);
+      sky.dispose();
       transformControls.detach();
       transformControls.dispose();
       scene.remove(gizmoHelper);
@@ -398,9 +496,12 @@ export function Viewport({
     const runtime = runtimeRef.current;
     if (!runtime) return;
     const current = planRef.current;
+    waterRef.current?.dispose();
+    waterRef.current = null;
     clearObject3DGroup(runtime.terrainGroup);
     runtime.terrainGroup.add(createTerrainMesh(current, isNarrowViewport() ? 128 : 192));
     const water = createWaterMesh(current);
+    waterRef.current = water ? animateWater(water) : null;
     if (water) runtime.terrainGroup.add(water);
     if (showGrid) runtime.terrainGroup.add(createGrid(current));
     runtime.controls.maxDistance = current.terrain.size * 2.6;
@@ -463,6 +564,7 @@ export function Viewport({
     const environment = current.environment;
     runtime.scene.background = new THREE.Color(environment.skyColor);
     runtime.scene.fog = new THREE.FogExp2(environment.fogColor, environment.fogDensity);
+    runtime.sky.update(environment);
     clearObject3DGroup(runtime.lightsGroup);
     addEnvironmentLights(runtime.lightsGroup, environment, current.terrain.size);
     runtime.lightsGroup.traverse((child) => {
@@ -563,6 +665,17 @@ export function Viewport({
         {selectedCount > 1 && (
           <span className="hud-pill hud-pill-accent">{selectedCount} selected</span>
         )}
+        {profile && (
+          <span
+            className="hud-pill hud-pill-subtle viewport-gpu"
+            title={
+              `${profile.api === 'webgl2' ? 'WebGL 2' : 'WebGL'} · ${profile.gpu}` +
+              ` · ${profile.vendor} · max texture ${profile.maxTextureSize}px`
+            }
+          >
+            {profile.api === 'webgl2' ? 'WebGL 2' : 'WebGL'} · {stats.fps} fps · {stats.calls} draws
+          </span>
+        )}
       </div>
 
       <div className="viewport-hud viewport-hud-actions">
@@ -577,7 +690,18 @@ export function Viewport({
             <path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4" />
           </svg>
         </button>
+        <button
+          type="button"
+          className="icon-btn glass"
+          onClick={() => window.dispatchEvent(new Event('worldbuilder:capture'))}
+          title="Save a PNG of the current view"
+          aria-label="Save viewport image"
+        >
+          <Icon name="camera" size={16} />
+        </button>
       </div>
+
+      {notice && <div className="viewport-notice">{notice}</div>}
 
       <div className="viewport-hint">
         <span className="desktop-only">
@@ -599,6 +723,13 @@ export function Viewport({
           <strong>3D viewport unavailable</strong>
           <p>{errorMessage}</p>
           <p>Editing and project export still work.</p>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() => window.location.reload()}
+          >
+            <Icon name="redo" size={14} /> Retry
+          </button>
         </div>
       )}
     </div>

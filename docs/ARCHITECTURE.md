@@ -112,6 +112,9 @@ application at runtime.
 | Persistence | `src/core/persistence/` | IndexedDB/memory repositories, `.world.json` file import/export. |
 | Export | `src/core/export/gltf.ts` | Binary glTF export + export target metadata. |
 | Scene builder | `src/core/scene/sceneBuilder.ts` | Pure Three.js geometry/lights shared by viewport and exporter. |
+| Renderer | `src/core/scene/renderer.ts` | WebGL 2 context creation with fallbacks, GPU capability profile, PNG capture. |
+| Sky | `src/core/scene/sky.ts` | Procedural GLSL sky dome (gradient + sun) driven by the environment. |
+| Water | `src/core/scene/water.ts` | Viewport-only animated ripple injected into the PBR water shader. |
 | AI commands | `src/modules/ai/` | Intent types, provider contract, offline prompt interpreter. |
 | Editor | `src/modules/editor/` | Reducer store, autosave, gizmo viewport, transform toolbar, hierarchy/inspector/asset/AI panels, workspace shell and keyboard shortcuts. |
 | UI primitives | `src/ui/` | Icons, controls, top bar, export menu, world library, toast, media query. |
@@ -151,6 +154,32 @@ CLI export and testing straightforward.
    local transforms with `transformRelativeTo`, so nothing moves on screen.
 5. The viewport effect rebuilds only when the plan object identity changes; the
    inspector and tree re-render from the same document.
+
+---
+
+## 4b. Real-time rendering pipeline
+
+The viewport is a WebGL 2 renderer, not a 2D or mock renderer:
+
+1. `createViewportRenderer` asks Three.js for a context with antialiasing and
+   `high-performance`; failures fall back to simpler attributes before reporting
+   an actionable "WebGL 2 unavailable" error.
+2. The renderer enables `PCFSoftShadowMap`, ACES filmic tone mapping, sRGB output
+   and a capped device pixel ratio (2 desktop / 1.65 mobile).
+3. A shader sky dome is drawn first (gradient + sun disc aligned with the
+   directional light) and follows the camera inside the far plane.
+4. The shared scene builder supplies terrain, water and world nodes, so the
+   viewport and the exporter can never disagree about geometry.
+5. Water receives a viewport-only GLSL ripple (`onBeforeCompile`) so exported
+   glTF keeps a plain PBR material.
+6. A `Clock` drives the water and sky each frame. Per-frame counters feed the
+   HUD (FPS, draw calls) and an adaptive pixel-ratio step-down protects slower
+   phones.
+
+**Why this is verifiable without a GPU in CI:** context creation failure,
+fallback ordering, GPU profile parsing, sky uniforms and water-shader injection
+are unit-tested; the actual rasterised pixels still require a real browser (see
+risks).
 
 ---
 
@@ -279,14 +308,14 @@ Commands run on this branch:
 
 ```
 npm run typecheck   # tsc --noEmit, strict — clean
-npm test            # 81 tests in 10 files — all passed
+npm test            # 87 tests in 11 files — all passed
 npm run build       # tsc + vite build — success
 npm run schema:export
 npm run dev         # HTTP 200 via preview proxy host
 npm run preview     # production build served, all chunks HTTP 200
 ```
 
-**Tests (81/81 passing):**
+**Tests (87/87 passing):**
 
 | Area | Tests | What is covered |
 | --- | --- | --- |
@@ -297,6 +326,7 @@ npm run preview     # production build served, all chunks HTTP 200
 | Hierarchy + transform math | 15 | group/ungroup/reparent world-preserving semantics, duplicate remapping, matrix round-trip |
 | Editor reducer | 12 | selection modes, undo/redo, grouping history, locked nodes, clamping |
 | Gizmo integration | 2 | TransformControls/OrbitControls mode, space, snap, axis constraints, attach/detach, touch config |
+| WebGL bootstrap | 6 | context-failure error, sky shader/uniforms, camera-following dome, water-shader injection |
 | DOM runtime | 4 | boot + generation + undo; full desktop acceptance workflow; reload restores the last world; mobile dock, sheet and axis controls |
 | **End-to-end acceptance** | 1 | ground plane + cube + tree + house → edit → group → save to IndexedDB → reload → verify document **and** rendered scene graph |
 
@@ -304,14 +334,14 @@ npm run preview     # production build served, all chunks HTTP 200
 
 | Asset | Size | Gzip |
 | --- | --- | --- |
-| `index-*.js` | 374.14 kB | 112.98 kB |
-| `three-vendor-*.js` | 545.44 kB | 137.20 kB |
+| `index-*.js` | 381.29 kB | 115.67 kB |
+| `three-vendor-*.js` | 546.06 kB | 137.43 kB |
 | `validation-*.js` (Zod) | 92.54 kB | 26.39 kB |
 | `react-vendor-*.js` | 11.88 kB | 4.20 kB |
 | `GLTFExporter-*.js` (lazy) | 37.47 kB | 11.14 kB |
-| `index-*.css` | 36.29 kB | 7.55 kB |
+| `index-*.css` | 36.92 kB | 7.66 kB |
 
-Initial payload is roughly 288 kB gzipped, with the exporter deferred.
+Initial payload is roughly 291 kB gzipped, with the exporter deferred.
 
 **Runtime checks:**
 
@@ -322,8 +352,9 @@ Initial payload is roughly 288 kB gzipped, with the exporter deferred.
 - The full acceptance scenario runs through the real UI (add ground plane, cube,
   tree, house → select each → numeric move/rotate/scale → rename → group → save →
   reopen from the world library) and asserts the reloaded hierarchy.
-- The gizmo's API contract (modes, spaces, snapping, attach/detach, touch config)
-  is unit-tested; only the GPU rasterisation itself is untested.
+- The gizmo's API contract (modes, spaces, snapping, attach/detach, touch config),
+  the WebGL bootstrap error path, sky uniforms and the water shader injection are
+  unit-tested; only the GPU rasterisation itself is untested.
 - A real WebGL context is not available in this sandbox, so the viewport's GPU
   rendering path could **not** be executed here; the graceful-failure path was
   verified instead. Real browser/Android visual QA remains outstanding.
@@ -405,6 +436,10 @@ src/modules/editor/ViewportToolbar.tsx
 src/modules/editor/panels/HierarchyPanel.tsx
 src/modules/editor/panels/nodeMeta.ts
 src/modules/editor/transformControls.test.ts
+src/core/scene/renderer.ts
+src/core/scene/sky.ts
+src/core/scene/water.ts
+src/core/scene/webgl.test.ts
 src/acceptance.test.ts
 ```
 
@@ -448,6 +483,11 @@ Notable implementation decisions:
   are unchanged at the moment of grouping.
 - **`nodeType: 'group'` discriminant** separates groups from objects at the type
   level (objects are structurally similar, which otherwise defeats narrowing).
+- **Rendering is a consumer, not the source of truth**: the shader sky and the
+  water ripple live in the viewport only, so exports stay portable PBR.
+- **The GPU is observable**: the HUD reads `renderer.info` and the
+  `WEBGL_debug_renderer_info` extension, so "is this really rendering?" has a
+  visible answer instead of a claim.
 
 ---
 
@@ -460,6 +500,9 @@ Notable implementation decisions:
 | Many draw calls at high object counts | Mobile frame rate falls | Instancing/merging; adaptive quality; lower point-light/shadow budgets |
 | Terrain edits don't move existing objects | Objects can float or sink after reshaping | Add terrain-wide re-snap + a terrain height-change transaction |
 | Gizmo rendering untested on real hardware | Handle sizes/overlap on high-DPI phones unverified | Real-device QA; per-device `setSize` tuning |
+| Custom GLSL cannot be compiled in this sandbox | A shader syntax/API change could degrade sky or water on a real GPU | Shaders kept small and GLSL ES 1.00; sky failure still leaves the flat scene background; verify on device |
+| WebGL 2 is required | Very old browsers/GPUs cannot open the viewport | Explicit capability message, retry button, all editing/persistence still works |
+| Adaptive resolution lowers quality on slow devices | Blurrier image instead of stutter | Only steps down when FPS < 28 for 1.5 s; never oscillates |
 | Numeric rotation edits create one history entry per keystroke | Undo may step through intermediate values | Coalesce history per field edit session |
 | Shadows on large scenes | Mobile GPU cost with 1500 casters | Shadow camera fit, culling, lower shadow resolution on mobile |
 | Rule-based interpreter, limited vocabulary | "AI" expectations may exceed actual capability | Add optional local LLM provider (WebLLM/Ollama) behind `PromptInterpreter`; keep offline fallback |
