@@ -2850,3 +2850,44 @@ kbd {
     display: none;
   }
 }
+
+/* --- AI planner report ---------------------------------------------------- */
+
+.ai-warnings {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 196, 107, 0.28);
+  background: rgba(255, 196, 107, 0.07);
+}
+
+.ai-warnings ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.ai-warnings li + li {
+  margin-top: 2px;
+}
+
+/* --- AI planner controls -------------------------------------------------- */
+
+.ai-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 8px;
+  margin: 10px 0 2px;
+}
+
+.ai-controls .field:first-child {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 520px) {
+  .ai-controls {
+    grid-template-columns: 1fr;
+  }
+}

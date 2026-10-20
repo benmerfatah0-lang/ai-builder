@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "schema:export": "tsx scripts/exportSchema.ts"
+    "schema:export": "tsx scripts/exportSchema.ts",
+    "render:preview": "tsx scripts/renderPreview.ts"
   },
   "dependencies": {
     "react": "^19.3.1",

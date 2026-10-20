@@ -7,6 +7,11 @@ export const KIND_ICONS: Record<WorldObject['kind'], IconName> = {
   rock: 'mountain',
   building: 'layers',
   lantern: 'sun',
+  path: 'path',
+  river: 'water',
+  fence: 'fence',
+  field: 'field',
+  bridge: 'bridge',
 };
 
 export const KIND_LABELS: Record<WorldObject['kind'], string> = {
@@ -15,6 +20,11 @@ export const KIND_LABELS: Record<WorldObject['kind'], string> = {
   rock: 'Rock',
   building: 'Building',
   lantern: 'Lantern',
+  path: 'Path',
+  river: 'River',
+  fence: 'Fence',
+  field: 'Field',
+  bridge: 'Bridge',
 };
 
 export function objectSubtitle(object: WorldObject): string {
@@ -27,6 +37,16 @@ export function objectSubtitle(object: WorldObject): string {
       return object.variant;
     case 'lantern':
       return 'light';
+    case 'path':
+      return object.style;
+    case 'river':
+      return 'water';
+    case 'fence':
+      return object.style;
+    case 'field':
+      return 'crops';
+    case 'bridge':
+      return 'crossing';
   }
 }
 

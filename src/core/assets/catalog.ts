@@ -10,6 +10,8 @@ import type {
 import { createTransform } from '../world-plan/factory';
 import type { TerrainSampler } from '../generation/terrain';
 import { createId } from '../utils/id';
+import { createMeta, type MetaInput } from '../world-plan/objectMeta';
+import { createBridge, createFence, createField, createPath } from './structures';
 
 /** Purely presentational asset descriptors used by the editor's asset library. */
 export type AssetCategory = 'primitives' | 'nature' | 'structures' | 'lights';
@@ -26,6 +28,7 @@ export interface AssetDefinition {
 function baseObject(
   name: string,
   position: [number, number, number],
+  meta: MetaInput,
 ): {
   id: string;
   name: string;
@@ -33,6 +36,7 @@ function baseObject(
   transform: ReturnType<typeof createTransform>;
   visible: boolean;
   locked: boolean;
+  meta: ReturnType<typeof createMeta>;
 } {
   return {
     id: createId('obj'),
@@ -41,6 +45,7 @@ function baseObject(
     transform: createTransform(position),
     visible: true,
     locked: false,
+    meta: createMeta({ source: 'library', status: 'generated', ...meta }),
   };
 }
 
@@ -58,7 +63,12 @@ function primitiveAsset(
     category: 'primitives',
     description,
     create: (_rng, position) => ({
-      ...baseObject(label, position),
+      ...baseObject(label, position, {
+        category: 'prop',
+        geometry: `primitive.${primitive}`,
+        dimensions: [1, 1, 1],
+        collision: false,
+      }),
       kind: 'primitive',
       primitive,
       color,
@@ -72,12 +82,25 @@ const TREE_COLORS: Record<TreeVariant, { foliage: string; trunk: string }> = {
   broadleaf: { foliage: '#5d7f3f', trunk: '#5a422b' },
   palm: { foliage: '#4e7e46', trunk: '#8a6b45' },
   cactus: { foliage: '#5c7c4a', trunk: '#5c7c4a' },
+  bush: { foliage: '#4f6f3a', trunk: '#4a3a26' },
+};
+
+export const TREE_DIMENSIONS: Record<TreeVariant, [number, number, number]> = {
+  pine: [2.4, 4.2, 2.4],
+  broadleaf: [2.6, 3.9, 2.6],
+  palm: [3.4, 4.4, 3.4],
+  cactus: [1, 2.6, 1],
+  bush: [1.7, 1.3, 1.7],
 };
 
 export function createTree(variant: TreeVariant, position: [number, number, number], rng: Rng): WorldObject {
   const palette = TREE_COLORS[variant] ?? { foliage: '#5d7f3f', trunk: '#5a422b' };
   return {
-    ...baseObject(`${variant[0]?.toUpperCase() ?? 'T'}${variant.slice(1)}`, position),
+    ...baseObject(`${variant[0]?.toUpperCase() ?? 'T'}${variant.slice(1)}`, position, {
+      category: 'vegetation',
+      geometry: `tree.${variant}`,
+      dimensions: TREE_DIMENSIONS[variant] ?? [2.4, 4.2, 2.4],
+    }),
     kind: 'tree',
     variant,
     color: palette.foliage,
@@ -97,7 +120,11 @@ export function createRock(
   color = '#7d7c75',
 ): WorldObject {
   return {
-    ...baseObject(variant === 'crag' ? 'Crag' : 'Boulder', position),
+    ...baseObject(variant === 'crag' ? 'Crag' : 'Boulder', position, {
+      category: 'rock',
+      geometry: `rock.${variant}`,
+      dimensions: variant === 'crag' ? [2.8, 2.3, 2.8] : [1.8, 1.4, 1.8],
+    }),
     kind: 'rock',
     variant,
     color,
@@ -109,6 +136,14 @@ export function createRock(
   };
 }
 
+export const BUILDING_DIMENSIONS: Record<BuildingVariant, [number, number, number]> = {
+  house: [3.4, 4.3, 3],
+  tower: [3.7, 7.7, 3.7],
+  ruin: [3.6, 2.5, 3.4],
+  barn: [6.2, 5.4, 7.4],
+  coop: [2.6, 2.4, 2.8],
+};
+
 export function createBuilding(
   variant: BuildingVariant,
   position: [number, number, number],
@@ -117,7 +152,11 @@ export function createBuilding(
 ): WorldObject {
   const label = variant[0]?.toUpperCase() ?? 'B';
   return {
-    ...baseObject(`${label}${variant.slice(1)}`, position),
+    ...baseObject(`${label}${variant.slice(1)}`, position, {
+      category: 'structure',
+      geometry: `building.${variant}`,
+      dimensions: BUILDING_DIMENSIONS[variant] ?? [3.4, 4.3, 3],
+    }),
     kind: 'building',
     variant,
     color: colors.wall,
@@ -132,7 +171,11 @@ export function createBuilding(
 
 export function createLantern(position: [number, number, number], color = '#ffc46b'): WorldObject {
   return {
-    ...baseObject('Lantern', position),
+    ...baseObject('Lantern', position, {
+      category: 'prop',
+      geometry: 'prop.lantern',
+      dimensions: [0.5, 1.4, 0.5],
+    }),
     kind: 'lantern',
     color,
   };
@@ -182,6 +225,13 @@ export const ASSET_LIBRARY: AssetDefinition[] = [
     create: (rng, position) => createTree('cactus', position, rng),
   },
   {
+    id: 'bush',
+    label: 'Bush',
+    category: 'nature',
+    description: 'Low shrub for hedges, field edges and undergrowth.',
+    create: (rng, position) => createTree('bush', position, rng),
+  },
+  {
     id: 'boulder',
     label: 'Boulder',
     category: 'nature',
@@ -210,11 +260,72 @@ export const ASSET_LIBRARY: AssetDefinition[] = [
     create: (rng, position) => createBuilding('tower', position, rng, { wall: '#9a9384', roof: '#5a5c63' }),
   },
   {
+    id: 'barn',
+    label: 'Barn',
+    category: 'structures',
+    description: 'Gabled farm building with a red board exterior.',
+    create: (rng, position) => createBuilding('barn', position, rng, { wall: '#a4503f', roof: '#5b4436' }),
+  },
+  {
+    id: 'coop',
+    label: 'Chicken coop',
+    category: 'structures',
+    description: 'Small shed with a run for poultry.',
+    create: (rng, position) => createBuilding('coop', position, rng, { wall: '#c9b18b', roof: '#7a4d3c' }),
+  },
+  {
     id: 'ruin',
     label: 'Ruin',
     category: 'structures',
     description: 'Broken walls of an ancient structure.',
     create: (rng, position) => createBuilding('ruin', position, rng, { wall: '#8f8878', roof: '#6e6a5f' }),
+  },
+  {
+    id: 'dirt-path',
+    label: 'Dirt path',
+    category: 'structures',
+    description: 'Straight dirt lane segment for connecting buildings.',
+    create: (_rng, position) =>
+      createPath(
+        [
+          [0, 0, -4],
+          [0, 0, 4],
+        ],
+        position,
+        { name: 'Dirt path', width: 2.6 },
+      ),
+  },
+  {
+    id: 'wood-fence',
+    label: 'Wood fence',
+    category: 'structures',
+    description: 'Straight post-and-rail fence segment.',
+    create: (_rng, position) =>
+      createFence(
+        [
+          [-4, 0, 0],
+          [0, 0, 0],
+          [4, 0, 0],
+        ],
+        position,
+        { name: 'Wood fence' },
+      ),
+  },
+  {
+    id: 'wheat-field',
+    label: 'Wheat field',
+    category: 'structures',
+    description: 'Small instanced crop field; edit width and density in the inspector.',
+    create: (rng, position) =>
+      createField(8, 6, position, rng, { name: 'Wheat field', rows: 4, density: 0.9 }),
+  },
+  {
+    id: 'bridge',
+    label: 'Bridge',
+    category: 'structures',
+    description: 'Planked bridge for crossing a stream.',
+    create: (_rng, position) =>
+      createBridge(8, position, { name: 'Bridge', width: 3 }),
   },
   {
     id: 'lantern',

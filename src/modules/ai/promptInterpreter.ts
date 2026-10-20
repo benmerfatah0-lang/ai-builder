@@ -9,12 +9,15 @@ import {
 } from '../../core/generation/biomes';
 import type {
   BiomeId,
+  FarmFeatures,
   InterpretOptions,
   PromptInterpretation,
   PromptInterpreter,
   TimeOfDay,
+  WorldDensity,
   WorldIntent,
   WorldScale,
+  WorldStyle,
 } from './types';
 
 const BIOME_KEYWORDS: Record<BiomeId, string[]> = {
@@ -129,6 +132,105 @@ const COUNT_ALIASES: Record<string, 'trees' | 'rocks' | 'buildings' | 'lanterns'
 
 const COUNT_LIMITS = { trees: 600, rocks: 400, buildings: 200, lanterns: 120 };
 
+const FARM_KEYWORDS = [
+  'farm',
+  'farms',
+  'farmstead',
+  'barn',
+  'barns',
+  'wheat',
+  'coop',
+  'coops',
+  'chicken',
+  'chickens',
+  'hen',
+  'hens',
+  'poultry',
+  'farmhouse',
+  'ranch',
+  'silo',
+  'orchard',
+  'homestead',
+  'paddock',
+  'crops',
+  'crop',
+  'harvest',
+];
+
+const CARTOON_KEYWORDS = [
+  'cartoon',
+  'low-poly',
+  'low poly',
+  'lowpoly',
+  'stylized',
+  'stylised',
+  'toy',
+  'playful',
+  'cozy',
+  'charming',
+];
+const NATURAL_KEYWORDS = ['realistic', 'natural', 'photorealistic', 'lifelike'];
+const DENSE_KEYWORDS = ['dense', 'lush', 'abundant', 'thick', 'overgrown', 'bustling'];
+const SPARSE_KEYWORDS = ['sparse', 'minimal', 'empty', 'quiet', 'few trees'];
+
+function detectStyle(text: string): { style: WorldStyle; matched: string[] } {
+  const cartoon = matches(text, CARTOON_KEYWORDS);
+  if (cartoon.length > 0) return { style: 'cartoon', matched: cartoon };
+  const natural = matches(text, NATURAL_KEYWORDS);
+  if (natural.length > 0) return { style: 'natural', matched: natural };
+  return { style: 'stylized', matched: [] };
+}
+
+function detectDensity(text: string): { density: WorldDensity; matched: string[] } {
+  const dense = matches(text, DENSE_KEYWORDS);
+  if (dense.length > 0) return { density: 'dense', matched: dense };
+  const sparse = matches(text, SPARSE_KEYWORDS);
+  if (sparse.length > 0) return { density: 'sparse', matched: sparse };
+  return { density: 'normal', matched: [] };
+}
+
+const WORD_NUMBERS: Record<string, number> = { one: 1, two: 2, three: 3, four: 4 };
+
+function detectWheatFieldCount(text: string): number {
+  const digit = /(\d)\s*wheat\s*fields?/.exec(text);
+  if (digit?.[1]) return clamp(Number.parseInt(digit[1], 10), 1, 3);
+  const word = /(one|two|three|four)\s+wheat\s*fields?/.exec(text);
+  if (word?.[1]) return clamp(WORD_NUMBERS[word[1]] ?? 2, 1, 3);
+  return /wheat\s*fields?|fields?\s*of\s*wheat/.test(text) ? (text.includes('large') ? 3 : 2) : 0;
+}
+
+function detectFarmFeatures(text: string, timeOfDay: TimeOfDay): FarmFeatures | undefined {
+  const farmMatches = matches(text, FARM_KEYWORDS);
+  if (farmMatches.length === 0) return undefined;
+
+  const wheatFields = Math.max(1, detectWheatFieldCount(text) || 2);
+  const river = matches(text, ['river', 'creek', 'stream', 'brook']).length > 0;
+  const bridge = matches(text, ['bridge', 'crossing']).length > 0;
+  const orchard = matches(text, ['orchard', 'apple', 'fruit']).length > 0;
+  const coop = matches(text, ['coop', 'chicken', 'chickens', 'hen', 'hens', 'poultry']).length > 0;
+
+  return {
+    farm: true,
+    farmhouse: matches(text, ['farmhouse', 'farm house', 'house', 'cottage', 'homestead']).length > 0 || farmMatches.length > 0,
+    barn: text.includes('barn') || farmMatches.length > 0,
+    silo: text.includes('silo') || text.includes('granary'),
+    coop,
+    wheatFields: wheatFields || 2,
+    fences: matches(text, ['fence', 'fences', 'fenced', 'paddock', 'enclosure', 'wall', 'walls']).length > 0,
+    dirtPaths:
+      matches(text, ['path', 'paths', 'lane', 'lanes', 'road', 'roads', 'track', 'trail', 'dirt']).length > 0,
+    orchard,
+    river,
+    bridge,
+    rocks: matches(text, ['rock', 'rocks', 'stone', 'stones', 'boulder', 'boulders']).length > 0 || !/no rocks/.test(text),
+    bushes:
+      matches(text, ['bush', 'bushes', 'hedge', 'hedges', 'shrub', 'shrubs']).length > 0 ||
+      !/no (bushes|hedges|shrubs)/.test(text),
+    lanterns:
+      matches(text, ['lantern', 'lanterns', 'lamp', 'lamps']).length > 0 || timeOfDay === 'night',
+  };
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -208,14 +310,22 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
   const timeResult = detectTime(text);
   const scaleResult = detectScale(text);
   const countResult = detectExplicitCounts(text);
+  const styleResult = detectStyle(text);
+  const densityResult = detectDensity(text);
+  const features = detectFarmFeatures(text, timeResult.timeOfDay);
+  const farm = features !== undefined;
   const settlementMatches = matches(text, SETTLEMENT_KEYWORDS);
-  const settlement = settlementMatches.length > 0;
+  const settlement = settlementMatches.length > 0 || farm;
   const waterMatches = matches(text, WATER_KEYWORDS);
   const dry = matches(text, DRY_KEYWORDS).length > 0;
 
-  const scale = scaleResult.scale;
+  // A farm is a meadow scene; farm cues outweigh a stray biome word.
+  const biome = farm ? 'meadow' : biomeResult.biome;
+  const scale = options.scale ?? scaleResult.scale;
+  const style = options.style ?? styleResult.style;
+  const density = options.density ?? densityResult.density;
   const factor = SCALE_SETTINGS[scale].countFactor;
-  const base = BASE_COUNTS[biomeResult.biome];
+  const base = BASE_COUNTS[biome];
 
   let buildings = Math.round(base.buildings * factor);
   let lanterns = Math.round(base.lanterns * factor);
@@ -234,37 +344,66 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
     lanterns: countResult.counts.lanterns ?? lanterns,
   };
 
-  const water = biomeResult.biome === 'island' ? true : !dry && waterMatches.length > 0;
+  const water = farm
+    ? Boolean(features?.river)
+    : biome === 'island'
+      ? true
+      : !dry && waterMatches.length > 0;
 
   const cues: string[] = [];
-  cues.push(`biome: ${biomeResult.biome}`);
+  cues.push(`biome: ${biome}`);
   if (biomeResult.matched.length > 0) cues.push(`matched: ${biomeResult.matched.slice(0, 4).join(', ')}`);
   cues.push(`time: ${timeResult.timeOfDay}`);
   if (settlementMatches.length > 0) cues.push(`settlement: ${settlementMatches[0]}`);
   if (water) cues.push('water: enabled');
   if (scale !== 'medium') cues.push(`scale: ${scale}`);
+  if (options.scale) cues.push('size override');
+  if (options.style) cues.push('style override');
+  if (options.density) cues.push('density override');
   cues.push(...countResult.matched);
   if (countResult.matched.length === 0) {
-    cues.push(`default counts for ${BIOME_PROFILES[biomeResult.biome].label.toLowerCase()}`);
+    cues.push(`default counts for ${BIOME_PROFILES[biome].label.toLowerCase()}`);
+  }
+  if (features) {
+    const named = [
+      features.farmhouse ? 'farmhouse' : null,
+      features.barn ? 'barn' : null,
+      features.silo ? 'silo' : null,
+      features.coop ? 'coop' : null,
+      `${features.wheatFields} wheat fields`,
+      features.fences ? 'fences' : null,
+      features.dirtPaths ? 'dirt paths' : null,
+      features.orchard ? 'orchard' : null,
+      features.river ? 'river' : null,
+      features.bridge ? 'bridge' : null,
+    ].filter(Boolean);
+    cues.push(`structures: ${named.join(', ')}`);
+    cues.push(`style: ${style}`);
+    if (density !== 'normal') cues.push(`density: ${density}`);
   }
 
   const summaryParts = [
-    BIOME_PROFILES[biomeResult.biome].label + (settlement ? ' settlement' : ''),
+    (features ? 'Farmstead' : BIOME_PROFILES[biome].label) + (settlement && !features ? ' settlement' : ''),
     timeResult.timeOfDay,
-    `${counts.trees} trees`,
-    `${counts.rocks} rocks`,
+    features
+      ? `${features.wheatFields} wheat field${features.wheatFields === 1 ? '' : 's'}`
+      : `${counts.trees} trees`,
+    features ? `${style} style` : `${counts.rocks} rocks`,
   ];
-  if (counts.buildings > 0) summaryParts.push(`${counts.buildings} buildings`);
+  if (!features && counts.buildings > 0) summaryParts.push(`${counts.buildings} buildings`);
 
   return {
     prompt,
     name: titleFromPrompt(prompt),
     seed: options.seed ?? seedFromPrompt(prompt),
-    biome: biomeResult.biome,
+    biome,
     timeOfDay: timeResult.timeOfDay,
     scale,
     settlement,
     water,
+    features,
+    style,
+    density,
     counts,
     cues,
     summary: summaryParts.join(' · '),

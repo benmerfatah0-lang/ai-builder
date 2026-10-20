@@ -201,6 +201,100 @@ describe('application runtime', () => {
     expect(screen.getByRole('tree', { name: 'Scene hierarchy' }).textContent).toContain('House');
   }, 45000);
 
+  it('generates a farm, edits objects, regenerates, saves and reopens it', async () => {
+    const unique = `Farm Acceptance ${Math.random().toString(36).slice(2, 7)}`;
+    await bootDesktop();
+
+    // ---- Prompt → plan → procedural farm ----------------------------------
+    openTab('AI');
+    const prompt = screen.getByLabelText('Description') as HTMLTextAreaElement;
+    fireEvent.change(prompt, {
+      target: {
+        value:
+          'Create a large cartoon low-poly farm with a farmhouse, barn, wheat fields, a chicken coop, fences, trees, and connected dirt paths',
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Generate world/i }));
+    expect(await screen.findByText(/Farmstead · day/i, {}, { timeout: 15000 })).toBeTruthy();
+    expect(await screen.findByText(/\d+ objects · \d+ groups · plan v3/i)).toBeTruthy();
+
+    // Give the generated project a unique name for the library round-trip.
+    const nameField = screen.getByLabelText('World name') as HTMLInputElement;
+    fireEvent.change(nameField, { target: { value: unique } });
+    fireEvent.blur(nameField);
+    await waitFor(() =>
+      expect((screen.getByLabelText('World name') as HTMLInputElement).value).toBe(unique),
+    );
+
+    openTab('Scene');
+    const tree = await screen.findByRole('tree', { name: 'Scene hierarchy' });
+    await waitFor(() => expect(tree.textContent).toContain('Barn'), { timeout: 8000 });
+    expect(tree.textContent).toContain('Farmhouse');
+    expect(tree.textContent).toContain('Chicken coop');
+    expect(tree.textContent).toContain('Wheat field');
+
+    // ---- Edit the farmhouse (position + rotation) -------------------------
+    const farmhouse = within(tree)
+      .getAllByRole('treeitem')
+      .find((item) => (item.getAttribute('aria-label') ?? '').startsWith('Farmhouse'));
+    if (!farmhouse) throw new Error('farmhouse not found');
+    fireEvent.mouseDown(farmhouse.firstElementChild as HTMLElement);
+
+    const positionX = await screen.findByLabelText('Position X');
+    fireEvent.change(positionX, { target: { value: '-25' } });
+    fireEvent.blur(positionX);
+    const rotationY = screen.getByLabelText('Rotation Y');
+    fireEvent.change(rotationY, { target: { value: '115' } });
+    fireEvent.blur(rotationY);
+    await waitFor(() =>
+      expect((screen.getByLabelText('Position X') as HTMLInputElement).value).toBe('-25'),
+    );
+
+    // ---- Re-roll the barn's variation without moving it -------------------
+    const barn = within(screen.getByRole('tree', { name: 'Scene hierarchy' }))
+      .getAllByRole('treeitem')
+      .find((item) => (item.getAttribute('aria-label') ?? '').startsWith('Barn'));
+    if (!barn) throw new Error('barn not found');
+    fireEvent.mouseDown(barn.firstElementChild as HTMLElement);
+    fireEvent.click(await screen.findByRole('button', { name: 'Generated' }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Regenerate$/ }));
+    expect(await screen.findByText(/Regenerated “Barn”/i)).toBeTruthy();
+
+    // ---- Save, reopen, verify the edited world survived -------------------
+    fireEvent.click(screen.getByRole('button', { name: /Save now \(Ctrl\/Cmd\+S\)/ }));
+    expect(await screen.findByText(/Project saved in this browser/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Project menu' }));
+    fireEvent.click(await screen.findByRole('button', { name: /World library/i }));
+    const dialog = await screen.findByRole('dialog', { name: 'World library' });
+    fireEvent.click(
+      await within(dialog).findByRole(
+        'button',
+        { name: `Open ${unique}` },
+        { timeout: 8000 },
+      ),
+    );
+
+    await waitFor(
+      () => expect((screen.getByLabelText('World name') as HTMLInputElement).value).toBe(unique),
+      { timeout: 8000 },
+    );
+
+    openTab('Scene');
+    const reopened = await screen.findByRole('tree', { name: 'Scene hierarchy' });
+    await waitFor(() => expect(reopened.textContent).toContain('Barn'), { timeout: 8000 });
+    const reopenedFarmhouse = within(reopened)
+      .getAllByRole('treeitem')
+      .find((item) => (item.getAttribute('aria-label') ?? '').startsWith('Farmhouse'));
+    if (!reopenedFarmhouse) throw new Error('farmhouse missing after reopen');
+    fireEvent.mouseDown(reopenedFarmhouse.firstElementChild as HTMLElement);
+    await waitFor(() =>
+      expect((screen.getByLabelText('Position X') as HTMLInputElement).value).toBe('-25'),
+    );
+    expect((screen.getByLabelText('Rotation Y') as HTMLInputElement).value).toBe('115');
+    expect(screen.getByRole('tree', { name: 'Scene hierarchy' }).textContent).toContain('Wheat');
+  }, 60000);
+
   it('restores the most recent world after a full reload', async () => {
     const unique = `Reload Check ${Math.random().toString(36).slice(2, 7)}`;
 

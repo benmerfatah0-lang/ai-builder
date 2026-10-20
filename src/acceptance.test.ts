@@ -19,7 +19,7 @@ import {
   type EditorState,
 } from './modules/editor/store';
 import { getNode, worldTransformOf } from './core/world-plan/hierarchy';
-import type { Transform } from './core/world-plan/schema';
+import { WORLD_PLAN_SCHEMA_VERSION, type Transform } from './core/world-plan/schema';
 import { buildWorldScene, disposeObject3D, findNodeObject } from './core/scene/sceneBuilder';
 import { serializeWorldPlan } from './core/world-plan/migrate';
 
@@ -166,7 +166,7 @@ describe('acceptance: build, edit, save and reload a scene', () => {
     if (!loaded) throw new Error('World did not reload');
 
     // ---- 5. Verify document state ---------------------------------------
-    expect(loaded.schemaVersion).toBe(2);
+    expect(loaded.schemaVersion).toBe(WORLD_PLAN_SCHEMA_VERSION);
     expect(loaded.objects).toEqual(saved.objects);
     expect(loaded.groups).toEqual(saved.groups);
 
