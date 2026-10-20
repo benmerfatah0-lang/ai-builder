@@ -273,9 +273,9 @@ Testing Library · happy-dom · fake-indexeddb. All open source, no paid service
   parse, IndexedDB CRUD, deterministic generation, farm planning, semantic
   validation/repair, regeneration, hierarchy/transform math, the gizmo's API
   contract, and DOM runtime flows on desktop and mobile widths.
-- **Farm acceptance (UI)**: prompt → plan → generated hierarchy → edit farmhouse
-  position/rotation → regenerate the barn → save → reopen → transform and farm
-  content verified.
+- **Farm acceptance (UI)**: prompt → plan → generated hierarchy → edit the
+  farmhouse (position/rotation) and the chicken coop (position/scale) →
+  regenerate the barn → save → reopen → all edits and farm content verified.
 - **Editor acceptance**: ground plane + cube + tree + house → move/resize/rotate
   → group → save → reload → every transform and hierarchy entry verified in the
   document **and** the rendered scene graph.

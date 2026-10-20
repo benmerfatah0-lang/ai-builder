@@ -250,6 +250,22 @@ describe('application runtime', () => {
       expect((screen.getByLabelText('Position X') as HTMLInputElement).value).toBe('-25'),
     );
 
+    // ---- Second edit: move and rescale the chicken coop -------------------
+    const coop = within(screen.getByRole('tree', { name: 'Scene hierarchy' }))
+      .getAllByRole('treeitem')
+      .find((item) => (item.getAttribute('aria-label') ?? '').startsWith('Chicken coop'));
+    if (!coop) throw new Error('coop not found');
+    fireEvent.mouseDown(coop.firstElementChild as HTMLElement);
+    const coopZ = await screen.findByLabelText('Position Z');
+    fireEvent.change(coopZ, { target: { value: '30' } });
+    fireEvent.blur(coopZ);
+    const coopScale = screen.getByLabelText('Scale X');
+    fireEvent.change(coopScale, { target: { value: '1.2' } });
+    fireEvent.blur(coopScale);
+    await waitFor(() =>
+      expect((screen.getByLabelText('Position Z') as HTMLInputElement).value).toBe('30'),
+    );
+
     // ---- Re-roll the barn's variation without moving it -------------------
     const barn = within(screen.getByRole('tree', { name: 'Scene hierarchy' }))
       .getAllByRole('treeitem')
@@ -292,6 +308,17 @@ describe('application runtime', () => {
       expect((screen.getByLabelText('Position X') as HTMLInputElement).value).toBe('-25'),
     );
     expect((screen.getByLabelText('Rotation Y') as HTMLInputElement).value).toBe('115');
+
+    // The second edited object kept its new position and scale too.
+    const reopenedCoop = within(screen.getByRole('tree', { name: 'Scene hierarchy' }))
+      .getAllByRole('treeitem')
+      .find((item) => (item.getAttribute('aria-label') ?? '').startsWith('Chicken coop'));
+    if (!reopenedCoop) throw new Error('coop missing after reopen');
+    fireEvent.mouseDown(reopenedCoop.firstElementChild as HTMLElement);
+    await waitFor(() =>
+      expect((screen.getByLabelText('Position Z') as HTMLInputElement).value).toBe('30'),
+    );
+    expect((screen.getByLabelText('Scale X') as HTMLInputElement).value).toBe('1.2');
     expect(screen.getByRole('tree', { name: 'Scene hierarchy' }).textContent).toContain('Wheat');
   }, 60000);
 

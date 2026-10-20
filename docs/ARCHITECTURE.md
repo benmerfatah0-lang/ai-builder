@@ -394,7 +394,7 @@ npm run preview     # production build served, all chunks HTTP 200
 | Editor reducer | 15 | selection modes, undo/redo, grouping history, locked nodes, clamping, colour channels |
 | Gizmo integration | 2 | TransformControls/OrbitControls mode, space, snap, axis constraints, attach/detach, touch config |
 | WebGL bootstrap | 6 | context-failure error, sky shader/uniforms, camera-following dome, water-shader injection |
-| DOM runtime | 5 | boot + generation + undo; desktop acceptance workflow; **farm generate → edit → regenerate → save → reopen**; reload restores the last world; mobile dock, sheet and axis controls |
+| DOM runtime | 5 | boot + generation + undo; desktop acceptance workflow; **farm generate → edit two objects → regenerate → save → reopen**; reload restores the last world; mobile dock, sheet and axis controls |
 | **End-to-end acceptance** | 1 | ground plane + cube + tree + house → edit → group → save to IndexedDB → reload → verify document **and** rendered scene graph |
 
 **Build output:**
