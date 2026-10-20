@@ -57,7 +57,6 @@ interface Runtime {
   lightsGroup: THREE.Group;
   overlayGroup: THREE.Group;
   sky: SkyHandle;
-  profile: RendererProfile;
   frameWorld: () => void;
   frameSelection: (ids: string[]) => void;
   refreshOverlay: () => void;
@@ -439,7 +438,6 @@ export function Viewport({
       lightsGroup,
       overlayGroup,
       sky,
-      profile: rendererProfile,
       frameWorld,
       frameSelection,
       refreshOverlay,

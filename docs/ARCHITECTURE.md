@@ -334,7 +334,7 @@ npm run preview     # production build served, all chunks HTTP 200
 
 | Asset | Size | Gzip |
 | --- | --- | --- |
-| `index-*.js` | 381.43 kB | 115.77 kB |
+| `index-*.js` | 381.42 kB | 115.76 kB |
 | `three-vendor-*.js` | 546.06 kB | 137.43 kB |
 | `validation-*.js` (Zod) | 92.54 kB | 26.39 kB |
 | `react-vendor-*.js` | 11.88 kB | 4.20 kB |
