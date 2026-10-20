@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://ai-world-builder.local/schemas/worldplan-v1.json",
-  "title": "AI World Builder — WorldPlan v1",
-  "description": "Versioned world document produced by AI World Builder. Schema version 1.",
+  "$id": "https://ai-world-builder.local/schemas/worldplan-v3.json",
+  "title": "AI World Builder — WorldPlan v3",
+  "description": "Versioned world document produced by AI World Builder. Schema version 3.",
   "type": "object",
   "properties": {
     "schemaVersion": {
       "type": "number",
-      "const": 2
+      "const": 3
     },
     "id": {
       "type": "string",
@@ -413,6 +413,129 @@
                 },
                 "additionalProperties": false
               },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "structure",
+                      "vegetation",
+                      "rock",
+                      "prop",
+                      "field",
+                      "path",
+                      "water",
+                      "fence",
+                      "terrain"
+                    ]
+                  },
+                  "geometry": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "dimensions": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "procedural",
+                      "library",
+                      "manual"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "generated",
+                      "edited"
+                    ]
+                  },
+                  "role": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4294967295
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "placement": {
+                    "type": "object",
+                    "properties": {
+                      "anchor": {
+                        "type": "string",
+                        "enum": [
+                          "ground",
+                          "terrain",
+                          "water"
+                        ]
+                      },
+                      "avoidOverlap": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "anchor",
+                      "avoidOverlap"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "collision": {
+                    "type": "object",
+                    "properties": {
+                      "shape": {
+                        "type": "string",
+                        "enum": [
+                          "box",
+                          "none"
+                        ]
+                      },
+                      "blocking": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "blocking"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "category",
+                  "geometry",
+                  "dimensions",
+                  "source",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
               "kind": {
                 "type": "string",
                 "const": "primitive"
@@ -440,6 +563,7 @@
               "transform",
               "visible",
               "locked",
+              "meta",
               "kind",
               "primitive",
               "color"
@@ -571,6 +695,129 @@
                 },
                 "additionalProperties": false
               },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "structure",
+                      "vegetation",
+                      "rock",
+                      "prop",
+                      "field",
+                      "path",
+                      "water",
+                      "fence",
+                      "terrain"
+                    ]
+                  },
+                  "geometry": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "dimensions": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "procedural",
+                      "library",
+                      "manual"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "generated",
+                      "edited"
+                    ]
+                  },
+                  "role": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4294967295
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "placement": {
+                    "type": "object",
+                    "properties": {
+                      "anchor": {
+                        "type": "string",
+                        "enum": [
+                          "ground",
+                          "terrain",
+                          "water"
+                        ]
+                      },
+                      "avoidOverlap": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "anchor",
+                      "avoidOverlap"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "collision": {
+                    "type": "object",
+                    "properties": {
+                      "shape": {
+                        "type": "string",
+                        "enum": [
+                          "box",
+                          "none"
+                        ]
+                      },
+                      "blocking": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "blocking"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "category",
+                  "geometry",
+                  "dimensions",
+                  "source",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
               "kind": {
                 "type": "string",
                 "const": "tree"
@@ -581,7 +828,8 @@
                   "pine",
                   "broadleaf",
                   "palm",
-                  "cactus"
+                  "cactus",
+                  "bush"
                 ]
               },
               "color": {
@@ -600,6 +848,7 @@
               "transform",
               "visible",
               "locked",
+              "meta",
               "kind",
               "variant",
               "color",
@@ -732,6 +981,129 @@
                 },
                 "additionalProperties": false
               },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "structure",
+                      "vegetation",
+                      "rock",
+                      "prop",
+                      "field",
+                      "path",
+                      "water",
+                      "fence",
+                      "terrain"
+                    ]
+                  },
+                  "geometry": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "dimensions": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "procedural",
+                      "library",
+                      "manual"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "generated",
+                      "edited"
+                    ]
+                  },
+                  "role": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4294967295
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "placement": {
+                    "type": "object",
+                    "properties": {
+                      "anchor": {
+                        "type": "string",
+                        "enum": [
+                          "ground",
+                          "terrain",
+                          "water"
+                        ]
+                      },
+                      "avoidOverlap": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "anchor",
+                      "avoidOverlap"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "collision": {
+                    "type": "object",
+                    "properties": {
+                      "shape": {
+                        "type": "string",
+                        "enum": [
+                          "box",
+                          "none"
+                        ]
+                      },
+                      "blocking": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "blocking"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "category",
+                  "geometry",
+                  "dimensions",
+                  "source",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
               "kind": {
                 "type": "string",
                 "const": "rock"
@@ -755,6 +1127,7 @@
               "transform",
               "visible",
               "locked",
+              "meta",
               "kind",
               "variant",
               "color"
@@ -886,6 +1259,129 @@
                 },
                 "additionalProperties": false
               },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "structure",
+                      "vegetation",
+                      "rock",
+                      "prop",
+                      "field",
+                      "path",
+                      "water",
+                      "fence",
+                      "terrain"
+                    ]
+                  },
+                  "geometry": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "dimensions": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "procedural",
+                      "library",
+                      "manual"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "generated",
+                      "edited"
+                    ]
+                  },
+                  "role": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4294967295
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "placement": {
+                    "type": "object",
+                    "properties": {
+                      "anchor": {
+                        "type": "string",
+                        "enum": [
+                          "ground",
+                          "terrain",
+                          "water"
+                        ]
+                      },
+                      "avoidOverlap": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "anchor",
+                      "avoidOverlap"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "collision": {
+                    "type": "object",
+                    "properties": {
+                      "shape": {
+                        "type": "string",
+                        "enum": [
+                          "box",
+                          "none"
+                        ]
+                      },
+                      "blocking": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "blocking"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "category",
+                  "geometry",
+                  "dimensions",
+                  "source",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
               "kind": {
                 "type": "string",
                 "const": "building"
@@ -895,7 +1391,9 @@
                 "enum": [
                   "house",
                   "tower",
-                  "ruin"
+                  "ruin",
+                  "barn",
+                  "coop"
                 ]
               },
               "color": {
@@ -914,6 +1412,7 @@
               "transform",
               "visible",
               "locked",
+              "meta",
               "kind",
               "variant",
               "color",
@@ -1046,6 +1545,129 @@
                 },
                 "additionalProperties": false
               },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "structure",
+                      "vegetation",
+                      "rock",
+                      "prop",
+                      "field",
+                      "path",
+                      "water",
+                      "fence",
+                      "terrain"
+                    ]
+                  },
+                  "geometry": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "dimensions": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "procedural",
+                      "library",
+                      "manual"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "generated",
+                      "edited"
+                    ]
+                  },
+                  "role": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4294967295
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "placement": {
+                    "type": "object",
+                    "properties": {
+                      "anchor": {
+                        "type": "string",
+                        "enum": [
+                          "ground",
+                          "terrain",
+                          "water"
+                        ]
+                      },
+                      "avoidOverlap": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "anchor",
+                      "avoidOverlap"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "collision": {
+                    "type": "object",
+                    "properties": {
+                      "shape": {
+                        "type": "string",
+                        "enum": [
+                          "box",
+                          "none"
+                        ]
+                      },
+                      "blocking": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "blocking"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "category",
+                  "geometry",
+                  "dimensions",
+                  "source",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
               "kind": {
                 "type": "string",
                 "const": "lantern"
@@ -1062,8 +1684,1521 @@
               "transform",
               "visible",
               "locked",
+              "meta",
               "kind",
               "color"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "parentId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "transform": {
+                "type": "object",
+                "properties": {
+                  "position": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "rotation": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      },
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      },
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "scale": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  }
+                },
+                "required": [
+                  "position",
+                  "rotation",
+                  "scale"
+                ],
+                "additionalProperties": false
+              },
+              "visible": {
+                "type": "boolean"
+              },
+              "locked": {
+                "type": "boolean"
+              },
+              "material": {
+                "type": "object",
+                "properties": {
+                  "roughness": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "metalness": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "emissiveIntensity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 5
+                  }
+                },
+                "additionalProperties": false
+              },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "structure",
+                      "vegetation",
+                      "rock",
+                      "prop",
+                      "field",
+                      "path",
+                      "water",
+                      "fence",
+                      "terrain"
+                    ]
+                  },
+                  "geometry": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "dimensions": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "procedural",
+                      "library",
+                      "manual"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "generated",
+                      "edited"
+                    ]
+                  },
+                  "role": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4294967295
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "placement": {
+                    "type": "object",
+                    "properties": {
+                      "anchor": {
+                        "type": "string",
+                        "enum": [
+                          "ground",
+                          "terrain",
+                          "water"
+                        ]
+                      },
+                      "avoidOverlap": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "anchor",
+                      "avoidOverlap"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "collision": {
+                    "type": "object",
+                    "properties": {
+                      "shape": {
+                        "type": "string",
+                        "enum": [
+                          "box",
+                          "none"
+                        ]
+                      },
+                      "blocking": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "blocking"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "category",
+                  "geometry",
+                  "dimensions",
+                  "source",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "kind": {
+                "type": "string",
+                "const": "path"
+              },
+              "points": {
+                "minItems": 2,
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              },
+              "width": {
+                "type": "number",
+                "minimum": 0.2,
+                "maximum": 20
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "style": {
+                "type": "string",
+                "enum": [
+                  "dirt",
+                  "stone",
+                  "gravel"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "parentId",
+              "transform",
+              "visible",
+              "locked",
+              "meta",
+              "kind",
+              "points",
+              "width",
+              "color",
+              "style"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "parentId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "transform": {
+                "type": "object",
+                "properties": {
+                  "position": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "rotation": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      },
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      },
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "scale": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  }
+                },
+                "required": [
+                  "position",
+                  "rotation",
+                  "scale"
+                ],
+                "additionalProperties": false
+              },
+              "visible": {
+                "type": "boolean"
+              },
+              "locked": {
+                "type": "boolean"
+              },
+              "material": {
+                "type": "object",
+                "properties": {
+                  "roughness": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "metalness": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "emissiveIntensity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 5
+                  }
+                },
+                "additionalProperties": false
+              },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "structure",
+                      "vegetation",
+                      "rock",
+                      "prop",
+                      "field",
+                      "path",
+                      "water",
+                      "fence",
+                      "terrain"
+                    ]
+                  },
+                  "geometry": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "dimensions": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "procedural",
+                      "library",
+                      "manual"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "generated",
+                      "edited"
+                    ]
+                  },
+                  "role": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4294967295
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "placement": {
+                    "type": "object",
+                    "properties": {
+                      "anchor": {
+                        "type": "string",
+                        "enum": [
+                          "ground",
+                          "terrain",
+                          "water"
+                        ]
+                      },
+                      "avoidOverlap": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "anchor",
+                      "avoidOverlap"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "collision": {
+                    "type": "object",
+                    "properties": {
+                      "shape": {
+                        "type": "string",
+                        "enum": [
+                          "box",
+                          "none"
+                        ]
+                      },
+                      "blocking": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "blocking"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "category",
+                  "geometry",
+                  "dimensions",
+                  "source",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "kind": {
+                "type": "string",
+                "const": "river"
+              },
+              "points": {
+                "minItems": 2,
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              },
+              "width": {
+                "type": "number",
+                "minimum": 0.5,
+                "maximum": 40
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "parentId",
+              "transform",
+              "visible",
+              "locked",
+              "meta",
+              "kind",
+              "points",
+              "width",
+              "color"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "parentId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "transform": {
+                "type": "object",
+                "properties": {
+                  "position": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "rotation": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      },
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      },
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "scale": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  }
+                },
+                "required": [
+                  "position",
+                  "rotation",
+                  "scale"
+                ],
+                "additionalProperties": false
+              },
+              "visible": {
+                "type": "boolean"
+              },
+              "locked": {
+                "type": "boolean"
+              },
+              "material": {
+                "type": "object",
+                "properties": {
+                  "roughness": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "metalness": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "emissiveIntensity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 5
+                  }
+                },
+                "additionalProperties": false
+              },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "structure",
+                      "vegetation",
+                      "rock",
+                      "prop",
+                      "field",
+                      "path",
+                      "water",
+                      "fence",
+                      "terrain"
+                    ]
+                  },
+                  "geometry": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "dimensions": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "procedural",
+                      "library",
+                      "manual"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "generated",
+                      "edited"
+                    ]
+                  },
+                  "role": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4294967295
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "placement": {
+                    "type": "object",
+                    "properties": {
+                      "anchor": {
+                        "type": "string",
+                        "enum": [
+                          "ground",
+                          "terrain",
+                          "water"
+                        ]
+                      },
+                      "avoidOverlap": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "anchor",
+                      "avoidOverlap"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "collision": {
+                    "type": "object",
+                    "properties": {
+                      "shape": {
+                        "type": "string",
+                        "enum": [
+                          "box",
+                          "none"
+                        ]
+                      },
+                      "blocking": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "blocking"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "category",
+                  "geometry",
+                  "dimensions",
+                  "source",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "kind": {
+                "type": "string",
+                "const": "fence"
+              },
+              "points": {
+                "minItems": 2,
+                "maxItems": 64,
+                "type": "array",
+                "items": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              },
+              "height": {
+                "type": "number",
+                "minimum": 0.4,
+                "maximum": 6
+              },
+              "style": {
+                "type": "string",
+                "enum": [
+                  "wood",
+                  "stone",
+                  "rail"
+                ]
+              },
+              "postColor": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "railColor": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "parentId",
+              "transform",
+              "visible",
+              "locked",
+              "meta",
+              "kind",
+              "points",
+              "height",
+              "style",
+              "postColor",
+              "railColor"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "parentId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "transform": {
+                "type": "object",
+                "properties": {
+                  "position": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "rotation": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      },
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      },
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "scale": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  }
+                },
+                "required": [
+                  "position",
+                  "rotation",
+                  "scale"
+                ],
+                "additionalProperties": false
+              },
+              "visible": {
+                "type": "boolean"
+              },
+              "locked": {
+                "type": "boolean"
+              },
+              "material": {
+                "type": "object",
+                "properties": {
+                  "roughness": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "metalness": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "emissiveIntensity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 5
+                  }
+                },
+                "additionalProperties": false
+              },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "structure",
+                      "vegetation",
+                      "rock",
+                      "prop",
+                      "field",
+                      "path",
+                      "water",
+                      "fence",
+                      "terrain"
+                    ]
+                  },
+                  "geometry": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "dimensions": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "procedural",
+                      "library",
+                      "manual"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "generated",
+                      "edited"
+                    ]
+                  },
+                  "role": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4294967295
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "placement": {
+                    "type": "object",
+                    "properties": {
+                      "anchor": {
+                        "type": "string",
+                        "enum": [
+                          "ground",
+                          "terrain",
+                          "water"
+                        ]
+                      },
+                      "avoidOverlap": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "anchor",
+                      "avoidOverlap"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "collision": {
+                    "type": "object",
+                    "properties": {
+                      "shape": {
+                        "type": "string",
+                        "enum": [
+                          "box",
+                          "none"
+                        ]
+                      },
+                      "blocking": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "blocking"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "category",
+                  "geometry",
+                  "dimensions",
+                  "source",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "kind": {
+                "type": "string",
+                "const": "field"
+              },
+              "width": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 120
+              },
+              "depth": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 120
+              },
+              "rows": {
+                "type": "integer",
+                "minimum": 2,
+                "maximum": 64
+              },
+              "density": {
+                "type": "number",
+                "minimum": 0.05,
+                "maximum": 1
+              },
+              "cropColor": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "soilColor": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "seed": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "parentId",
+              "transform",
+              "visible",
+              "locked",
+              "meta",
+              "kind",
+              "width",
+              "depth",
+              "rows",
+              "density",
+              "cropColor",
+              "soilColor",
+              "seed"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "parentId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "transform": {
+                "type": "object",
+                "properties": {
+                  "position": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "rotation": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      },
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      },
+                      {
+                        "type": "number",
+                        "minimum": -3600,
+                        "maximum": 3600
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "scale": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  }
+                },
+                "required": [
+                  "position",
+                  "rotation",
+                  "scale"
+                ],
+                "additionalProperties": false
+              },
+              "visible": {
+                "type": "boolean"
+              },
+              "locked": {
+                "type": "boolean"
+              },
+              "material": {
+                "type": "object",
+                "properties": {
+                  "roughness": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "metalness": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "emissiveIntensity": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 5
+                  }
+                },
+                "additionalProperties": false
+              },
+              "meta": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string",
+                    "enum": [
+                      "structure",
+                      "vegetation",
+                      "rock",
+                      "prop",
+                      "field",
+                      "path",
+                      "water",
+                      "fence",
+                      "terrain"
+                    ]
+                  },
+                  "geometry": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "dimensions": {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "procedural",
+                      "library",
+                      "manual"
+                    ]
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "generated",
+                      "edited"
+                    ]
+                  },
+                  "role": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 4294967295
+                  },
+                  "region": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "placement": {
+                    "type": "object",
+                    "properties": {
+                      "anchor": {
+                        "type": "string",
+                        "enum": [
+                          "ground",
+                          "terrain",
+                          "water"
+                        ]
+                      },
+                      "avoidOverlap": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "anchor",
+                      "avoidOverlap"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "collision": {
+                    "type": "object",
+                    "properties": {
+                      "shape": {
+                        "type": "string",
+                        "enum": [
+                          "box",
+                          "none"
+                        ]
+                      },
+                      "blocking": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "shape",
+                      "blocking"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "category",
+                  "geometry",
+                  "dimensions",
+                  "source",
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              "kind": {
+                "type": "string",
+                "const": "bridge"
+              },
+              "length": {
+                "type": "number",
+                "minimum": 2,
+                "maximum": 60
+              },
+              "width": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 12
+              },
+              "deckColor": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "railColor": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "parentId",
+              "transform",
+              "visible",
+              "locked",
+              "meta",
+              "kind",
+              "length",
+              "width",
+              "deckColor",
+              "railColor"
             ],
             "additionalProperties": false
           }

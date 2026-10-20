@@ -423,6 +423,7 @@ export function Workspace() {
       case 'inspector':
         return (
           <InspectorPanel
+            notify={notify}
             onDeleted={() => {
               if (isMobile) setMobilePanel(null);
             }}
@@ -504,7 +505,7 @@ export function Workspace() {
         </section>
 
         <aside className="inspector-panel desktop-only" aria-label="Inspector">
-          <InspectorPanel />
+          <InspectorPanel notify={notify} />
         </aside>
       </main>
 

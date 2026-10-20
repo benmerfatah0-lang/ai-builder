@@ -5,9 +5,12 @@ import { z } from 'zod';
  *
  * v1 → v2 (Phase 2): full XYZ rotation replaces `rotationY`; objects gained a
  * `parentId`; groups and optional per-object material settings were added.
- * `src/core/world-plan/migrate.ts` upgrades v1 documents transparently.
+ * v2 → v3 (Phase 3): every object carries generation metadata (category,
+ * geometry type, dimensions, source, status, placement and collision settings),
+ * and the generator produces paths, rivers, fences, fields and bridges.
+ * `src/core/world-plan/migrate.ts` upgrades older documents transparently.
  */
-export const WORLD_PLAN_SCHEMA_VERSION = 2 as const;
+export const WORLD_PLAN_SCHEMA_VERSION = 3 as const;
 
 /** Hard ceilings so a single project cannot freeze a mobile GPU. */
 export const MAX_WORLD_OBJECTS = 1500;
@@ -112,6 +115,54 @@ export const groupSchema = z.object({
   locked: z.boolean(),
 });
 
+/** Broad scene role, used by the planner, inspector and regeneration. */
+export const objectCategorySchema = z.enum([
+  'structure',
+  'vegetation',
+  'rock',
+  'prop',
+  'field',
+  'path',
+  'water',
+  'fence',
+  'terrain',
+]);
+
+/**
+ * Generation metadata. It makes every generated object reproducible and
+ * re-rollable: `geometry` selects the procedural builder, `seed` drives its
+ * variation, and `dimensions`/`collision` feed placement and spatial checks.
+ */
+export const objectMetaSchema = z.object({
+  category: objectCategorySchema,
+  /** Procedural geometry identifier, e.g. `building.barn` or `field.wheat`. */
+  geometry: z.string().min(1).max(60),
+  /** Base size before the object transform is applied. */
+  dimensions: positiveVec3Schema,
+  /** Where the object came from. */
+  source: z.enum(['procedural', 'library', 'manual']),
+  /** `edited` once the user changed it after generation. */
+  status: z.enum(['generated', 'edited']),
+  /** Semantic role inside the generated scene, e.g. `barn` or `orchard-row`. */
+  role: z.string().min(1).max(40).optional(),
+  /** Seed for this object's own variation, independent of the world seed. */
+  seed: z.number().int().min(0).max(4294967295).optional(),
+  /** Logical region used for regional regeneration, e.g. `west-field`. */
+  region: z.string().min(1).max(40).optional(),
+  placement: z
+    .object({
+      anchor: z.enum(['ground', 'terrain', 'water']),
+      avoidOverlap: z.boolean(),
+    })
+    .optional(),
+  collision: z
+    .object({
+      shape: z.enum(['box', 'none']),
+      blocking: z.boolean(),
+    })
+    .optional(),
+});
+
 export const primitiveKindSchema = z.enum([
   'box',
   'sphere',
@@ -121,13 +172,17 @@ export const primitiveKindSchema = z.enum([
   'plane',
 ]);
 
-export const treeVariantSchema = z.enum(['pine', 'broadleaf', 'palm', 'cactus']);
+export const treeVariantSchema = z.enum(['pine', 'broadleaf', 'palm', 'cactus', 'bush']);
 export const rockVariantSchema = z.enum(['boulder', 'crag']);
-export const buildingVariantSchema = z.enum(['house', 'tower', 'ruin']);
+export const buildingVariantSchema = z.enum(['house', 'tower', 'ruin', 'barn', 'coop']);
+export const pathStyleSchema = z.enum(['dirt', 'stone', 'gravel']);
+export const fenceStyleSchema = z.enum(['wood', 'stone', 'rail']);
 
 const objectBaseShape = {
   ...nodeBaseShape,
   material: materialSchema.optional(),
+  /** Generation metadata (v3). */
+  meta: objectMetaSchema,
 };
 
 export const primitiveObjectSchema = z.object({
@@ -166,12 +221,70 @@ export const lanternObjectSchema = z.object({
   color: hexColorSchema,
 });
 
+/** Dirt/stone ribbon that follows the terrain. Points are local to the object. */
+export const pathObjectSchema = z.object({
+  ...objectBaseShape,
+  kind: z.literal('path'),
+  points: z.array(vec3Schema).min(2).max(64),
+  width: z.number().finite().min(0.2).max(20),
+  color: hexColorSchema,
+  style: pathStyleSchema,
+});
+
+/** Water ribbon for streams and rivers (terrain water level stays separate). */
+export const riverObjectSchema = z.object({
+  ...objectBaseShape,
+  kind: z.literal('river'),
+  points: z.array(vec3Schema).min(2).max(64),
+  width: z.number().finite().min(0.5).max(40),
+  color: hexColorSchema,
+});
+
+/** Posts and rails (or a low stone wall) along a polyline. */
+export const fenceObjectSchema = z.object({
+  ...objectBaseShape,
+  kind: z.literal('fence'),
+  points: z.array(vec3Schema).min(2).max(64),
+  height: z.number().finite().min(0.4).max(6),
+  style: fenceStyleSchema,
+  postColor: hexColorSchema,
+  railColor: hexColorSchema,
+});
+
+/** A planted field rendered with instanced crops. */
+export const fieldObjectSchema = z.object({
+  ...objectBaseShape,
+  kind: z.literal('field'),
+  width: z.number().finite().min(1).max(120),
+  depth: z.number().finite().min(1).max(120),
+  rows: z.number().int().min(2).max(64),
+  density: z.number().finite().min(0.05).max(1),
+  cropColor: hexColorSchema,
+  soilColor: hexColorSchema,
+  seed: z.number().int().min(0).max(4294967295),
+});
+
+/** Deck, supports and railings across a river or ditch. */
+export const bridgeObjectSchema = z.object({
+  ...objectBaseShape,
+  kind: z.literal('bridge'),
+  length: z.number().finite().min(2).max(60),
+  width: z.number().finite().min(1).max(12),
+  deckColor: hexColorSchema,
+  railColor: hexColorSchema,
+});
+
 export const worldObjectSchema = z.discriminatedUnion('kind', [
   primitiveObjectSchema,
   treeObjectSchema,
   rockObjectSchema,
   buildingObjectSchema,
   lanternObjectSchema,
+  pathObjectSchema,
+  riverObjectSchema,
+  fenceObjectSchema,
+  fieldObjectSchema,
+  bridgeObjectSchema,
 ]);
 
 export const worldPlanSchema = z.object({
@@ -201,12 +314,21 @@ export type PrimitiveKind = z.infer<typeof primitiveKindSchema>;
 export type TreeVariant = z.infer<typeof treeVariantSchema>;
 export type RockVariant = z.infer<typeof rockVariantSchema>;
 export type BuildingVariant = z.infer<typeof buildingVariantSchema>;
+export type ObjectCategory = z.infer<typeof objectCategorySchema>;
+export type ObjectMeta = z.infer<typeof objectMetaSchema>;
+export type PathStyle = z.infer<typeof pathStyleSchema>;
+export type FenceStyle = z.infer<typeof fenceStyleSchema>;
 
 export type PrimitiveObject = z.infer<typeof primitiveObjectSchema>;
 export type TreeObject = z.infer<typeof treeObjectSchema>;
 export type RockObject = z.infer<typeof rockObjectSchema>;
 export type BuildingObject = z.infer<typeof buildingObjectSchema>;
 export type LanternObject = z.infer<typeof lanternObjectSchema>;
+export type PathObject = z.infer<typeof pathObjectSchema>;
+export type RiverObject = z.infer<typeof riverObjectSchema>;
+export type FenceObject = z.infer<typeof fenceObjectSchema>;
+export type FieldObject = z.infer<typeof fieldObjectSchema>;
+export type BridgeObject = z.infer<typeof bridgeObjectSchema>;
 export type WorldObject = z.infer<typeof worldObjectSchema>;
 
 export type WorldObjectKind = WorldObject['kind'];

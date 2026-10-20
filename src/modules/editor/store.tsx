@@ -19,6 +19,10 @@ import {
   type WorldPlan,
 } from '../../core/world-plan/schema';
 import {
+  regenerateObjectInPlan,
+  regenerateRegion,
+} from '../../core/generation/regenerate';
+import {
   createGroupFromSelection,
   duplicateNodes,
   getNode,
@@ -48,6 +52,8 @@ export interface ObjectPatch {
   color?: string;
   trunkColor?: string;
   roofColor?: string;
+  /** Colour of the kind's secondary channel (roof, trunk, rails, soil). */
+  secondaryColor?: string;
   material?: Partial<MaterialSettings>;
 }
 
@@ -82,6 +88,8 @@ export type EditorAction =
   | { type: 'deleteSelection' }
   | { type: 'deleteNode'; id: string }
   | { type: 'duplicateSelection' }
+  | { type: 'regenerateObject'; id: string }
+  | { type: 'regenerateRegion'; region: string }
   | { type: 'undo' }
   | { type: 'redo' }
   | { type: 'setSaveState'; status: SaveState; error?: string | null };
@@ -104,6 +112,23 @@ function nowIso(): string {
 
 function touch(plan: WorldPlan): WorldPlan {
   return { ...plan, updatedAt: nowIso() };
+}
+
+/** Mark an object as user-tweaked so future region rebuilds can respect it. */
+function markEdited(object: WorldObject): WorldObject {
+  if (object.meta.status === 'edited') return object;
+  return { ...object, meta: { ...object.meta, status: 'edited' } };
+}
+
+function markEditedPlan(plan: WorldPlan, id: string): WorldPlan {
+  const node = getNode(plan, id);
+  if (!node || isGroup(node)) return plan;
+  return {
+    ...plan,
+    objects: plan.objects.map((object) =>
+      object.id === id ? markEdited(object) : object,
+    ),
+  };
 }
 
 function existingIds(plan: WorldPlan, ids: string[]): string[] {
@@ -200,7 +225,22 @@ export function applyObjectPatch(object: WorldObject, patch: ObjectPatch): World
   }
   if (patch.visible !== undefined) next.visible = Boolean(patch.visible);
   if (patch.locked !== undefined) next.locked = Boolean(patch.locked);
-  if (patch.color !== undefined) next.color = hexOr(patch.color, next.color);
+  if (patch.color !== undefined) {
+    // Fences, fields and bridges store their base colour in a named channel.
+    if (next.kind === 'fence') next.postColor = hexOr(patch.color, next.postColor);
+    else if (next.kind === 'field') next.cropColor = hexOr(patch.color, next.cropColor);
+    else if (next.kind === 'bridge') next.deckColor = hexOr(patch.color, next.deckColor);
+    else next.color = hexOr(patch.color, next.color);
+  }
+  if (patch.secondaryColor !== undefined) {
+    if (next.kind === 'building') next.roofColor = hexOr(patch.secondaryColor, next.roofColor);
+    else if (next.kind === 'tree') next.trunkColor = hexOr(patch.secondaryColor, next.trunkColor);
+    else if (next.kind === 'fence' || next.kind === 'bridge') {
+      next.railColor = hexOr(patch.secondaryColor, next.railColor);
+    } else if (next.kind === 'field') {
+      next.soilColor = hexOr(patch.secondaryColor, next.soilColor);
+    }
+  }
 
   if (patch.trunkColor !== undefined && 'trunkColor' in next) {
     next.trunkColor = hexOr(patch.trunkColor, next.trunkColor ?? '#4b3521');
@@ -331,7 +371,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       const patch = { ...action.patch };
       // Locked objects keep their transform; other edits (revealing, renaming) pass.
       if (patch.transform && isEffectivelyLocked(state.plan, action.id)) delete patch.transform;
-      const updated = applyObjectPatch(object, patch);
+      const updated = markEdited(applyObjectPatch(object, patch));
       if (updated === object) return state;
       return commit(state, {
         ...state.plan,
@@ -344,7 +384,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       if (!node) return state;
       if (isEffectivelyLocked(state.plan, action.id)) return state;
       const safe = applyTransformPatch(node.transform, action.transform);
-      return commit(state, setNodeTransform(state.plan, action.id, safe));
+      return commit(state, markEditedPlan(setNodeTransform(state.plan, action.id, safe), action.id));
     }
 
     case 'setWorldTransform': {
@@ -352,7 +392,40 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       if (!node) return state;
       if (isEffectivelyLocked(state.plan, action.id)) return state;
       const safe = applyTransformPatch(node.transform, action.transform);
-      return commit(state, setNodeWorldTransform(state.plan, action.id, safe));
+      return commit(
+        state,
+        markEditedPlan(setNodeWorldTransform(state.plan, action.id, safe), action.id),
+      );
+    }
+
+    case 'regenerateObject': {
+      if (isEffectivelyLocked(state.plan, action.id)) return state;
+      const result = regenerateObjectInPlan(state.plan, action.id);
+      if (result.changed.length === 0) return state;
+      return commit(state, result.plan);
+    }
+
+    case 'regenerateRegion': {
+      const result = regenerateRegion(state.plan, action.region);
+      if (result.changed.length === 0) return state;
+      // Locked objects keep their authored look.
+      const lockedIds = new Set(
+        state.plan.objects
+          .filter((object) => object.meta.region === action.region)
+          .filter((object) => isEffectivelyLocked(state.plan, object.id))
+          .map((object) => object.id),
+      );
+      if (lockedIds.size === 0) return commit(state, result.plan);
+      const originals = new Map(
+        state.plan.objects.map((object) => [object.id, object] as const),
+      );
+      const plan = {
+        ...result.plan,
+        objects: result.plan.objects.map((object) =>
+          lockedIds.has(object.id) ? originals.get(object.id) ?? object : object,
+        ),
+      };
+      return commit(state, plan);
     }
 
     case 'select':

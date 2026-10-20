@@ -11,6 +11,8 @@ import { BIOME_PROFILES, SCALE_SETTINGS } from './biomes';
 import { mulberry32, range, pickWeighted, type Rng } from './rng';
 import { createTerrainSampler, type TerrainSampler } from './terrain';
 import { createBuilding, createLantern, createRock, createTree } from '../assets/catalog';
+import { generateFarmPlan } from './farm';
+import { validateScenePlan, type SceneValidation } from '../world-plan/validateScene';
 
 interface TimeSettings {
   sunElevation: number;
@@ -247,7 +249,45 @@ function computeInlandWaterLevel(sampler: TerrainSampler): number {
  * colors are derived exclusively from the intent seed, so the same prompt and
  * seed always rebuild the same world.
  */
+export interface GenerationReport {
+  plan: WorldPlan;
+  /** Non-fatal notes from generator steps that had to skip work. */
+  warnings: string[];
+  validation: SceneValidation;
+}
+
+/**
+ * Generation entry point with diagnostics.
+ *
+ * Farm prompts run the structured layout generator; everything else keeps using
+ * the original scatter generator. Both results are validated before they reach
+ * the editor, so callers can show warnings without blocking the build.
+ */
+export function generateWorldPlanWithReport(intent: WorldIntent): GenerationReport {
+  if (intent.features?.farm) {
+    const farm = generateFarmPlan(intent);
+    const validation = validateScenePlan(farm.plan);
+    return {
+      plan: farm.plan,
+      warnings: [...farm.warnings, ...validation.warnings.map((issue) => issue.message)],
+      validation,
+    };
+  }
+
+  const plan = generateWorldPlanScatter(intent);
+  const validation = validateScenePlan(plan);
+  return {
+    plan,
+    warnings: validation.warnings.map((issue) => issue.message),
+    validation,
+  };
+}
+
 export function generateWorldPlan(intent: WorldIntent): WorldPlan {
+  return generateWorldPlanWithReport(intent).plan;
+}
+
+function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
   let plan = buildPlanShell(intent);
   const profile = BIOME_PROFILES[intent.biome];
   const rng = mulberry32(intent.seed);

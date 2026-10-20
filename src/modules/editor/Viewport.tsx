@@ -2,15 +2,22 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
-import { isGroup, type Transform, type WorldPlan } from '../../core/world-plan/schema';
+import {
+  isGroup,
+  type SceneNode,
+  type Transform,
+  type WorldPlan,
+} from '../../core/world-plan/schema';
 import {
   addEnvironmentLights,
+  applyTransform,
   clearObject3DGroup,
   createGrid,
   createTerrainMesh,
   createWaterMesh,
   createWorldGroupObject,
   createWorldObjectGroup,
+  disposeObject3D,
   findNodeObject,
   readTransform,
 } from '../../core/scene/sceneBuilder';
@@ -85,6 +92,12 @@ export function Viewport({
   const planRef = useRef(plan);
   const selectionRef = useRef(selection);
   const nodeObjectsRef = useRef<Map<string, THREE.Object3D>>(new Map());
+  const builtNodesRef = useRef<
+    Map<
+      string,
+      { node: SceneNode; object3d: THREE.Object3D; parentId: string | null; withLight: boolean }
+    >
+  >(new Map());
   const callbacksRef = useRef({ onSelect, onTransformCommit, onTransformStart });
   const gizmoRef = useRef({ tool, space, snap });
   const [status, setStatus] = useState<Status>('loading');
@@ -478,6 +491,7 @@ export function Viewport({
       renderer.domElement.remove();
       runtimeRef.current = null;
       nodeObjectsRef.current = new Map();
+      builtNodesRef.current.clear();
     };
     } catch (error) {
       // Any failure while wiring controls must not take down the editor.
@@ -513,51 +527,119 @@ export function Viewport({
   }, [plan.terrain, plan.seed, showGrid]);
 
   // Hierarchy-aware objects layer.
+  //
+  // The effect diffs the plan against the previously built graph: unchanged
+  // nodes are reused, renamed/re-materialed/regenerated nodes are rebuilt on
+  // their own, and only stale nodes are disposed. Regenerating one object or a
+  // region therefore never rebuilds the whole world.
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime) return;
     const current = planRef.current;
-    clearObject3DGroup(runtime.objectsGroup);
-
-    const map = new Map<string, THREE.Object3D>();
+    const previous = builtNodesRef.current;
+    const next = new Map<
+      string,
+      { node: SceneNode; object3d: THREE.Object3D; parentId: string | null; withLight: boolean }
+    >();
+    const all = [...current.groups, ...current.objects];
+    const byId = new Map(all.map((node) => [node.id, node]));
     let pointLights = 0;
     const lightLimit = isNarrowViewport() ? 6 : 12;
 
-    const addNode = (id: string, parent: THREE.Object3D) => {
-      const node =
-        current.groups.find((entry) => entry.id === id) ??
-        current.objects.find((entry) => entry.id === id);
-      if (!node) return;
+    const ensureNode = (
+      node: SceneNode,
+      parent: THREE.Object3D,
+      forceRebuild: boolean,
+    ): THREE.Object3D => {
+      const existing = previous.get(node.id);
+      const desiredLight =
+        !isGroup(node) && node.kind === 'lantern' && (existing?.withLight ?? pointLights < lightLimit);
+      const canReuse =
+        existing !== undefined &&
+        !forceRebuild &&
+        existing.node === node &&
+        existing.parentId === node.parentId &&
+        isGroup(node) === !('kind' in node) &&
+        (!desiredLight || existing.withLight);
 
-      const visible = isEffectivelyVisible(current, node.id);
-      const locked = isEffectivelyLocked(current, node.id);
-
-      if (!isGroup(node)) {
-        const withLight = node.kind === 'lantern' && pointLights < lightLimit;
-        if (node.kind === 'lantern' && withLight) pointLights += 1;
-        const object = createWorldObjectGroup(node, withLight);
-        object.visible = visible;
-        object.userData.worldLocked = locked;
-        parent.add(object);
-        map.set(node.id, object);
-      } else {
-        const group = createWorldGroupObject(node);
-        group.visible = visible;
-        group.userData.worldLocked = locked;
-        parent.add(group);
-        map.set(node.id, group);
+      if (canReuse) {
+        const object3d = existing.object3d;
+        applyTransform(object3d, node.transform);
+        object3d.visible = isEffectivelyVisible(current, node.id);
+        object3d.userData.worldLocked = isEffectivelyLocked(current, node.id);
+        parent.add(object3d);
+        if (existing.withLight) pointLights += 1;
+        next.set(node.id, { ...existing, object3d });
+        return object3d;
       }
 
-      for (const child of [...current.groups, ...current.objects]) {
-        if (child.parentId === node.id) addNode(child.id, map.get(node.id) ?? parent);
+      // Anything attached to the old node is disposed with it; descendants are
+      // rebuilt because their Three.js objects no longer exist.
+      if (existing) {
+        existing.object3d.removeFromParent();
+        disposeObject3D(existing.object3d);
+      }
+
+      let object3d: THREE.Object3D;
+      let withLight = false;
+      if (isGroup(node)) {
+        object3d = createWorldGroupObject(node);
+      } else {
+        withLight = node.kind === 'lantern' && pointLights < lightLimit;
+        if (withLight) pointLights += 1;
+        object3d = createWorldObjectGroup(node, withLight);
+      }
+      parent.add(object3d);
+      object3d.visible = isEffectivelyVisible(current, node.id);
+      object3d.userData.worldLocked = isEffectivelyLocked(current, node.id);
+      next.set(node.id, { node, object3d, parentId: node.parentId, withLight });
+      return object3d;
+    };
+
+    const buildBranch = (node: SceneNode, parent: THREE.Object3D, forceRebuild: boolean) => {
+      const rebuiltHere = ensureNode(node, parent, forceRebuild);
+      const entry = next.get(node.id);
+      const wasRebuilt =
+        forceRebuild || !previous.get(node.id) || previous.get(node.id)?.object3d !== rebuiltHere;
+      for (const child of all) {
+        if (child.parentId === node.id) {
+          buildBranch(child, rebuiltHere, wasRebuilt || entry?.object3d !== rebuiltHere);
+        }
       }
     };
 
-    for (const node of [...current.groups, ...current.objects]) {
-      if (node.parentId === null) addNode(node.id, runtime.objectsGroup);
+    for (const node of all) {
+      if (node.parentId === null) buildBranch(node, runtime.objectsGroup, false);
     }
 
-    nodeObjectsRef.current = map;
+    // Ensure hierarchy order matches the plan (Three.js drawing order follows it).
+    for (const node of all) {
+      const entry = next.get(node.id);
+      if (!entry) continue;
+      const parentEntry = node.parentId ? next.get(node.parentId) : null;
+      (parentEntry?.object3d ?? runtime.objectsGroup).add(entry.object3d);
+    }
+
+    // Dispose nodes that no longer exist in the plan.
+    for (const [id, entry] of previous) {
+      if (!next.has(id)) {
+        entry.object3d.removeFromParent();
+        disposeObject3D(entry.object3d);
+      }
+    }
+
+    // A node whose parent vanished can no longer be reached from the roots.
+    for (const node of all) {
+      if (node.parentId !== null && !byId.has(node.parentId)) {
+        const entry = next.get(node.id);
+        entry?.object3d.removeFromParent();
+      }
+    }
+
+    builtNodesRef.current = next;
+    nodeObjectsRef.current = new Map(
+      [...next.entries()].map(([id, entry]) => [id, entry.object3d]),
+    );
     runtime.refreshOverlay();
   }, [plan.groups, plan.objects]);
 
