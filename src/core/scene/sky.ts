@@ -42,7 +42,8 @@ void main() {
   sky = mix(uGround, sky, smoothstep(-0.22, 0.03, height));
 
   float sun = max(dot(dir, normalize(uSunDirection)), 0.0);
-  float disc = pow(sun, 420.0) * 2.2;
+  // smoothstep gives a stable, cheap solar disc; large pow() exponents can band on mediump GPUs.
+  float disc = smoothstep(0.9994, 0.9998, sun) * 2.2;
   float glow = pow(sun, 12.0) * 0.28 + pow(sun, 3.0) * 0.05;
 
   vec3 color = sky + uSunColor * (disc + glow) * uSunIntensity;
