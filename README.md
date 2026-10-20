@@ -121,6 +121,8 @@ npm run preview    # serves dist/ on http://localhost:4173
 | `npm run test:watch` | Watch mode. |
 | `npm run schema:export` | Regenerate `docs/worldplan.schema.json` from the Zod schema. |
 | `npm run render:preview` | Render a generated world to a PNG with a dependency-free software rasteriser (visual QA without a GPU). |
+| `npm run site` | Serve the project website and the editor at `http://localhost:4173` (`/app/`). |
+| `npm run site:build` | Rebuild the site playground bundle and the editor build in `website/public/`. |
 
 ---
 
@@ -146,6 +148,7 @@ src/
   styles/              design tokens + responsive CSS
   test/                Vitest setup (fake IndexedDB, GLB FileReader shim)
 scripts/               schema export, offline preview renderer
+website/               project site (static page + in-browser playground + static server)
 docs/                  architecture report, WorldPlan reference, JSON Schema
 ```
 
@@ -256,6 +259,27 @@ straight from the scene graph that the viewport builds. Reproduce it with
    with every transform and hierarchy entry intact.
 5. Repeat the transform steps on Android Chrome to confirm touch orbit,
    tap selection and the inspector sheet.
+
+---
+
+## Project website
+
+`website/` is a static site that ships with the repository:
+
+- a landing page explaining the pipeline with renders taken from the real scene
+  graph and real WebGL 2 screenshots of the editor;
+- a **playground** that runs the actual prompt interpreter and farm generator in
+  the browser (`website/src/demo.ts` → `website/public/demo.js` by esbuild) and
+  draws the resulting WorldPlan as a top-down map — no server, no API key;
+- the compiled editor served under `/app/`.
+
+```bash
+npm run site:build   # playground bundle + editor build
+npm run site         # http://localhost:4173/  (site)  ·  /app/ (editor)
+```
+
+The zero-dependency server (`website/server.mjs`) binds `0.0.0.0`, so the same
+command works behind a preview proxy and from a phone on the local network.
 
 ---
 

@@ -122,8 +122,11 @@ function environmentFor(intent: WorldIntent): WorldPlan['environment'] {
         sunColor: '#fff3da',
         sunAzimuth: 216,
         sunElevation: 54,
-        sunIntensity: 2.15,
-        ambientIntensity: 0.62,
+        // Three.js r155+ uses physical light units: a directional light near 1.0
+        // plus hemisphere ambient already reads as full daylight. Higher values
+        // bleach the palette to pale lime once ACES tone mapping is applied.
+        sunIntensity: 1.15,
+        ambientIntensity: 0.32,
       },
       sunset: {
         skyColor: '#eaa878',
@@ -131,8 +134,8 @@ function environmentFor(intent: WorldIntent): WorldPlan['environment'] {
         sunColor: '#ffb36b',
         sunAzimuth: 264,
         sunElevation: 14,
-        sunIntensity: 1.6,
-        ambientIntensity: 0.42,
+        sunIntensity: 1.0,
+        ambientIntensity: 0.26,
       },
       night: {
         skyColor: '#101733',
@@ -140,11 +143,12 @@ function environmentFor(intent: WorldIntent): WorldPlan['environment'] {
         sunColor: '#c0ccff',
         sunAzimuth: 200,
         sunElevation: 46,
-        sunIntensity: 0.55,
-        ambientIntensity: 0.3,
+        sunIntensity: 0.42,
+        ambientIntensity: 0.24,
       },
     };
-  return { ...settings[time], fogDensity: 0.0019 };
+  // Light haze only: dense fog erased the far treeline and the fields.
+  return { ...settings[time], fogDensity: 0.0012 };
 }
 
 function densityFactor(density: WorldDensity | undefined): number {

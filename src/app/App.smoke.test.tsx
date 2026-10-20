@@ -218,6 +218,13 @@ describe('application runtime', () => {
     expect(await screen.findByText(/Farmstead · day/i, {}, { timeout: 15000 })).toBeTruthy();
     expect(await screen.findByText(/\d+ objects · \d+ groups · plan v3/i)).toBeTruthy();
 
+    // The overview counts real objects, keyed by kind (regression: it used to
+    // read `counts.trees`, which is never set, and always showed zero).
+    const treesStat = screen.getByText('Trees').previousElementSibling;
+    expect(Number(treesStat?.textContent)).toBeGreaterThan(10);
+    const buildingsStat = screen.getByText('Buildings').previousElementSibling;
+    expect(Number(buildingsStat?.textContent)).toBeGreaterThan(1);
+
     // Give the generated project a unique name for the library round-trip.
     const nameField = screen.getByLabelText('World name') as HTMLInputElement;
     fireEvent.change(nameField, { target: { value: unique } });
@@ -272,6 +279,15 @@ describe('application runtime', () => {
       .find((item) => (item.getAttribute('aria-label') ?? '').startsWith('Barn'));
     if (!barn) throw new Error('barn not found');
     fireEvent.mouseDown(barn.firstElementChild as HTMLElement);
+
+    // The inspector must report the real parent group, not silently fall back
+    // to the first option ("World root").
+    const parentSelect = await screen.findByLabelText('Parent');
+    await waitFor(() => expect((parentSelect as HTMLSelectElement).value).not.toBe('__root__'));
+    expect(
+      (parentSelect as HTMLSelectElement).selectedOptions[0]?.textContent,
+    ).toBe('Farmstead');
+
     fireEvent.click(await screen.findByRole('button', { name: 'Generated' }));
     fireEvent.click(await screen.findByRole('button', { name: /^Regenerate$/ }));
     expect(await screen.findByText(/Regenerated “Barn”/i)).toBeTruthy();

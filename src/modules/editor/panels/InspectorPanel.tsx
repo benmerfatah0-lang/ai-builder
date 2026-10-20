@@ -3,6 +3,7 @@ import { countObjects } from '../../../core/world-plan/factory';
 import {
   getAncestors,
   getNode,
+  getSubtreeIds,
   isEffectivelyLocked,
   worldTransformOf,
 } from '../../../core/world-plan/hierarchy';
@@ -62,11 +63,11 @@ function EmptyInspector() {
             <span className="stat-label">Groups</span>
           </div>
           <div className="stat">
-            <span className="stat-value">{counts.trees ?? 0}</span>
+            <span className="stat-value">{counts.tree ?? 0}</span>
             <span className="stat-label">Trees</span>
           </div>
           <div className="stat">
-            <span className="stat-value">{counts.buildings ?? 0}</span>
+            <span className="stat-value">{counts.building ?? 0}</span>
             <span className="stat-label">Buildings</span>
           </div>
         </div>
@@ -177,11 +178,15 @@ function MultiInspector() {
 function ParentSelect({ id }: { id: string }) {
   const { state, dispatch } = useEditor();
   const { plan } = state;
-  const ancestors = getAncestors(plan, id).map((node) => node.id);
+  // A node can move to any group except itself and its own descendants (which
+  // would create a cycle). Ancestors are valid targets: moving a child out to a
+  // grandparent is a legitimate reparent, and the current parent must always be
+  // listed or the select would render the wrong option.
+  const blocked = new Set(getSubtreeIds(plan, id));
   const options = [
     { value: '__root__', label: 'World root' },
     ...plan.groups
-      .filter((group) => group.id !== id && !ancestors.includes(group.id))
+      .filter((group) => !blocked.has(group.id))
       .map((group) => ({ value: group.id, label: group.name })),
   ];
   const node = getNode(plan, id);

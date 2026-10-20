@@ -23,25 +23,27 @@ interface TimeSettings {
 }
 
 const TIME_SETTINGS: Record<TimeOfDay, TimeSettings> = {
+  // Physical light units (three r155+): ~1.0 directional + modest hemisphere
+  // ambient is full daylight. Brighter values bleach the terrain palette.
   day: {
     sunElevation: 52,
     sunAzimuth: 220,
-    sunIntensity: 2.2,
-    ambientIntensity: 0.55,
+    sunIntensity: 1.15,
+    ambientIntensity: 0.32,
     sunColor: '#fff2dc',
   },
   sunset: {
     sunElevation: 12,
     sunAzimuth: 262,
-    sunIntensity: 1.55,
-    ambientIntensity: 0.36,
+    sunIntensity: 1.0,
+    ambientIntensity: 0.26,
     sunColor: '#ffb066',
   },
   night: {
     sunElevation: 42,
     sunAzimuth: 200,
-    sunIntensity: 0.5,
-    ambientIntensity: 0.24,
+    sunIntensity: 0.4,
+    ambientIntensity: 0.2,
     sunColor: '#bcc8ff',
   },
 };
