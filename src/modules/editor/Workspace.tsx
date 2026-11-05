@@ -71,8 +71,8 @@ export function Workspace() {
   const [worlds, setWorlds] = useState<WorldSummary[]>([]);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryLoading, setLibraryLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<DesktopTab>('world');
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel | null>(null);
+  const [activeTab, setActiveTab] = useState<DesktopTab>('ai');
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel | null>('ai');
   const [tool, setTool] = useState<TransformTool>('translate');
   const [space, setSpace] = useState<TransformSpace>('world');
   const [snap, setSnap] = useState(false);

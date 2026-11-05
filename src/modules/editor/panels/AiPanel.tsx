@@ -8,13 +8,10 @@ import { NumberField, SelectField } from '../../../ui/controls';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
 
 const EXAMPLES = [
-  'Create a large cartoon low-poly farm with a farmhouse, barn, wheat fields, a chicken coop, fences, trees, and connected dirt paths',
-  'A small farm with a barn, one wheat field and a stream with a bridge',
-  'A misty pine forest at night with lanterns',
-  'A desert oasis village at sunset with palm trees',
-  'A tropical island with palm trees and scattered ruins',
-  'A snowy mountain range with an ancient temple',
-  'A quiet meadow with boulders and a lake',
+  'جزيرة استوائية فيها نخيل وبحر عند الغروب',
+  'قرية وسط غابة كثيفة مع نهر وجبال',
+  'مزرعة صغيرة فيها حظيرة وحقول قمح وجسر',
+  'صحراء واسعة فيها واحة ونخيل',
 ];
 
 function randomSeed(): number {
@@ -80,20 +77,21 @@ export function AiPanel({
 
   return (
     <div className="panel-scroll">
-      <div className="panel-intro">
-        <div>
-          <h2>AI world</h2>
-          <p>Describe a world. The local interpreter builds it in your browser.</p>
-        </div>
+      <div className="create-intro" dir="rtl">
+        <div className="create-eyebrow"><span>✦</span> استوديو العوالم</div>
+        <h2>خيالك، أصبح عالماً.</h2>
+        <p>صف المكان الذي تتخيله، وشاهده يتحول إلى عالم ثلاثي الأبعاد.</p>
       </div>
 
       <label className="field">
-        <span className="field-label">Description</span>
+        <span className="field-label prompt-label">وصف العالم <span>01</span></span>
         <textarea
           className="prompt-input"
+          aria-label="Description"
+          dir="auto"
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
-          placeholder="A misty pine forest at night with lanterns…"
+          placeholder="مثلاً: جزيرة استوائية فيها نخيل وبحر عند الغروب..."
           rows={4}
           maxLength={400}
           onKeyDown={(event) => {
@@ -106,7 +104,7 @@ export function AiPanel({
       </label>
 
       <div className="example-list">
-        <span className="field-label">Try an example</span>
+        <span className="field-label examples-label">تحتاج بعض الإلهام؟ <span>جرّب مثالاً</span></span>
         {EXAMPLES.map((example) => (
           <button
             type="button"
@@ -119,6 +117,18 @@ export function AiPanel({
         ))}
       </div>
 
+      <button
+        type="button"
+        className="btn btn-primary generate-btn"
+        onClick={() => void generate()}
+        disabled={!prompt.trim() || generating}
+        aria-label="Generate world"
+      >
+        {generating ? <span className="spinner small" /> : <Icon name="sparkles" size={17} />}
+        {generating ? 'جاري بناء العالم…' : 'أنشئ العالم'} <span className="generate-arrow">←</span>
+      </button>
+      <p className="generate-caption" dir="rtl">✦ يعمل مباشرة في متصفحك · لا تحتاج إلى حساب</p>
+      <div className="settings-heading" dir="rtl"><span>إعدادات متقدمة</span><span>02</span></div>
       <div className="seed-row">
         <NumberField
           label="Seed"
@@ -171,18 +181,6 @@ export function AiPanel({
         Same description, seed and overrides rebuild the same layout, colors and placements.
       </p>
 
-      <button
-        type="button"
-        className="btn btn-primary generate-btn"
-        onClick={() => void generate()}
-        disabled={!prompt.trim() || generating}
-      >
-        {generating ? <span className="spinner small" /> : <Icon name="sparkles" size={17} />}
-        {generating ? 'Building world…' : 'Generate world'}
-      </button>
-      <p className="hint-text">
-        Generation creates a new world and keeps the current one in your library. Undo is available.
-      </p>
 
       {result && (
         <div className="ai-result">
@@ -221,14 +219,9 @@ export function AiPanel({
         </div>
       )}
 
-      <div className="callout callout-info">
+      <div className="callout callout-info" dir="rtl">
         <Icon name="info" size={16} />
-        <span>
-          The planner is deterministic and fully local: your prompt is parsed into a versioned
-          WorldPlan, validated, then built by the procedural generator. Farm prompts run the
-          structured layout planner (yard, lanes, fields, fences, orchard); other prompts use the
-          scatter generator. No API key and no data leaves the browser.
-        </span>
+        <span>يعتمد الإنشاء على كلمات مفتاحية وقوالب جاهزة، وليس نموذج ذكاء اصطناعي. جرّب وصف التضاريس والوقت والعناصر لتحصل على أفضل نتيجة.</span>
       </div>
     </div>
   );

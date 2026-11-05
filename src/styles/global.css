@@ -2891,3 +2891,19 @@ kbd {
     grid-template-columns: 1fr;
   }
 }
+
+/* Prompt-first world creation */
+.create-intro { direction: rtl; text-align: right; padding: 6px 0 22px; }
+.create-eyebrow { color: #e8a27e; font-size: 11px; font-weight: 700; margin-bottom: 13px; }
+.create-eyebrow span { margin-left: 5px; }
+.create-intro h2 { font-size: 23px; line-height: 1.45; margin: 0 0 8px; letter-spacing: -.4px; color: #f5f1ea; }
+.create-intro p { color: #96989f; font-size: 12px; line-height: 1.9; margin: 0; }
+.prompt-label, .examples-label { direction: rtl; display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 8px; color: #e6e3dd; }
+.prompt-label span, .examples-label span, .settings-heading span:last-child { color: #777a83; font-size: 10px; font-weight: 500; }
+.prompt-input { min-height: 116px; line-height: 1.8; text-align: right; background: #1d1f23; border-color: #36383e; }
+.example-list { direction: rtl; margin-top: 18px; gap: 6px; }
+.prompt-example { text-align: right; border-radius: 8px; padding: 9px 10px; line-height: 1.6; background: #1b1d21; }
+.generate-btn { margin-top: 19px; min-height: 44px; font-weight: 700; }
+.generate-arrow { margin-left: auto; font-size: 18px; }
+.generate-caption { text-align: center; font-size: 10px; color: #81838a; margin: 9px 0 23px; }
+.settings-heading { border-top: 1px solid var(--line); padding-top: 18px; margin-bottom: 13px; display: flex; justify-content: space-between; color: #dedbd4; font-weight: 700; }

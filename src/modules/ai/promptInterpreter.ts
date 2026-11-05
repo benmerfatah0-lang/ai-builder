@@ -304,8 +304,35 @@ function detectExplicitCounts(text: string): {
   return { counts, matched };
 }
 
+// Arabic descriptions are converted into the same explicit cues used by the
+// offline planner. This is deliberately a small vocabulary, not a translation
+// service: the original prompt remains in the saved project unchanged.
+function addArabicCues(text: string): string {
+  const normalized = text.replace(/[\u064b-\u065f\u0670]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي');
+  const vocabulary: [RegExp, string][] = [
+    [/جزير|جزر/, 'island'], [/صحراء|صحراوي|كثبان|رمال/, 'desert'],
+    [/واحه|واحة/, 'oasis'], [/جبل|جبال|ثلج/, 'mountain'],
+    [/غاب|احراش|ادغال/, 'forest'], [/مرج|مروج|سهل|وادي/, 'meadow'],
+    [/اطلال|اثار|معبد/, 'ruins'], [/قريه|قرية|قري|مدين|بلد|منازل|بيوت/, 'village'],
+    [/ليل|قمر|نجوم/, 'night'], [/غروب|شروق|مساء/, 'sunset'],
+    [/بحير|نهر|جدول|ماء|بحر|محيط/, 'water'], [/نهر|جدول/, 'river'],
+    [/جسر/, 'bridge'], [/مزرع|ضيعه|ضيعة|حظير|قمح|دجاج/, 'farm'],
+    [/حظير/, 'barn'], [/دجاج|قن/, 'chicken'], [/قمح|حقول/, 'wheat fields'],
+    [/سياج|اسوار|سور/, 'fence'], [/طريق|طرق|ممر/, 'path'], [/بستان/, 'orchard'],
+    [/صغير|صغيره|صغيرة/, 'small'], [/كبير|واسع|ضخم/, 'large'],
+    [/كرتون|كرتوني/, 'cartoon'], [/واقعي|طبيعي/, 'natural'],
+    [/كثيف|كثيفه|كثيفة/, 'dense'], [/قليل|متناثر/, 'sparse'],
+    [/نخيل|نخل/, 'palm'], [/فانوس|فوانيس|مصابيح/, 'lantern'],
+  ];
+  const cues = vocabulary.filter(([pattern]) => pattern.test(normalized)).map(([, cue]) => cue);
+  if (/(بدون|بلا|دون)\s+(?:ال)?(?:ماء|مياه|بحير|نهر)/.test(normalized)) cues.push('no water');
+  if (/(بدون|بلا|دون)\s+(?:ال)?(?:اشجار|شجر)/.test(normalized)) cues.push('no trees');
+  if (/(بدون|بلا|دون)\s+(?:ال)?(?:صخور|حجار)/.test(normalized)) cues.push('no rocks');
+  return `${text} ${cues.join(' ')}`;
+}
+
 function buildIntent(prompt: string, options: InterpretOptions = {}): WorldIntent {
-  const text = prompt.toLowerCase().replace(/\s+/g, ' ').trim();
+  const text = addArabicCues(prompt.toLowerCase().replace(/\s+/g, ' ').trim());
   const biomeResult = detectBiome(text);
   const timeResult = detectTime(text);
   const scaleResult = detectScale(text);
