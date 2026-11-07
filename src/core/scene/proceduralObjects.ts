@@ -9,6 +9,7 @@ import type {
   TreeObject,
 } from '../world-plan/schema';
 import { mulberry32 } from '../generation/rng';
+import { getSurfaceTexture } from './textures';
 import {
   addMesh,
   material,
@@ -45,8 +46,8 @@ function boxBetween(
 
 export function buildBush(object: TreeObject): THREE.Group {
   const group = new THREE.Group();
-  const foliage = material(object.color, { roughness: 0.95, flatShading: true });
-  const trunk = material(object.trunkColor, { roughness: 1, flatShading: true });
+  const foliage = material(object.color, { roughness: 0.95, flatShading: true, map: getSurfaceTexture('foliage') });
+  const trunk = material(object.trunkColor, { roughness: 1, flatShading: true, map: getSurfaceTexture('bark') });
   addMesh(group, new THREE.CylinderGeometry(0.09, 0.15, 0.45, 6), trunk, [0, 0.22, 0]);
   const blobs: [number, number, number, number][] = [
     [0, 0.78, 0, 0.78],
@@ -64,8 +65,8 @@ export function buildBush(object: TreeObject): THREE.Group {
 /** Timber-framed barn: gable roof, big X-braced door, loft opening, lean-to. */
 export function buildBarn(wallColor: string, roofColor: string): THREE.Group {
   const group = new THREE.Group();
-  const wall = material(wallColor, { roughness: 0.92 });
-  const roof = material(roofColor, { roughness: 0.9, flatShading: true });
+  const wall = material(wallColor, { roughness: 0.92, map: getSurfaceTexture('wood') });
+  const roof = material(roofColor, { roughness: 0.9, flatShading: true, map: getSurfaceTexture('roof') });
   const trim = material('#e8e2d4', { roughness: 0.85 });
   const dark = material('#2f2119', { roughness: 1 });
   const hay = material('#d9b45b', { roughness: 1, flatShading: true });
@@ -162,8 +163,8 @@ export function buildBarn(wallColor: string, roofColor: string): THREE.Group {
 /** Coop with pitched roof, ramp, nesting boxes and a small fenced run. */
 export function buildCoop(wallColor: string, roofColor: string): THREE.Group {
   const group = new THREE.Group();
-  const wall = material(wallColor, { roughness: 0.93 });
-  const roof = material(roofColor, { roughness: 0.9, flatShading: true });
+  const wall = material(wallColor, { roughness: 0.93, map: getSurfaceTexture('wood') });
+  const roof = material(roofColor, { roughness: 0.9, flatShading: true, map: getSurfaceTexture('roof') });
   const trim = material('#efe7d6', { roughness: 0.88 });
   const dark = material('#33251c', { roughness: 1 });
   const chicken = material('#f2ede2', { roughness: 0.9, flatShading: true });
@@ -255,7 +256,7 @@ export function buildCoop(wallColor: string, roofColor: string): THREE.Group {
 
 export function buildPath(object: PathObject): THREE.Group {
   const group = new THREE.Group();
-  const mat = material(object.color, { roughness: 0.99, flatShading: true });
+  const mat = material(object.color, { roughness: 0.99, flatShading: true, map: getSurfaceTexture(object.style === 'stone' ? 'stone' : 'soil') });
   const geometry = ribbonGeometrySafe(object.points, object.width, 0.04);
   const mesh = new THREE.Mesh(geometry, mat);
   mesh.receiveShadow = true;
@@ -316,8 +317,8 @@ export function buildRiver(object: RiverObject): THREE.Group {
 
 export function buildFence(object: FenceObject): THREE.Group {
   const group = new THREE.Group();
-  const postMaterial = material(object.postColor, { roughness: 1, flatShading: true });
-  const railMaterial = material(object.railColor, { roughness: 1, flatShading: true });
+  const postMaterial = material(object.postColor, { roughness: 1, flatShading: true, map: getSurfaceTexture(object.style === 'stone' ? 'masonry' : 'wood') });
+  const railMaterial = material(object.railColor, { roughness: 1, flatShading: true, map: getSurfaceTexture('wood') });
   const spacing = object.style === 'stone' ? 1.6 : 2.2;
   const length = polylineLength(object.points);
   const postCount = Math.max(2, Math.round(length / spacing));
@@ -367,7 +368,7 @@ export function buildFence(object: FenceObject): THREE.Group {
 
 export function buildField(object: FieldObject): THREE.Group {
   const group = new THREE.Group();
-  const soil = material(object.soilColor, { roughness: 1, flatShading: true });
+  const soil = material(object.soilColor, { roughness: 1, flatShading: true, map: getSurfaceTexture('soil') });
   const crop = material(object.cropColor, { roughness: 0.95, flatShading: true });
   const rng = mulberry32(object.seed >>> 0);
 
@@ -433,8 +434,8 @@ export function buildField(object: FieldObject): THREE.Group {
 
 export function buildBridge(object: BridgeObject): THREE.Group {
   const group = new THREE.Group();
-  const deck = material(object.deckColor, { roughness: 0.95, flatShading: true });
-  const rail = material(object.railColor, { roughness: 0.95, flatShading: true });
+  const deck = material(object.deckColor, { roughness: 0.95, flatShading: true, map: getSurfaceTexture('wood') });
+  const rail = material(object.railColor, { roughness: 0.95, flatShading: true, map: getSurfaceTexture('wood') });
   const halfLength = object.length / 2;
 
   // Slight camber so the deck reads as an arch.

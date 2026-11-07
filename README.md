@@ -95,7 +95,7 @@ No placeholder buttons or mock features are shipped:
   implement the existing `PromptInterpreter` interface later.
 - No click-to-place on terrain, box selection or terrain sculpting yet. Buildings
   are grounded, but terrain edits do not re-snap existing objects.
-- GLB export has geometry/materials/vertex colours but no lights, colliders,
+- GLB export has geometry, materials, vertex colours and generated textures, but no lights, colliders,
   LODs or native Godot/Unity project files.
 - The WebGL rendering path could not be visually tested in the development
   sandbox (no GPU); real desktop/Android QA remains the first task.
@@ -217,7 +217,7 @@ The viewport is a genuine WebGL 2 renderer, not a 2D fallback:
 | Resilience | GPU context-loss recovery, clear WebGL 2 error message with a retry button |
 | Proof | Live HUD: `WebGL 2 · <fps> fps · <draws> draws`; hover for the GPU/vendor string. Camera button exports a PNG of the current frame |
 
-Everything is local: no textures, CDNs or network requests are involved.
+Everything is local: surface textures are generated in the browser, with no CDNs or network requests. Grass, sand, stone, wood, bark, roofs and foliage use small shared tiled maps; browser GLB exports embed these maps.
 
 ---
 

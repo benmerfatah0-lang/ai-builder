@@ -16,6 +16,7 @@ import type {
 import { createTerrainSampler } from '../../core/generation/terrain';
 import { isEffectivelyVisible } from '../../core/world-plan/hierarchy';
 import { addMesh, material, mergeStaticMeshes } from './kit';
+import { getSurfaceTexture } from './textures';
 import { buildBarn, buildBush, buildBridge, buildCoop, buildFence, buildField, buildPath, buildRiver } from './proceduralObjects';
 
 export interface BuildSceneOptions {
@@ -141,7 +142,7 @@ export function createTerrainMesh(plan: WorldPlan, resolutionCap = 192): THREE.M
 
   const mesh = new THREE.Mesh(
     geometry,
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0 }),
+    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0, map: getSurfaceTexture(plan.terrain.style === 'dunes' || plan.terrain.style === 'islands' ? 'sand' : plan.terrain.style === 'mountains' ? 'stone' : 'grass') }),
   );
   mesh.name = 'terrain';
   mesh.receiveShadow = true;
@@ -206,8 +207,8 @@ function buildPrimitive(object: PrimitiveObject): THREE.Group {
 
 function buildTree(object: TreeObject): THREE.Group {
   const group = new THREE.Group();
-  const foliage = material(object.color, { roughness: 0.94, flatShading: true });
-  const trunk = material(object.trunkColor, { roughness: 1, flatShading: true });
+  const foliage = material(object.color, { roughness: 0.94, flatShading: true, map: getSurfaceTexture('foliage') });
+  const trunk = material(object.trunkColor, { roughness: 1, flatShading: true, map: getSurfaceTexture('bark') });
 
   if (object.variant === 'bush') return buildBush(object);
 
@@ -273,7 +274,7 @@ function buildTree(object: TreeObject): THREE.Group {
 
 function buildRock(object: RockObject): THREE.Group {
   const group = new THREE.Group();
-  const mat = material(object.color, { roughness: 0.96, flatShading: true });
+  const mat = material(object.color, { roughness: 0.96, flatShading: true, map: getSurfaceTexture('stone') });
 
   if (object.variant === 'boulder') {
     const mesh = addMesh(group, new THREE.IcosahedronGeometry(1.05, 1), mat, [0, 0.62, 0]);
@@ -293,8 +294,8 @@ function buildRock(object: RockObject): THREE.Group {
 
 function buildBuilding(object: BuildingObject): THREE.Group {
   const group = new THREE.Group();
-  const wall = material(object.color, { roughness: 0.93 });
-  const roof = material(object.roofColor, { roughness: 0.85, flatShading: true });
+  const wall = material(object.color, { roughness: 0.93, map: getSurfaceTexture(object.variant === 'house' ? 'plaster' : 'masonry') });
+  const roof = material(object.roofColor, { roughness: 0.85, flatShading: true, map: getSurfaceTexture('roof') });
   const dark = material('#3a2a20', { roughness: 1 });
   const glow = material('#ffcf8a', {
     emissive: new THREE.Color('#ffb75e'),
@@ -464,8 +465,8 @@ export function addEnvironmentLights(
  * Builds the complete editable world as a Three.js graph.
  *
  * The viewport and the glTF exporter share this function, which guarantees the
- * exported file matches what the editor shows. Generated content only — no
- * textures, no network assets.
+ * exported file matches what the editor shows. Surface textures are generated
+ * locally and shared across objects; no network assets are required.
  */
 /**
  * Blender-style reference grid aligned to the terrain. It is a viewport aid and
@@ -530,8 +531,8 @@ function buildNode(
  * Builds the complete editable world as a Three.js graph.
  *
  * The viewport and the glTF exporter share this function, which guarantees the
- * exported file matches what the editor shows. Generated content only — no
- * textures, no network assets.
+ * exported file matches what the editor shows. Surface textures are generated
+ * locally and shared across objects; no network assets are required.
  */
 export function buildWorldScene(plan: WorldPlan, options: BuildSceneOptions = {}): THREE.Group {
   const {
@@ -592,7 +593,7 @@ export function findNodeObject(root: THREE.Object3D, id: string): THREE.Object3D
   return found;
 }
 
-/** Release GPU resources for a scene graph (geometries, materials, textures). */
+/** Release per-scene geometry and materials. Procedural maps are shared and cached. */
 export function disposeObject3D(root: THREE.Object3D): void {
   const materials = new Set<THREE.Material>();
   root.traverse((child) => {
