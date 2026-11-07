@@ -1,3 +1,4 @@
+import { parseAssetRequests } from './assetRequests';
 import { clamp, titleFromPrompt } from '../../core/utils/id';
 import { seedFromPrompt } from '../../core/world-plan/factory';
 import {
@@ -341,6 +342,7 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
   const densityResult = detectDensity(text);
   const features = detectFarmFeatures(text, timeResult.timeOfDay);
   const farm = features !== undefined;
+  const assets = farm ? undefined : parseAssetRequests(prompt);
   const settlementMatches = matches(text, SETTLEMENT_KEYWORDS);
   const settlement = settlementMatches.length > 0 || farm;
   const waterMatches = matches(text, WATER_KEYWORDS);
@@ -381,6 +383,7 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
   cues.push(`biome: ${biome}`);
   if (biomeResult.matched.length > 0) cues.push(`matched: ${biomeResult.matched.slice(0, 4).join(', ')}`);
   cues.push(`time: ${timeResult.timeOfDay}`);
+  if (assets?.length) cues.push(`assets: ${assets.map((asset) => `${asset.count} ${asset.assetId}`).join(', ')}`);
   if (settlementMatches.length > 0) cues.push(`settlement: ${settlementMatches[0]}`);
   if (water) cues.push('water: enabled');
   if (scale !== 'medium') cues.push(`scale: ${scale}`);
@@ -409,15 +412,17 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
     if (density !== 'normal') cues.push(`density: ${density}`);
   }
 
-  const summaryParts = [
-    (features ? 'Farmstead' : BIOME_PROFILES[biome].label) + (settlement && !features ? ' settlement' : ''),
-    timeResult.timeOfDay,
-    features
-      ? `${features.wheatFields} wheat field${features.wheatFields === 1 ? '' : 's'}`
-      : `${counts.trees} trees`,
-    features ? `${style} style` : `${counts.rocks} rocks`,
-  ];
-  if (!features && counts.buildings > 0) summaryParts.push(`${counts.buildings} buildings`);
+  const summaryParts = assets?.length
+    ? [BIOME_PROFILES[biome].label, timeResult.timeOfDay, ...assets.map((asset) => `${asset.count} ${asset.assetId}`)]
+    : [
+        (features ? 'Farmstead' : BIOME_PROFILES[biome].label) + (settlement && !features ? ' settlement' : ''),
+        timeResult.timeOfDay,
+        features
+          ? `${features.wheatFields} wheat field${features.wheatFields === 1 ? '' : 's'}`
+          : `${counts.trees} trees`,
+        features ? `${style} style` : `${counts.rocks} rocks`,
+      ];
+  if (!assets?.length && !features && counts.buildings > 0) summaryParts.push(`${counts.buildings} buildings`);
 
   return {
     prompt,
@@ -429,6 +434,7 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
     settlement,
     water,
     features,
+    assets,
     style,
     density,
     counts,

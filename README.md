@@ -13,6 +13,22 @@ as a project file or a glTF 2.0 model for Godot and Unity.
 
 ---
 
+## Arabic asset composition
+
+Arabic descriptions can request library assets and counts, for example
+`بيت على يمين شجرة و 3 صخور` or `منزل بجانب برج و 2 نخلة`.
+The local interpreter supports a limited vocabulary for houses, towers, trees,
+palms, cacti, rocks, lanterns, simple shapes, fences and paths. It recognises
+left/right/front/behind/near between two named assets, in world coordinates, and
+places the requested library objects on terrain with spacing and water checks.
+It reports when placement cannot be completed. General landscape prompts retain
+the biome generator and farm prompts retain the structured farm planner; this
+is rule-based, not unrestricted natural language understanding. Counts are
+limited by placement and a maximum of 300 explicit assets.
+
+The downloadable single-file phone version can be refreshed after source changes
+with `npm run build:mobile`. Serve that file with a local HTTP server on Android.
+
 ## What works today
 
 - **3D viewport (real WebGL 2)** — a live `THREE.WebGLRenderer` on a WebGL 2

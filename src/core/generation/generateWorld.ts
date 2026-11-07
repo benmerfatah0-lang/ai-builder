@@ -12,6 +12,7 @@ import { mulberry32, range, pickWeighted, type Rng } from './rng';
 import { createTerrainSampler, type TerrainSampler } from './terrain';
 import { createBuilding, createLantern, createRock, createTree } from '../assets/catalog';
 import { generateFarmPlan } from './farm';
+import { buildAssetLayout } from './assetLayout';
 import { validateScenePlan, type SceneValidation } from '../world-plan/validateScene';
 
 interface TimeSettings {
@@ -272,6 +273,23 @@ export function generateWorldPlanWithReport(intent: WorldIntent): GenerationRepo
     return {
       plan: farm.plan,
       warnings: [...farm.warnings, ...validation.warnings.map((issue) => issue.message)],
+      validation,
+    };
+  }
+
+  if (intent.assets?.length) {
+    // Reuse the normal terrain/environment setup, but do not add unrelated
+    // scatter objects to an explicit asset composition.
+    const shell = generateWorldPlanScatter({
+      ...intent,
+      settlement: false,
+      counts: { trees: 0, rocks: 0, buildings: 0, lanterns: 0 },
+    });
+    const result = buildAssetLayout(shell, intent, intent.assets);
+    const validation = validateScenePlan(result.plan);
+    return {
+      plan: result.plan,
+      warnings: [...result.warnings, ...validation.warnings.map((issue) => issue.message)],
       validation,
     };
   }

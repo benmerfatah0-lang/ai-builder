@@ -1,3 +1,5 @@
+import type { AssetRequest } from './assetRequests';
+
 export type BiomeId = 'meadow' | 'forest' | 'mountains' | 'desert' | 'island' | 'ruins';
 export type TimeOfDay = 'day' | 'sunset' | 'night';
 export type WorldScale = 'small' | 'medium' | 'large';
@@ -36,6 +38,8 @@ export interface WorldIntent {
   scale: WorldScale;
   settlement: boolean;
   water: boolean;
+  /** Explicit catalog assets and relative placements recognised in the prompt. */
+  assets?: AssetRequest[];
   /** Present when the prompt describes a structured farm scene. */
   features?: FarmFeatures;
   style?: WorldStyle;
