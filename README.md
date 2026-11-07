@@ -13,27 +13,32 @@ as a project file or a glTF 2.0 model for Godot and Unity.
 
 ---
 
-## تشغيل نسخة الهاتف في Termux (OpenAI)
+## تشغيل نسخة الهاتف في Termux (Groq + Tavily)
 
-1. افتح Termux وثبّت Python وcurl:
+التطبيق يستخدم نموذج Qwen عبر Groq، ويقرر تلقائياً إذا كان الوصف يحتاج إلى بحث عبر Tavily. يتطلب الاتصال بالإنترنت ومفتاحين؛ لا يستخدم OpenAI أو Gemini. الخادم محلي على الهاتف ولا يحتاج لاستضافة سحابية.
+
+1. افتح Termux وثبّت Python وcurl إن لم يكونا موجودين:
 
    ```sh
    pkg update && pkg install python curl
    ```
-2. أنشئ مجلداً ونزّل ملف التطبيق إليه (إن كان خادم قديم يعمل أوقفه أولاً بـ Ctrl+C):
+2. أوقف أي خادم قديم على المنفذ 8080 بـ Ctrl+C، ثم نزّل الملفين وشغّل الخادم المحلي:
 
    ```sh
-   mkdir -p ~/world-builder && cd ~/world-builder
-   curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/world-builder-mobile.html' -o world-builder-mobile.html
-   python -m http.server 8080 --bind 127.0.0.1
+   mkdir -p ~/world-builder && cd ~/world-builder && \
+   curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/world-builder-mobile.html' -o world-builder-mobile.html && \
+   curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/world-builder-server.py' -o world-builder-server.py && \
+   python world-builder-server.py
    ```
-3. اترك Termux يعمل وافتح في متصفح الهاتف: **http://127.0.0.1:8080/world-builder-mobile.html**. للوصول لاحقاً شغّل أمر Python من نفس المجلد مجدداً. لإيقافه اضغط Ctrl+C. إذا ظهر 404 فتأكد من نجاح التنزيل ووجود الملف داخل `~/world-builder`.
-4. أنشئ مفتاح OpenAI API من [OpenAI Platform](https://platform.openai.com/api-keys) وأدخله في لوحة AI داخل التطبيق، **ولا ترسله في المحادثة**. يتطلب إنشاء العالم اتصالاً بالإنترنت. لا تحتاج لاستضافة أو خادم حساب سحابي. لا توجد مزامنة بين الأجهزة.
-5. للحفظ على الهاتف أدخل كلمة مرور قوية واضغط **حفظ مشفّر**. بعد إعادة فتح الصفحة أدخل كلمة المرور واضغط **فتح المفتاح**. اختر **حذف المفتاح** لإزالته. يحتفظ المتصفح بالمفتاح مشفراً بـ PBKDF2 وAES-GCM في التخزين المحلي على نفس العنوان والمتصفح؛ مسح بيانات المتصفح يمحوه. لا يمكن استرجاعه إذا نسيت كلمة المرور، وعندها أنشئ مفتاح API جديداً. المفتاح المفتوح في ذاكرة الصفحة ويمكن لإضافات خبيثة أو جهاز مخترق سرقته.
+3. اترك Termux يعمل وافتح **http://127.0.0.1:8080/world-builder-mobile.html** في متصفح الهاتف. لإعادة التشغيل لاحقاً: `cd ~/world-builder && python world-builder-server.py`. إذا ظهر 404 أو رسالة المنفذ مستخدم، أوقف الخادم القديم وتأكد من تنزيل الملفين.
+4. أنشئ مفتاحاً من [Groq](https://console.groq.com/keys) ومفتاحاً من [Tavily](https://app.tavily.com/)، وأدخلهما في لوحة AI. **لا ترسل المفاتيح في المحادثة**.
+5. للحفظ على الهاتف أدخل كلمة مرور قوية واضغط **حفظ مشفّر**. بعد إعادة فتح الصفحة أدخل كلمة المرور واضغط **فتح المفتاحين**. اختر **حذف المفتاحين** لإزالتهما. يحفظ المتصفح المفتاحين مشفّرين بـPBKDF2 وAES-GCM في التخزين المحلي على نفس العنوان والمتصفح؛ مسح بيانات المتصفح يمحوهما. لا يمكن استرجاعهما إذا نسيت كلمة المرور. الخزنات القديمة لـOpenAI وGemini منفصلة ولا تُفتح أو تُرسل تلقائياً.
 
-**التكلفة والأمان:** يستخدم التطبيق `gpt-5.4-nano` مع أداة البحث، وقد تُفرض رسوم على التوليد والبحث. يتطلب استخدام API رصيداً أو فوترة صالحة حسب حسابك؛ لا يعني اشتراك ChatGPT تلقائياً أن لديك رصيد API. راجع [الأسعار](https://openai.com/api/pricing/) و[الفوترة](https://platform.openai.com/settings/organization/billing/overview) قبل الاستخدام. يرسل المتصفح المفتاح مباشرةً إلى OpenAI؛ وهو ليس محمياً من الإضافات الخبيثة أو من جهاز مخترق، ولا يُوصى بهذا الأسلوب للمنتجات العامة. التشفير يحمي المفتاح المحفوظ فقط وليس المفتاح المفتوح. استخدم هاتفاً موثوقاً، وراقب الاستخدام وألغِ المفتاح إن شككت في تسريبه. خزنة Gemini السابقة منفصلة ولا تُرسل إلى OpenAI.
+**التكلفة والتوافر:** استخدم حسابين على الخطتين المجانيتين، ولا تفعّل فوترة أو استخداماً إضافياً. تعتمد الحدود والتوافر على الحساب وقد تتغير؛ [حدود Groq](https://console.groq.com/docs/rate-limits) و[حدود Tavily](https://docs.tavily.com/documentation/api-credits). يرسل التطبيق طلب بحث أساسي فقط عند الحاجة، دون تفعيل auto_parameters. التطبيق لا يتحقق من خطة الحساب أو يمنع الرسوم إذا كانت الفوترة المدفوعة مفعّلة. لا توجد أي مزامنة تلقائية بين الأجهزة.
 
-يرسل التطبيق الوصف إلى OpenAI مع أداة البحث؛ يقرر النموذج إن كان البحث ضرورياً. يعرض التطبيق المصادر عند ورودها، ويصرح عند عدم وجود ما يؤكد البحث. لا يوجد بديل محلي صامت إذا فشل الاتصال أو التحقق. لا يجلب البحث نماذج ثلاثية الأبعاد؛ البناء محدود بالأصول المتاحة وقد تكون النتيجة تقريبية. نموذج المزرعة له ترتيب خاص.
+**الخصوصية والأمان:** يرسل وصفك إلى Groq، وعبارة البحث إلى Tavily إذا قرر النموذج البحث، وقد تُرسل نتائج البحث إلى Groq. المفتاحان في ذاكرة الصفحة عند فتحهما، ويمران عبر خادم محلي يربط 127.0.0.1 فقط ويرسل كل مفتاح عبر HTTPS إلى خدمته دون تخزينه. التشفير لا يحمي من إضافات خبيثة أو جهاز مخترق. استخدم هاتفاً موثوقاً ولا تشارك المفتاحين.
+
+إذا قرر النموذج البحث ولم ينجح Tavily، يتوقف الإنشاء ويظهر الخطأ بدلاً من السقوط بصمت. يعرض التطبيق المصادر عند ورودها، ويوضح إذا لم يجرِ بحثاً. لا يجلب البحث نماذج ثلاثية الأبعاد؛ البناء محدود بالأصول المتاحة وقد تكون النتيجة تقريبية. نموذج المزرعة له ترتيب خاص.
 
 To rebuild the standalone phone file after source changes, run `npm run build:mobile`.
 
@@ -91,7 +96,7 @@ To rebuild the standalone phone file after source changes, run `npm run build:mo
   floating toolbar, inspector) and a mobile layout with a bottom dock, bottom
   sheet, touch orbit + pinch-zoom, safe-area handling and 16 px inputs.
 
-AI planning uses the OpenAI API and sends the description to OpenAI; usage may incur charges.
+AI planning uses Groq and, when necessary, Tavily web search. Free-tier limits and availability apply.
 No external 3D assets are downloaded; rendering, saving and export are local.
 
 ### What is deliberately not there yet
@@ -116,7 +121,7 @@ Full risk list and roadmap: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ## Quick start
 
 Requirements: **Node.js 20.19+ or 22.12+** (Vite 7). Online generation also
-requires internet and an OpenAI API key. The standalone phone version needs no app server.
+requires internet and Groq and Tavily API keys. The phone version uses a loopback-only local server.
 
 ```bash
 npm install
@@ -224,7 +229,7 @@ The viewport is a genuine WebGL 2 renderer, not a 2D fallback:
 | Resilience | GPU context-loss recovery, clear WebGL 2 error message with a retry button |
 | Proof | Live HUD: `WebGL 2 · <fps> fps · <draws> draws`; hover for the GPU/vendor string. Camera button exports a PNG of the current frame |
 
-Surface textures are generated in the browser without a CDN. Grass, sand, stone, wood, bark, roofs and foliage use small shared tiled maps; browser GLB exports embed these maps. AI planning makes network requests to OpenAI.
+Surface textures are generated in the browser without a CDN. Grass, sand, stone, wood, bark, roofs and foliage use small shared tiled maps; browser GLB exports embed these maps. AI planning makes network requests to Groq and, when needed, Tavily.
 
 ---
 
@@ -309,7 +314,7 @@ command works behind a preview proxy and from a phone on the local network.
 ## Tech stack
 
 React 19 · TypeScript 5.9 · Vite 7 · Three.js r186 · Zod 4 · IndexedDB · Vitest ·
-Testing Library · happy-dom · fake-indexeddb. Online AI uses the external OpenAI API, which may incur charges.
+Testing Library · happy-dom · fake-indexeddb. Online AI uses the external Groq and Tavily APIs; usage is limited on free accounts.
 
 ---
 

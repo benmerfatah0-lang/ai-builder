@@ -72,8 +72,9 @@ export function Workspace() {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<DesktopTab>('ai');
-  // The API key lives only in this mounted editor session, never in a project or browser storage.
+  // Keys stay in memory unless the user explicitly saves them in the encrypted vault.
   const [onlineKey, setOnlineKey] = useState('');
+  const [searchKey, setSearchKey] = useState('');
   const [mobilePanel, setMobilePanel] = useState<MobilePanel | null>('ai');
   const [tool, setTool] = useState<TransformTool>('translate');
   const [space, setSpace] = useState<TransformSpace>('world');
@@ -417,7 +418,7 @@ export function Workspace() {
           />
         );
       case 'ai':
-        return <AiPanel notify={notify} apiKey={onlineKey} onApiKeyChange={setOnlineKey} />;
+        return <AiPanel notify={notify} apiKey={onlineKey} onApiKeyChange={setOnlineKey} searchKey={searchKey} onSearchKeyChange={setSearchKey} />;
       case 'inspector':
         return (
           <InspectorPanel

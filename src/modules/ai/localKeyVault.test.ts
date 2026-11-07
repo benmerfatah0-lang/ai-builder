@@ -11,36 +11,39 @@ function memoryStorage(): Storage {
     setItem: (key, value) => { values.set(key, value); },
   };
 }
-
+const keys = { groq: 'test-secret-groq-key', tavily: 'test-secret-tavily-key' };
 describe('encrypted phone key vault', () => {
-  it('encrypts a key locally, unlocks it with the passphrase and deletes it', async () => {
+  it('encrypts both keys locally, unlocks them with the passphrase and deletes them', async () => {
     const storage = memoryStorage();
     expect(hasLocalKey(storage)).toBe(false);
-    await saveLocalKey('test-secret-api-key', 'long password', storage);
+    await saveLocalKey(keys, 'long password', storage);
     expect(hasLocalKey(storage)).toBe(true);
     const record = storage.getItem(storage.key(0)!)!;
-    expect(record).not.toContain('test-secret-api-key');
+    expect(record).not.toContain(keys.groq);
+    expect(record).not.toContain(keys.tavily);
     expect(record).not.toContain('long password');
     await expect(unlockLocalKey('wrong password', storage)).rejects.toThrow('كلمة المرور');
-    expect(await unlockLocalKey('long password', storage)).toBe('test-secret-api-key');
-    await saveLocalKey('test-secret-api-key', 'long password', storage);
+    expect(await unlockLocalKey('long password', storage)).toEqual(keys);
+    await saveLocalKey(keys, 'long password', storage);
     expect(storage.getItem(storage.key(0)!)).not.toBe(record);
     deleteLocalKey(storage);
     expect(hasLocalKey(storage)).toBe(false);
   });
-  it('does not load or delete an old Gemini vault when using an OpenAI key', async () => {
+  it('does not load or delete old providers vaults', async () => {
     const storage = memoryStorage();
-    storage.setItem('worldbuilder.gemini-vault.v1', 'old-encrypted-record');
+    storage.setItem('worldbuilder.openai-vault.v1', 'old-encrypted-record');
+    storage.setItem('worldbuilder.gemini-vault.v1', 'old-encrypted-record-2');
     expect(hasLocalKey(storage)).toBe(false);
-    await saveLocalKey('test-openai-secret-key', 'long password', storage);
-    expect(await unlockLocalKey('long password', storage)).toBe('test-openai-secret-key');
+    await saveLocalKey(keys, 'long password', storage);
+    expect(await unlockLocalKey('long password', storage)).toEqual(keys);
     deleteLocalKey(storage);
-    expect(storage.getItem('worldbuilder.gemini-vault.v1')).toBe('old-encrypted-record');
+    expect(storage.getItem('worldbuilder.openai-vault.v1')).toBe('old-encrypted-record');
+    expect(storage.getItem('worldbuilder.gemini-vault.v1')).toBe('old-encrypted-record-2');
   });
   it('rejects weak passphrases without replacing an existing record', async () => {
     const storage = memoryStorage();
-    await saveLocalKey('test-secret-api-key', 'long password', storage);
-    await expect(saveLocalKey('different-key', 'weak', storage)).rejects.toThrow('8');
-    expect(await unlockLocalKey('long password', storage)).toBe('test-secret-api-key');
+    await saveLocalKey(keys, 'long password', storage);
+    await expect(saveLocalKey(keys, 'weak', storage)).rejects.toThrow('8');
+    expect(await unlockLocalKey('long password', storage)).toEqual(keys);
   });
 });

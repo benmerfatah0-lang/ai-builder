@@ -1,5 +1,5 @@
 /** A passphrase-protected key vault tied to this browser origin, not a cloud sync. */
-const STORAGE_KEY = 'worldbuilder.openai-vault.v1';
+const STORAGE_KEY = 'worldbuilder.groq-tavily-vault.v1';
 const ITERATIONS = 310000;
 const encoder = new TextEncoder();
 
@@ -22,9 +22,11 @@ export function hasLocalKey(storage?: Storage): boolean {
   try { return (storage ?? globalThis.localStorage).getItem(STORAGE_KEY) !== null; }
   catch { throw new Error('تعذّر الوصول إلى تخزين المتصفح.'); }
 }
-export async function saveLocalKey(apiKey: string, passphrase: string, storage?: Storage): Promise<void> {
-  const key = apiKey.trim();
-  if (key.length < 10 || key.length > 512) throw new Error('أدخل مفتاح OpenAI صحيحاً أولاً.');
+export type ServiceKeys = { groq: string; tavily: string };
+export async function saveLocalKey(apiKeys: ServiceKeys, passphrase: string, storage?: Storage): Promise<void> {
+  const keys = { groq: apiKeys.groq.trim(), tavily: apiKeys.tavily.trim() };
+  if (Object.values(keys).some((key) => key.length < 10 || key.length > 512)) throw new Error('أدخل مفتاحي Groq وTavily أولاً.');
+  const key = JSON.stringify(keys);
   if (passphrase.length < 8) throw new Error('اختر كلمة مرور من 8 أحرف على الأقل.');
   subtle();
   const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -33,17 +35,19 @@ export async function saveLocalKey(apiKey: string, passphrase: string, storage?:
   try { (storage ?? globalThis.localStorage).setItem(STORAGE_KEY, JSON.stringify({ v: 1, salt: toBase64(salt), iv: toBase64(iv), data: toBase64(new Uint8Array(encrypted)) })); }
   catch { throw new Error('تعذّر الحفظ في هذا المتصفح. تحقّق من إعدادات التخزين.'); }
 }
-export async function unlockLocalKey(passphrase: string, storage?: Storage): Promise<string> {
+export async function unlockLocalKey(passphrase: string, storage?: Storage): Promise<ServiceKeys> {
   subtle();
   try {
     const value = (storage ?? globalThis.localStorage).getItem(STORAGE_KEY);
     if (!value) throw new Error('missing');
     const record = JSON.parse(value) as { v: number; salt: string; iv: string; data: string };
-    if (record.v !== 1 || typeof record.salt !== 'string' || typeof record.iv !== 'string' || typeof record.data !== 'string' || record.data.length > 1200) throw new Error('invalid');
+    if (record.v !== 1 || typeof record.salt !== 'string' || typeof record.iv !== 'string' || typeof record.data !== 'string' || record.data.length > 3000) throw new Error('invalid');
     const salt = fromBase64(record.salt), iv = fromBase64(record.iv), ciphertext = fromBase64(record.data);
     if (salt.length !== 16 || iv.length !== 12 || ciphertext.length < 17) throw new Error('invalid');
     const plaintext = await subtle().decrypt({ name: 'AES-GCM', iv }, await derive(passphrase, salt), ciphertext);
-    return new TextDecoder().decode(plaintext);
+    const keys = JSON.parse(new TextDecoder().decode(plaintext)) as ServiceKeys;
+    if (typeof keys.groq !== 'string' || typeof keys.tavily !== 'string' || !keys.groq || !keys.tavily) throw new Error('invalid');
+    return { groq: keys.groq, tavily: keys.tavily };
   } catch { throw new Error('تعذّر فتح المفتاح. تأكّد من كلمة المرور ومن أن المفتاح محفوظ في هذا المتصفح.'); }
 }
 export function deleteLocalKey(storage?: Storage): void {

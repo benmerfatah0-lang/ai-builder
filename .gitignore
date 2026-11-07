@@ -16,3 +16,7 @@ website/public/demo.js
 
 # Encrypted account data and local credentials must never be committed.
 data/private-accounts/
+
+# Python bytecode from the local phone server and its tests.
+__pycache__/
+*.py[cod]
