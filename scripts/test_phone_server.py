@@ -10,6 +10,8 @@ import unittest
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
 from urllib.error import URLError
+from urllib.request import Request
+from email.message import Message
 
 spec = importlib.util.spec_from_file_location('phone_server', 'world-builder-server.py')
 phone_server = importlib.util.module_from_spec(spec)
@@ -78,6 +80,7 @@ class PhoneServerTests(unittest.TestCase):
     @patch.object(phone_server, 'get_json')
     def test_rejects_cross_origin_host_wrong_type_and_bad_routes(self, upstream):
         self.assertEqual(self.request('/api/online', origin='https://evil.example')[0], 403)
+        self.assertEqual(self.request('/api/house-learning', origin='https://evil.example')[0], 403)
         self.assertEqual(self.request('/api/online', host='evil.example')[0], 403)
         self.assertEqual(self.request('/api/online', content_type='text/plain')[0], 415)
         self.assertEqual(self.request('/api/unknown')[0], 404)
@@ -93,6 +96,27 @@ class PhoneServerTests(unittest.TestCase):
             status, body = self.request(path)
             self.assertEqual(status, 502)
             self.assertNotIn(b'secret', body)
+
+    def test_image_download_rejects_untrusted_url_type_and_size(self):
+        with self.assertRaises(ValueError):
+            phone_server.get_image(Request('https://example.org/wikipedia/commons/x'), timeout=1)
+        class Reply:
+            def __init__(self, content_type, body):
+                self.headers = Message()
+                self.headers['Content-Type'] = content_type
+                self.body = body
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, n): return self.body[:n]
+        class Opener:
+            def __init__(self, reply): self.reply = reply
+            def open(self, req, timeout): return self.reply
+        request = Request('https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/a.png/192px-a.png')
+        for reply in (Reply('text/html', b'<html>'), Reply('image/png', b'x' * 1_000_001)):
+            with patch.object(phone_server, 'build_opener', return_value=Opener(reply)):
+                with self.assertRaises(ValueError): phone_server.get_image(request, timeout=1)
+        with patch.object(phone_server, 'build_opener', return_value=Opener(Reply('image/png', b'png'))):
+            self.assertEqual(phone_server.get_image(request, timeout=1), b'png')
 
     def test_redirects_are_not_followed(self):
         self.assertIsNone(phone_server.NoRedirects().redirect_request(None, None, 302, '', {}, 'https://example.com'))
