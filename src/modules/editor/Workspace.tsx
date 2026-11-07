@@ -18,6 +18,7 @@ import {
 import { createStarterWorld } from '../../core/generation/starter';
 import { createId } from '../../core/utils/id';
 import { useEditor } from './store';
+import { useMapTrainer } from './useMapTrainer';
 import { useAutosave } from './useAutosave';
 import {
   ALL_AXES,
@@ -63,6 +64,7 @@ const PANEL_TITLES: Record<MobilePanel, string> = {
 
 export function Workspace() {
   const { state, dispatch } = useEditor();
+  const mapTrainer = useMapTrainer();
   const [repository, setRepository] = useState<WorldRepository>(() => getWorldRepository());
   const [storageKind, setStorageKind] = useState<'indexeddb' | 'memory'>(
     () => getWorldRepository().kind,
@@ -415,7 +417,7 @@ export function Workspace() {
           />
         );
       case 'ai':
-        return <AiPanel notify={notify} />;
+        return <AiPanel notify={notify} mapTrainer={mapTrainer} />;
       case 'inspector':
         return (
           <InspectorPanel

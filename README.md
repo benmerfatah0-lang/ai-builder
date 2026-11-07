@@ -33,7 +33,9 @@ as a project file or a glTF 2.0 model for Godot and Unity.
 
 3. اترك Termux مفتوحاً وافتح **http://127.0.0.1:8080/world-builder-mobile.html** في متصفح الهاتف، ثم حدّث الصفحة. اكتب مثلاً «بيت وشجرة وصخرة» واضغط «أنشئ العالم». إذا كان المنفذ مستخدماً أوقف الخادم القديم أولاً. لإعادة التشغيل لاحقاً: `cd ~/world-builder && python world-builder-server.py`.
 4. لتدريب الأشكال اختر بيتاً أو شجرة عريضة الأوراق أو صخرة مستديرة من المشهد، وعدّل حجمها في **Inspect**، ثم افتح **AI** واضغط «تعلّم من العنصر المحدد». يعيد ذلك حساب متوسط أبعاد فئتها. أنشئ مشهداً جديداً لرؤية تأثيره؛ البيانات تحفظ في المتصفح ويمكن حذفها من اللوحة. الأشكال المدربة تطبّق على طلبات الأصول الصريحة، لا قالب المزرعة أو النباتات الأخرى.
-5. للبحث اختر «ابحث في ويكيبيديا عن هذا الوصف» أو اكتب «ابحث». ستظهر المصادر إن وُجدت. فشل التحقق من الاتصال أو البحث المطلوب يوقف الإنشاء، ولا يوجد بديل صامت. تعبيرات الوصف ومعلومات النتائج محدودة وقد يخطئ التفسير.
+5. **تعلّم الخرائط التلقائي:** عند فتح الصفحة وظهورها يجرّب التطبيق كل نحو 45 ثانية خرائط صغيرة من أوصاف محلية اصطناعية. يقارن تجربة جديدة بالسابقة على الوصف والبذرة نفسيهما وفق معايير بسيطة للتوزيع وتنوع الأنواع والتحذيرات، ويحتفظ بالتغييرات المقبولة في المتصفح. يغير ثلاثة معاملات لكثافة الأشجار والصخور والمباني للمناظر العامة فقط؛ لا يغير الأعداد الصريحة، أو تخطيط الأصول المحددة، أو قالب المزرعة. يتوقف عندما تكون الصفحة مخفية أو مغلقة ويمكن إيقافه أو حذفه من لوحة AI. قد يستهلك بعض البطارية والمعالج، ولم يُقَس على هاتف حقيقي.
+6. هذا التقييم ليس تقييماً بشرياً لجودة التصميم أو متعة اللعب؛ التعلّم لا يقرأ الإنترنت، ولا يعلّم المساعد هندسة جديدة أو كيفية بناء مراحل قابلة للعب، ولا يضمن التحسّن المستمر أو بلوغ الاحتراف. لا يؤثر تعطيل التدريب على إنشاء المشهد بعد التحقق من الإنترنت.
+7. للبحث اختر «ابحث في ويكيبيديا عن هذا الوصف» أو اكتب «ابحث». ستظهر المصادر إن وُجدت. فشل التحقق من الاتصال أو البحث المطلوب يوقف الإنشاء، ولا يوجد بديل صامت. تعبيرات الوصف ومعلومات النتائج محدودة وقد يخطئ التفسير.
 
 النموذج القديم `~/world-builder/model.gguf` لم يعد يُستخدم ولا يُحذف تلقائياً. لا تحذف بيانات المتصفح قبل تصدير المشاريع المهمة؛ مسحها قد يحذف التدريب والمشاريع. لا يجري أي اختبار سرعة أو اختبار على جهاز Android حقيقي ضمن اختبارات المشروع.
 
@@ -93,7 +95,7 @@ To rebuild the standalone phone file after source changes, run `npm run build:mo
   floating toolbar, inspector) and a mobile layout with a bottom dock, bottom
   sheet, touch orbit + pinch-zoom, safe-area handling and 16 px inputs.
 
-Planning uses a local rule-based interpreter and a trainable statistical shape model, with Wikipedia search when requested and a required internet check before each generation.
+Planning uses a local rule-based interpreter, a trainable statistical shape model, and optional automatic density tuning on synthetic scenes, with Wikipedia search when requested and a required internet check before each generation.
 No external 3D assets are downloaded; rendering, saving and export are local.
 
 ### What is deliberately not there yet

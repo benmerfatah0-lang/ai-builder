@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { applyMapTraining } from '../../ai/mapTrainer';
+import type { MapTrainer } from '../useMapTrainer';
 import { interpretOnline } from '../../ai/onlineInterpreter';
 import { initialShapeModel, readShapeModel, saveShapeModel, resetShapeModel, trainShapeModel } from '../../ai/shapeLearner';
 import { generateWorldPlanWithReport } from '../../../core/generation/generateWorld';
@@ -21,7 +23,8 @@ function randomSeed(): number {
   return Math.floor(Math.random() * 0xffffffff);
 }
 
-export function AiPanel({ notify }: {
+export function AiPanel({ notify, mapTrainer }: {
+  mapTrainer: MapTrainer;
   notify: (message: string, tone?: 'neutral' | 'success' | 'danger') => void;
 }) {
   const { state, dispatch } = useEditor();
@@ -72,6 +75,7 @@ export function AiPanel({ notify }: {
         ...(scale !== 'auto' ? { scale } : {}),
         ...(density !== 'auto' ? { density } : {}),
       }, searchWikipedia);
+      interpretation.intent = applyMapTraining(interpretation.intent, mapTrainer.model);
       interpretation.intent.shapeModel = shapeModel;
       const report = generateWorldPlanWithReport(interpretation.intent);
       if (!report.validation.valid) {
@@ -150,6 +154,17 @@ export function AiPanel({ notify }: {
         <p>يمكنه البحث أيضاً عند ذكر «ابحث» أو «ويكيبيديا». يقرأ كلمات محدودة من النتائج لتقدير البيئة فقط؛ لا يتدرّب تلقائياً من المواقع ولا يبحث في كل الويب.</p>
       </div>
       <div className="online-settings" dir="rtl">
+        <div className="online-heading">تعلّم تلقائي للخرائط</div>
+        <p>يجرب التطبيق خرائط صغيرة ويقارن التوزيع وعدد الأنواع والتحذيرات، ثم يحتفظ أحياناً بإعداد أفضل وفق هذه المعايير البسيطة. التدريب يجري على الجهاز عندما تكون الصفحة ظاهرة، مرة تقريباً كل 45 ثانية؛ لا يتصفح الإنترنت ولا يختبر متعة اللعب.</p>
+        <p>التجارب: {mapTrainer.model.attempts} · التغييرات المقبولة: {mapTrainer.model.accepted}. تؤثر النتائج في كثافة العناصر للمناظر العامة فقط، ولا تغيّر الأعداد الصريحة أو المزرعة.</p>
+        <button type="button" className="btn btn-small" onClick={() => mapTrainer.setEnabled(!mapTrainer.model.enabled)}>
+          {mapTrainer.model.enabled ? 'إيقاف التعلّم التلقائي' : 'تشغيل التعلّم التلقائي'}
+        </button>{' '}
+        <button type="button" className="btn btn-small" onClick={mapTrainer.reset}>حذف تعلّم الخرائط</button>
+        {mapTrainer.error && <p role="alert">{mapTrainer.error}</p>}
+        <p>التقييم آلي ومحدود، ولا يعني أن المساعد صار محترفاً أو يصمم خرائط ألعاب قابلة للعب وحده.</p>
+      </div>
+      <div className="online-settings" dir="rtl">
         <div className="online-heading">تدريب الأشكال على الهاتف</div>
         <p>هذا نموذج إحصائي صغير يتعلّم متوسط الأبعاد والتفاصيل، وليس شبكة تولّد أي شكل. لتدريبه: اختر بيتاً أو شجرة عريضة الأوراق أو صخرة مستديرة من المشهد، وعدّل حجمها في لوحة Inspect، ثم اضغط الزر. تتعلم الفئة من المثال الذي اخترته فقط.</p>
         <p>الأمثلة الشخصية: {shapeModel.house.count + shapeModel.tree.count + shapeModel.rock.count - 9}. التدريب محفوظ في هذا المتصفح فقط.</p>
@@ -220,7 +235,7 @@ export function AiPanel({ notify }: {
         />
       </div>
       <p className="hint-text">
-        نفس الوصف والبذرة وبيانات التدريب تعيد الشكل والتوزيع؛ قد تتغير نتائج البحث.
+        نفس الوصف والبذرة وبيانات التدريب تعيد الشكل والتوزيع؛ التدريب التلقائي أو نتائج البحث قد تغيّر النتيجة لاحقاً.
       </p>
 
 
