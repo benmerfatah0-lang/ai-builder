@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseHouseKnowledge } from './houseKnowledge';
 import { applyWikiKnowledge, summarizeKnowledge } from './wikiKnowledge';
 import { interpretPromptLocally } from './promptInterpreter';
 import type { InterpretOptions, PromptInterpretation } from './types';
@@ -30,6 +31,8 @@ export async function interpretOnline(prompt: string, options: InterpretOptions 
   const result = interpretPromptLocally(prompt, options);
   let knowledge = null;
   try { knowledge = summarizeKnowledge(await postJSON('/api/knowledge', {})); } catch { /* Shown explicitly in notes below. */ }
+  let houseLearning = null;
+  try { houseLearning = parseHouseKnowledge(await postJSON('/api/house-learning', {})); } catch { /* Report below, not silently. */ }
   let usedKnowledge = false;
   if (knowledge) {
     const adjusted = applyWikiKnowledge(result.intent, knowledge);
@@ -37,7 +40,10 @@ export async function interpretOnline(prompt: string, options: InterpretOptions 
     usedKnowledge = adjusted.used;
   }
   const searched = forceSearch || /ابحث|بحث|ويكيبيديا|معلم حقيقي|مكان حقيقي|landmark|wikipedia|search/i.test(prompt);
-  const notes = ['المساعد يفهم كلمات محدودة فقط، وليس نموذج لغة عاماً. الأشكال الجديدة إجرائية وليست نماذج متعلّمة من مواقع الإنترنت.'];
+  const notes = ['المساعد يفهم كلمات محدودة فقط، وليس نموذج لغة عاماً. الأشكال إجرائية وليست نموذجاً عاماً لتحويل الصور إلى 3D.'];
+  if (!houseLearning) notes.push('تعذّر قراءة حالة التدريب التجريبي لصور البيوت.');
+  else if (houseLearning.status === 'missing_pillow') notes.push('تدريب الصور غير متاح؛ ثبّت python-pillow في Termux.');
+  else if (houseLearning.status === 'unavailable') notes.push('تعذّر آخر تدريب للصور؛ تحقّق من الإنترنت أو التخزين.');
   if (!knowledge) notes.push('تعذّر قراءة حالة التعلم من ويكيبيديا في الخادم.');
   else if (knowledge.status === 'unavailable') notes.push('تعذّر تحديث التعلم من ويكيبيديا مؤخراً (الإنترنت أو التخزين)؛ يستخدم التطبيق المعلومات المحفوظة إن وجدت.');
   if (usedKnowledge) notes.push('استُخدمت ارتباطات كلمات تعلّمها التطبيق من مقتطفات ويكيبيديا لتقدير البيئة، وقد تخطئ.');
@@ -63,6 +69,7 @@ export async function interpretOnline(prompt: string, options: InterpretOptions 
     if (!sources.length) notes.push('لم تظهر مصادر من ويكيبيديا لهذا البحث.');
   }
   return { ...result, providerId: 'tiny-shape-learner', providerLabel: 'المساعد الخفيف المحلي', offline: false,
+    ...(houseLearning ? { houseLearning } : {}),
     searched, sources: sources.map(({ title, url }) => ({ title, url })), notes,
     ...(knowledge ? { wikiLearning: { status: knowledge.status, documents: knowledge.sources.length,
       sources: knowledge.sources.slice(-4).reverse().map(({ title, url }) => ({ title, url })), used: usedKnowledge } } : {}) };

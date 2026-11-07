@@ -7,6 +7,7 @@ import re
 import sys
 from functools import partial
 from wiki_learner import WikiLearner
+from house_learner import HouseLearner, good_thumb
 from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
@@ -46,6 +47,18 @@ def get_json(request, timeout):
         return json.loads(body)
 
 
+def get_image(request, timeout):
+    if not good_thumb(request.full_url):
+        raise ValueError('untrusted image URL')
+    with build_opener(NoRedirects()).open(request, timeout=timeout) as response:
+        if response.headers.get_content_type() not in ('image/jpeg', 'image/png'):
+            raise ValueError('unsupported content type')
+        body = response.read(1_000_001)
+        if len(body) > 1_000_000:
+            raise ValueError('image too large')
+        return body
+
+
 class Handler(SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         # Prompts and URLs may contain personal data; do not log requests.
@@ -82,7 +95,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.valid_host() or self.headers.get('Origin', '') != f'http://{host}':
             self.api_result(403, {'error': 'invalid origin'})
             return
-        if self.path not in ('/api/online', '/api/search', '/api/knowledge'):
+        if self.path not in ('/api/online', '/api/search', '/api/knowledge', '/api/house-learning'):
             self.api_result(404, {'error': 'unknown endpoint'})
             return
         if self.headers.get_content_type() != 'application/json':
@@ -99,6 +112,9 @@ class Handler(SimpleHTTPRequestHandler):
             self.api_result(400, {'error': 'invalid request'})
             return
         try:
+            if self.path == '/api/house-learning':
+                self.api_result(200, self.server.house_learner.snapshot())
+                return
             if self.path == '/api/knowledge':
                 self.api_result(200, self.server.wiki_learner.snapshot())
                 return
@@ -144,7 +160,9 @@ def main():
     with ThreadingHTTPServer(('127.0.0.1', args.port), handler) as server:
         server.wiki_learner = WikiLearner(args.directory, get_json, USER_AGENT)
         server.wiki_learner.start()
-        print('التعلم المحدود من ويكيبيديا يعمل أثناء بقاء Termux شغالاً.', flush=True)
+        server.house_learner = HouseLearner(args.directory, get_json, get_image, USER_AGENT)
+        server.house_learner.start()
+        print('التعلم المحدود من ويكيبيديا وصور البيوت يعمل أثناء بقاء Termux شغالاً (يتطلب الصور python-pillow).', flush=True)
         print(f'افتح http://127.0.0.1:{args.port}/world-builder-mobile.html', flush=True)
         print('لإيقاف الخادم اضغط Ctrl+C.', flush=True)
         try:
@@ -153,6 +171,7 @@ def main():
             pass
         finally:
             server.wiki_learner.stop()
+            server.house_learner.stop()
     return 0
 
 

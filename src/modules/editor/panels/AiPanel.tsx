@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { applyHouseKnowledge } from '../../ai/houseKnowledge';
 import { applyMapTraining } from '../../ai/mapTrainer';
 import type { MapTrainer } from '../useMapTrainer';
 import { interpretOnline } from '../../ai/onlineInterpreter';
@@ -77,7 +78,7 @@ export function AiPanel({ notify, mapTrainer }: {
         ...(density !== 'auto' ? { density } : {}),
       }, searchWikipedia);
       interpretation.intent = applyMapTraining(interpretation.intent, mapTrainer.model);
-      interpretation.intent.shapeModel = shapeModel;
+      interpretation.intent.shapeModel = interpretation.houseLearning ? applyHouseKnowledge(shapeModel, interpretation.houseLearning, text) : shapeModel;
       const report = generateWorldPlanWithReport(interpretation.intent);
       if (!report.validation.valid) {
         const first = report.validation.errors[0]?.message ?? 'Unknown validation error.';
@@ -158,11 +159,20 @@ export function AiPanel({ notify, mapTrainer }: {
       </div>
       <div className="online-settings" dir="rtl">
         <div className="online-heading">التعلّم التلقائي من ويكيبيديا</div>
-        <p>يفحص خادم Termux موضوعات محددة عن التضاريس كل خمس دقائق تقريباً ويحفظ ارتباطات كلمات محدودة محلياً، حتى بعد إغلاق الصفحة ما دام الخادم يعمل. يستخدم الإنترنت والبطارية؛ قد يوقف Android الخادم في الخلفية. لا يتعلم تحويل الصور إلى 3D أو بناء أشكال جديدة من ويكيبيديا.</p>
+        <p>يفحص خادم Termux موضوعات محددة عن التضاريس كل خمس دقائق تقريباً ويحفظ ارتباطات كلمات محدودة محلياً، حتى بعد إغلاق الصفحة ما دام الخادم يعمل. يستخدم الإنترنت والبطارية؛ قد يوقف Android الخادم في الخلفية. لا يتعلم تحويل الصور إلى 3D من نصوص ويكيبيديا.</p>
         {result?.wikiLearning ? <>
           <p>المقالات المستخدمة: {result.wikiLearning.documents} · الحالة: {result.wikiLearning.status === 'unavailable' ? 'تعذّر آخر تحديث (الإنترنت أو التخزين)' : result.wikiLearning.status === 'capacity' ? 'بلغ حد التخزين' : result.wikiLearning.status === 'no_new_articles' ? 'لا توجد مقالات جديدة في آخر بحث' : result.wikiLearning.status === 'starting' ? 'يبدأ' : 'يعمل'}.</p>
           {result.wikiLearning.sources.length > 0 && <div className="online-sources"><strong>أحدث مصادر التعلّم</strong>{result.wikiLearning.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer">{source.title} ↗</a>)}</div>}
         </> : <p>تظهر حالة التعلّم ومصادره بعد إنشاء عالم.</p>}
+      </div>
+      <div className="online-settings" dir="rtl">
+        <div className="online-heading">تجربة تعلّم البيوت من الصور</div>
+        <p>خادم Termux يبحث كل نحو 10 دقائق عن صور بيوت مرخّصة في Wikimedia Commons. يقارن رندراً مبسطاً من زاوية واحدة بالصورة، ويعدّل أبعاد البيت وتفاصيله فقط، ويستفيد من كلمات قليلة في وصف المصدر مثل صغير أو طويل. ليست شبكة عصبية ولا تحويلاً عاماً للصور إلى 3D؛ الخلفية والزاوية قد تضللان المقارنة.</p>
+        <p>التدريب يحتاج python-pillow وإنترنت، وقد يستهلك بيانات وبطارية. يستمر بعد إغلاق الصفحة فقط ما دام Termux يعمل؛ يمكن أن يوقفه Android. لا تُحفظ الصور، وتُحفظ الإحصاءات وروابط الترخيص محلياً.</p>
+        {result?.houseLearning ? <>
+          <p>الصور المقبولة: {result.houseLearning.samples} · الحالة: {result.houseLearning.status === 'missing_pillow' ? 'ثبّت python-pillow' : result.houseLearning.status === 'unavailable' ? 'تعذّر الاتصال أو قراءة الصورة أو الحفظ' : result.houseLearning.status === 'no_new_images' ? 'لم توجد صور مناسبة جديدة' : result.houseLearning.status === 'no_improvement' ? 'لم تتحسن التجربة الأخيرة' : result.houseLearning.status === 'starting' ? 'يبدأ' : 'يتعلّم'}.</p>
+          {result.houseLearning.sources.length > 0 && <details><summary>مصادر الصور والتراخيص</summary><div className="online-sources">{result.houseLearning.sources.slice().reverse().map((source) => <span key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a> · {source.author} · <a href={source.license_url} target="_blank" rel="noopener noreferrer">الترخيص</a></span>)}</div></details>}
+        </> : <p>تظهر الحالة بعد إنشاء عالم.</p>}
       </div>
       <div className="online-settings" dir="rtl">
         <div className="online-heading">تعلّم تلقائي للخرائط</div>

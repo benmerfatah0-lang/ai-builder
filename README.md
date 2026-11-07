@@ -13,22 +13,23 @@ as a project file or a glTF 2.0 model for Godot and Unity.
 
 ---
 
-## تشغيل نسخة الهاتف في Termux (مساعد خفيف + ويكيبيديا)
+## تشغيل نسخة الهاتف في Termux (مساعد خفيف + تعلّم تجريبي)
 
-النسخة المصغرة لا تحتاج إلى Qwen أو llama.cpp أو ملف نموذج كبير أو حساب أو مفتاح API. تستخدم تفسيراً محلياً قائماً على كلمات محدودة، ونموذجاً إحصائياً صغيراً يتعلم متوسط الأبعاد من أمثلة مبدئية مصممة للتطبيق ومن العناصر التي تختارها للتدريب. يبني البرنامج هندسة إجرائية لبيت وشجرة عريضة الأوراق وصخرة مستديرة؛ **ليس نموذج لغة أو نموذجاً عاماً يتعلم أشكالاً جديدة من الإنترنت**. يتطلب الاتصال بويكيبيديا قبل كل إنشاء، ويمكن البحث فيها عند الطلب؛ لا يبحث في باقي الويب. يتعلم الخادم إحصائياً كلمات قليلة من مقتطفات ويكيبيديا عن التضاريس، لتقدير البيئة فقط؛ لا يتعلم صناعة الأشكال أو تحويل الصور إلى 3D من نصوص ويكيبيديا.
+النسخة المصغرة لا تحتاج إلى Qwen أو llama.cpp أو ملف نموذج كبير أو حساب أو مفتاح API. تستخدم تفسيراً محلياً قائماً على كلمات محدودة، ونموذجاً إحصائياً صغيراً يتعلم متوسط الأبعاد من أمثلة مبدئية مصممة للتطبيق ومن العناصر التي تختارها للتدريب. يبني البرنامج هندسة إجرائية لبيت وشجرة عريضة الأوراق وصخرة مستديرة؛ **ليس نموذج لغة أو نموذجاً عاماً يتعلم أشكالاً جديدة من الإنترنت**. يتطلب الاتصال بويكيبيديا قبل كل إنشاء، ويمكن البحث فيها عند الطلب. يبحث التدريب التجريبي للصور في Wikimedia Commons، لا في الإنترنت كله. يتعلم الخادم إحصائياً كلمات قليلة من مقتطفات ويكيبيديا عن التضاريس، لتقدير البيئة فقط؛ لا يتعلم صناعة الأشكال أو تحويل الصور إلى 3D من نصوص ويكيبيديا.
 
-1. أوقف الخادم القديم في Termux بالضغط على Ctrl+C، ثم ثبّت Python وcurl إن لم يكونا مثبتين:
+1. أوقف الخادم القديم في Termux بالضغط على Ctrl+C، ثم ثبّت Python وcurl وPillow للصور:
 
    ```sh
-   pkg update && pkg install python curl
+   pkg update && pkg install python curl python-pillow
    ```
-2. نزّل **الملفات الثلاثة معاً** لتحديث نسختك وشغّل الخادم:
+2. نزّل **الملفات الأربعة معاً** لتحديث نسختك وشغّل الخادم:
 
    ```sh
    mkdir -p ~/world-builder && cd ~/world-builder && \
    curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/world-builder-mobile.html' -o world-builder-mobile.html && \
    curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/world-builder-server.py' -o world-builder-server.py && \
    curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/wiki_learner.py' -o wiki_learner.py && \
+   curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/house_learner.py' -o house_learner.py && \
    python world-builder-server.py
    ```
 
@@ -43,6 +44,14 @@ as a project file or a glTF 2.0 model for Godot and Unity.
 أثناء تشغيل `world-builder-server.py`، يجري خيط خلفي بحثاً كل خمس دقائق تقريباً في ويكيبيديا فقط عن موضوعات ثابتة للتضاريس. يستخرج مفردات من قائمة ثابتة ويحدّث إحصاءات ارتباطها بالصحراء والغابة والجبل والجزيرة، ويحفظها ومراجعها في `~/world-builder/wiki-map-learning.json`. تُستخدم الارتباطات عند تعذّر تحديد البيئة بكلمات الوصف المعتادة؛ مصادر التدريب وحالة آخر تحديث تظهر بعد إنشاء عالم. هذه إحصاءات بسيطة وليست تدريب شبكة عصبية، ولا تعلّم هندسة 3D أو تحويل الصور إلى 3D أو اللعب. لا تُرسل أوصاف المستخدم أثناء التدريب الدوري، لكن الاستعلامات الثابتة ترسل لويكيبيديا ويُستهلك الإنترنت والبطارية.
 
 يمكن إغلاق صفحة المتصفح ويبقى التدريب ما دامت عملية Termux تعمل والإنترنت متاحاً. لا يعمل عند إيقاف Termux أو إعادة تشغيل الهاتف ما لم يُشغَّل الخادم ثانية، وقد يوقف Android العملية أو يؤخرها في الخلفية؛ لا يُضمن تشغيل دائم. إذا لم تظهر مقالات جديدة فلا تتغير الإحصاءات؛ يحتفظ بمراجع أحدث 200 مقالة كحد أقصى. تعذّر الاتصال أو حفظ الملف يظهر في حالة التدريب. يمكن حذف ملف التعلم يدوياً والخادم متوقف إذا رغبت في البدء من جديد.
+
+### تجربة محدودة لتعلم البيوت من الصور
+
+يبحث خيط منفصل في خادم Termux كل عشر دقائق تقريباً في Wikimedia Commons بعبارات ثابتة عن صور بيوت، ويختار فقط ملفات ذات رابط ترخيص CC BY أو CC BY-SA أو CC0 وبيانات إسناد متاحة. يُنزّل صورة مصغرة واحدة بحد أقصى ميغابايت، لا تُحفظ صورتها، ويجرّب 32 تعديلاً لأبعاد نموذج إجرائي ثلاثي الأبعاد (جدران وسقف وأبواب ونوافذ). يقارن الإسقاط من زاوية ثابتة بالصورة المصغرة 64×64 وفق فرق بكسلات بسيط؛ يحتفظ بالنتيجة إذا تحسن الفرق، ثم ينتقل للبحث التالي حتى لو لم تتحسن. الخلفيات والزوايا والألوان والرسوم غير المتعلقة بالبيوت قد تضلل هذا المقياس، ولا يعرف الجوانب المخفية ولا يضمن جودة أو تشابهاً حقيقياً.
+
+هذه **ليست شبكة عصبية أو نموذجاً عاماً يحوّل الصور إلى 3D**: لا تُنشأ هندسة جديدة، ولا تتعلم التجربة المشاهد أو الحدائق والأسوار. يصنّف عنوان الصورة ووصفها وفق كلمات قليلة مثل small وtall وwide فقط؛ ويمكن أن يكون التصنيف خاطئاً. تمزج إحصاءات الأبعاد المحفوظة مع تدريب المستخدم الشخصي عند إنشاء بيت مطلوب صراحة مثل «بيت صغير»؛ إذا لم توجد بيانات للفئة، تستخدم الإحصاءات العامة إن وُجدت. تدريب المستخدم لا يُحذف، والأعداد الصريحة وأصول الشجرة والصخرة وقالب المزرعة لا تتغير. عند عدم قبول أي صورة لا يحدث أثر على البيوت.
+
+تحفظ آخر 100 نتيجة مقبولة في `~/world-builder/house-image-learning.json` مع اسم المصدر والمؤلف ورابط الملف وترخيصه، وتُزال مساهمة النتيجة الأقدم عند تجاوز الحد. راجع روابط المصادر في لوحة AI بعد إنشاء عالم؛ عند مشاركة نتائج مستوحاة من الصور تحقّق من شروط الإسناد والترخيص ومتطلبات مشاركة التعديلات في صفحات الملفات. لم تُستخدم صورة Pngtree المرفقة في التدريب لأن ترخيصها لم يُتحقق منه. يبقى التدريب يعمل بعد إغلاق الصفحة فقط ما دام Termux والإنترنت يعملان، وقد يوقفه Android؛ يستهلك البطارية والبيانات. عند غياب `python-pillow` أو فشل الإنترنت أو الحفظ تظهر الحالة ولا يتعطل الخادم؛ إن لم يجد صوراً مناسبة فلن يتعلم من صور. لم تُجرَ تجربة على الهاتف أو الشبكة الحقيقية في بيئة الاختبار.
 
 ### مثال مدينة التعدين الصحراوية
 
@@ -106,7 +115,7 @@ To rebuild the standalone phone file after source changes, run `npm run build:mo
   floating toolbar, inspector) and a mobile layout with a bottom dock, bottom
   sheet, touch orbit + pinch-zoom, safe-area handling and 16 px inputs.
 
-Planning uses a local rule-based interpreter, a trainable statistical shape model, automatic density tuning on synthetic scenes, and a bounded Wikipedia vocabulary learner in the Termux process, with Wikipedia search when requested and a required internet check before each generation.
+Planning uses a local rule-based interpreter, a trainable statistical shape model, automatic density tuning on synthetic scenes, and a bounded Wikipedia vocabulary learner and an experimental Wikimedia Commons house-image fitting worker in the Termux process, with Wikipedia search when requested and a required internet check before each generation.
 No external 3D assets are downloaded; rendering, saving and export are local.
 
 ### What is deliberately not there yet

@@ -28,3 +28,7 @@ __pycache__/
 # Locally learned Wikipedia vocabulary and atomic writes.
 wiki-map-learning.json
 wiki-map-learning.json.tmp
+
+# Local house image learning statistics.
+house-image-learning.json
+house-image-learning.json.tmp

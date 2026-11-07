@@ -21,6 +21,7 @@ class PhoneServerTests(unittest.TestCase):
     def setUpClass(cls):
         cls.server = ThreadingHTTPServer(('127.0.0.1', 0), phone_server.Handler)
         cls.server.wiki_learner = type('StubLearner', (), {'snapshot': lambda self: {'status': 'learning'}})()
+        cls.server.house_learner = type('StubHouse', (), {'snapshot': lambda self: {'samples': 2}})()
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
 
@@ -53,6 +54,9 @@ class PhoneServerTests(unittest.TestCase):
         status, body = self.request('/api/knowledge')
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)['status'], 'learning')
+        status, body = self.request('/api/house-learning')
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)['samples'], 2)
 
     @patch.object(phone_server, 'get_json')
     def test_connectivity_and_search_are_fixed_to_wikipedia(self, upstream):

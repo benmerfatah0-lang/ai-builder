@@ -1,3 +1,4 @@
+import type { HouseKnowledge } from './houseKnowledge';
 import type { ShapeModel } from './shapeLearner';
 import type { AssetRequest } from './assetRequests';
 
@@ -68,6 +69,7 @@ export interface PromptInterpretation {
   sources?: { title: string; url: string }[];
   notes?: string[];
   searched?: boolean;
+  houseLearning?: HouseKnowledge;
   wikiLearning?: { status: string; documents: number; sources: { title: string; url: string }[]; used: boolean };
 }
 
