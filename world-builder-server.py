@@ -6,6 +6,7 @@ import os
 import re
 import sys
 from functools import partial
+from wiki_learner import WikiLearner
 from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
@@ -81,7 +82,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.valid_host() or self.headers.get('Origin', '') != f'http://{host}':
             self.api_result(403, {'error': 'invalid origin'})
             return
-        if self.path not in ('/api/online', '/api/search'):
+        if self.path not in ('/api/online', '/api/search', '/api/knowledge'):
             self.api_result(404, {'error': 'unknown endpoint'})
             return
         if self.headers.get_content_type() != 'application/json':
@@ -98,6 +99,9 @@ class Handler(SimpleHTTPRequestHandler):
             self.api_result(400, {'error': 'invalid request'})
             return
         try:
+            if self.path == '/api/knowledge':
+                self.api_result(200, self.server.wiki_learner.snapshot())
+                return
             if self.path == '/api/online':
                 response = get_json(Request(ONLINE_URL, headers={'User-Agent': USER_AGENT}), timeout=25)
                 if not isinstance(response, dict) or 'query' not in response:
@@ -138,12 +142,17 @@ def main():
     args = parser.parse_args()
     handler = partial(Handler, directory=args.directory)
     with ThreadingHTTPServer(('127.0.0.1', args.port), handler) as server:
+        server.wiki_learner = WikiLearner(args.directory, get_json, USER_AGENT)
+        server.wiki_learner.start()
+        print('التعلم المحدود من ويكيبيديا يعمل أثناء بقاء Termux شغالاً.', flush=True)
         print(f'افتح http://127.0.0.1:{args.port}/world-builder-mobile.html', flush=True)
         print('لإيقاف الخادم اضغط Ctrl+C.', flush=True)
         try:
             server.serve_forever()
         except KeyboardInterrupt:
             pass
+        finally:
+            server.wiki_learner.stop()
     return 0
 
 

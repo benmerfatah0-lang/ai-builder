@@ -15,27 +15,34 @@ as a project file or a glTF 2.0 model for Godot and Unity.
 
 ## تشغيل نسخة الهاتف في Termux (مساعد خفيف + ويكيبيديا)
 
-النسخة المصغرة لا تحتاج إلى Qwen أو llama.cpp أو ملف نموذج كبير أو حساب أو مفتاح API. تستخدم تفسيراً محلياً قائماً على كلمات محدودة، ونموذجاً إحصائياً صغيراً يتعلم متوسط الأبعاد من أمثلة مبدئية مصممة للتطبيق ومن العناصر التي تختارها للتدريب. يبني البرنامج هندسة إجرائية لبيت وشجرة عريضة الأوراق وصخرة مستديرة؛ **ليس نموذج لغة أو نموذجاً عاماً يتعلم أشكالاً جديدة من الإنترنت**. يتطلب الاتصال بويكيبيديا قبل كل إنشاء، ويمكن البحث فيها عند الطلب؛ لا يبحث في باقي الويب. تُستخدم كلمات قليلة من النتائج لاختيار البيئة فقط، ولا تستخدم صفحات الويب للتدريب.
+النسخة المصغرة لا تحتاج إلى Qwen أو llama.cpp أو ملف نموذج كبير أو حساب أو مفتاح API. تستخدم تفسيراً محلياً قائماً على كلمات محدودة، ونموذجاً إحصائياً صغيراً يتعلم متوسط الأبعاد من أمثلة مبدئية مصممة للتطبيق ومن العناصر التي تختارها للتدريب. يبني البرنامج هندسة إجرائية لبيت وشجرة عريضة الأوراق وصخرة مستديرة؛ **ليس نموذج لغة أو نموذجاً عاماً يتعلم أشكالاً جديدة من الإنترنت**. يتطلب الاتصال بويكيبيديا قبل كل إنشاء، ويمكن البحث فيها عند الطلب؛ لا يبحث في باقي الويب. يتعلم الخادم إحصائياً كلمات قليلة من مقتطفات ويكيبيديا عن التضاريس، لتقدير البيئة فقط؛ لا يتعلم صناعة الأشكال أو تحويل الصور إلى 3D من نصوص ويكيبيديا.
 
 1. أوقف الخادم القديم في Termux بالضغط على Ctrl+C، ثم ثبّت Python وcurl إن لم يكونا مثبتين:
 
    ```sh
    pkg update && pkg install python curl
    ```
-2. نزّل **الملفين معاً** لتحديث نسختك وشغّل الخادم:
+2. نزّل **الملفات الثلاثة معاً** لتحديث نسختك وشغّل الخادم:
 
    ```sh
    mkdir -p ~/world-builder && cd ~/world-builder && \
    curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/world-builder-mobile.html' -o world-builder-mobile.html && \
    curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/world-builder-server.py' -o world-builder-server.py && \
+   curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/wiki_learner.py' -o wiki_learner.py && \
    python world-builder-server.py
    ```
 
 3. اترك Termux مفتوحاً وافتح **http://127.0.0.1:8080/world-builder-mobile.html** في متصفح الهاتف، ثم حدّث الصفحة. اكتب مثلاً «بيت وشجرة وصخرة» واضغط «أنشئ العالم». إذا كان المنفذ مستخدماً أوقف الخادم القديم أولاً. لإعادة التشغيل لاحقاً: `cd ~/world-builder && python world-builder-server.py`.
 4. لتدريب الأشكال اختر بيتاً أو شجرة عريضة الأوراق أو صخرة مستديرة من المشهد، وعدّل حجمها في **Inspect**، ثم افتح **AI** واضغط «تعلّم من العنصر المحدد». يعيد ذلك حساب متوسط أبعاد فئتها. أنشئ مشهداً جديداً لرؤية تأثيره؛ البيانات تحفظ في المتصفح ويمكن حذفها من اللوحة. الأشكال المدربة تطبّق على طلبات الأصول الصريحة، لا قالب المزرعة أو النباتات الأخرى.
 5. **تعلّم الخرائط التلقائي:** عند فتح الصفحة وظهورها يجرّب التطبيق كل نحو 45 ثانية خرائط صغيرة من أوصاف محلية اصطناعية. يقارن تجربة جديدة بالسابقة على الوصف والبذرة نفسيهما وفق معايير بسيطة للتوزيع وتنوع الأنواع والتحذيرات، ويحتفظ بالتغييرات المقبولة في المتصفح. يغير ثلاثة معاملات لكثافة الأشجار والصخور والمباني للمناظر العامة فقط؛ لا يغير الأعداد الصريحة، أو تخطيط الأصول المحددة، أو قالب المزرعة. يتوقف عندما تكون الصفحة مخفية أو مغلقة ويمكن إيقافه أو حذفه من لوحة AI. قد يستهلك بعض البطارية والمعالج، ولم يُقَس على هاتف حقيقي.
-6. هذا التقييم ليس تقييماً بشرياً لجودة التصميم أو متعة اللعب؛ التعلّم لا يقرأ الإنترنت، ولا يعلّم المساعد هندسة جديدة أو كيفية بناء مراحل قابلة للعب، ولا يضمن التحسّن المستمر أو بلوغ الاحتراف. لا يؤثر تعطيل التدريب على إنشاء المشهد بعد التحقق من الإنترنت.
+6. هذا التقييم ليس تقييماً بشرياً لجودة التصميم أو متعة اللعب؛ التدريب المحلي للخرائط لا يقرأ الإنترنت، ولا يعلّم المساعد هندسة جديدة أو كيفية بناء مراحل قابلة للعب، ولا يضمن التحسّن المستمر أو بلوغ الاحتراف. لا يؤثر تعطيل التدريب على إنشاء المشهد بعد التحقق من الإنترنت.
 7. للبحث اختر «ابحث في ويكيبيديا عن هذا الوصف» أو اكتب «ابحث». ستظهر المصادر إن وُجدت. فشل التحقق من الاتصال أو البحث المطلوب يوقف الإنشاء، ولا يوجد بديل صامت. تعبيرات الوصف ومعلومات النتائج محدودة وقد يخطئ التفسير.
+
+### التعلّم المحدود من ويكيبيديا في Termux
+
+أثناء تشغيل `world-builder-server.py`، يجري خيط خلفي بحثاً كل خمس دقائق تقريباً في ويكيبيديا فقط عن موضوعات ثابتة للتضاريس. يستخرج مفردات من قائمة ثابتة ويحدّث إحصاءات ارتباطها بالصحراء والغابة والجبل والجزيرة، ويحفظها ومراجعها في `~/world-builder/wiki-map-learning.json`. تُستخدم الارتباطات عند تعذّر تحديد البيئة بكلمات الوصف المعتادة؛ مصادر التدريب وحالة آخر تحديث تظهر بعد إنشاء عالم. هذه إحصاءات بسيطة وليست تدريب شبكة عصبية، ولا تعلّم هندسة 3D أو تحويل الصور إلى 3D أو اللعب. لا تُرسل أوصاف المستخدم أثناء التدريب الدوري، لكن الاستعلامات الثابتة ترسل لويكيبيديا ويُستهلك الإنترنت والبطارية.
+
+يمكن إغلاق صفحة المتصفح ويبقى التدريب ما دامت عملية Termux تعمل والإنترنت متاحاً. لا يعمل عند إيقاف Termux أو إعادة تشغيل الهاتف ما لم يُشغَّل الخادم ثانية، وقد يوقف Android العملية أو يؤخرها في الخلفية؛ لا يُضمن تشغيل دائم. إذا لم تظهر مقالات جديدة فلا تتغير الإحصاءات؛ يحتفظ بمراجع أحدث 200 مقالة كحد أقصى. تعذّر الاتصال أو حفظ الملف يظهر في حالة التدريب. يمكن حذف ملف التعلم يدوياً والخادم متوقف إذا رغبت في البدء من جديد.
 
 ### مثال مدينة التعدين الصحراوية
 
@@ -99,7 +106,7 @@ To rebuild the standalone phone file after source changes, run `npm run build:mo
   floating toolbar, inspector) and a mobile layout with a bottom dock, bottom
   sheet, touch orbit + pinch-zoom, safe-area handling and 16 px inputs.
 
-Planning uses a local rule-based interpreter, a trainable statistical shape model, and optional automatic density tuning on synthetic scenes, with Wikipedia search when requested and a required internet check before each generation.
+Planning uses a local rule-based interpreter, a trainable statistical shape model, automatic density tuning on synthetic scenes, and a bounded Wikipedia vocabulary learner in the Termux process, with Wikipedia search when requested and a required internet check before each generation.
 No external 3D assets are downloaded; rendering, saving and export are local.
 
 ### What is deliberately not there yet
@@ -232,7 +239,7 @@ The viewport is a genuine WebGL 2 renderer, not a 2D fallback:
 | Resilience | GPU context-loss recovery, clear WebGL 2 error message with a retry button |
 | Proof | Live HUD: `WebGL 2 · <fps> fps · <draws> draws`; hover for the GPU/vendor string. Camera button exports a PNG of the current frame |
 
-Surface textures are generated in the browser without a CDN. Grass, sand, stone, wood, bark, roofs and foliage use small shared tiled maps; browser GLB exports embed these maps. AI planning checks connectivity with Wikipedia and sends search queries to Wikipedia when needed.
+Surface textures are generated in the browser without a CDN. Grass, sand, stone, wood, bark, roofs and foliage use small shared tiled maps; browser GLB exports embed these maps. AI planning checks connectivity with Wikipedia and can search it for the current prompt. The running phone server also sends fixed Wikipedia searches periodically for the vocabulary learner.
 
 ---
 

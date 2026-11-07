@@ -24,3 +24,7 @@ __pycache__/
 # Local models and incomplete downloads.
 *.gguf
 *.gguf.part
+
+# Locally learned Wikipedia vocabulary and atomic writes.
+wiki-map-learning.json
+wiki-map-learning.json.tmp

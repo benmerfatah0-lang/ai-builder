@@ -68,6 +68,7 @@ export interface PromptInterpretation {
   sources?: { title: string; url: string }[];
   notes?: string[];
   searched?: boolean;
+  wikiLearning?: { status: string; documents: number; sources: { title: string; url: string }[]; used: boolean };
 }
 
 export interface InterpretOptions {

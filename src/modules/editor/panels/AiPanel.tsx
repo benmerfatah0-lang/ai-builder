@@ -154,11 +154,19 @@ export function AiPanel({ notify, mapTrainer }: {
         <div className="online-heading"><span className="online-dot" /> المساعد الخفيف + ويكيبيديا</div>
         <p>يفهم كلمات محدودة ويصنع أشكالاً إجرائية للبيوت والأشجار عريضة الأوراق والصخور المستديرة. ليس نموذج لغة أو مولّد نماذج عام. يحتاج اتصالاً بالإنترنت قبل كل إنشاء.</p>
         <label><input type="checkbox" checked={searchWikipedia} onChange={(event) => setSearchWikipedia(event.target.checked)} /> ابحث في ويكيبيديا عن هذا الوصف</label>
-        <p>يمكنه البحث أيضاً عند ذكر «ابحث» أو «ويكيبيديا». يقرأ كلمات محدودة من النتائج لتقدير البيئة فقط؛ لا يتدرّب تلقائياً من المواقع ولا يبحث في كل الويب.</p>
+        <p>يمكنه البحث أيضاً عند ذكر «ابحث» أو «ويكيبيديا». يقرأ كلمات محدودة من النتائج لتقدير البيئة فقط؛ التعلّم التلقائي يقتصر على ويكيبيديا وليس كل الويب.</p>
+      </div>
+      <div className="online-settings" dir="rtl">
+        <div className="online-heading">التعلّم التلقائي من ويكيبيديا</div>
+        <p>يفحص خادم Termux موضوعات محددة عن التضاريس كل خمس دقائق تقريباً ويحفظ ارتباطات كلمات محدودة محلياً، حتى بعد إغلاق الصفحة ما دام الخادم يعمل. يستخدم الإنترنت والبطارية؛ قد يوقف Android الخادم في الخلفية. لا يتعلم تحويل الصور إلى 3D أو بناء أشكال جديدة من ويكيبيديا.</p>
+        {result?.wikiLearning ? <>
+          <p>المقالات المستخدمة: {result.wikiLearning.documents} · الحالة: {result.wikiLearning.status === 'unavailable' ? 'تعذّر آخر تحديث (الإنترنت أو التخزين)' : result.wikiLearning.status === 'capacity' ? 'بلغ حد التخزين' : result.wikiLearning.status === 'no_new_articles' ? 'لا توجد مقالات جديدة في آخر بحث' : result.wikiLearning.status === 'starting' ? 'يبدأ' : 'يعمل'}.</p>
+          {result.wikiLearning.sources.length > 0 && <div className="online-sources"><strong>أحدث مصادر التعلّم</strong>{result.wikiLearning.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer">{source.title} ↗</a>)}</div>}
+        </> : <p>تظهر حالة التعلّم ومصادره بعد إنشاء عالم.</p>}
       </div>
       <div className="online-settings" dir="rtl">
         <div className="online-heading">تعلّم تلقائي للخرائط</div>
-        <p>يجرب التطبيق خرائط صغيرة ويقارن التوزيع وعدد الأنواع والتحذيرات، ثم يحتفظ أحياناً بإعداد أفضل وفق هذه المعايير البسيطة. التدريب يجري على الجهاز عندما تكون الصفحة ظاهرة، مرة تقريباً كل 45 ثانية؛ لا يتصفح الإنترنت ولا يختبر متعة اللعب.</p>
+        <p>يجرب التطبيق خرائط صغيرة ويقارن التوزيع وعدد الأنواع والتحذيرات، ثم يحتفظ أحياناً بإعداد أفضل وفق هذه المعايير البسيطة. التدريب يجري على الجهاز عندما تكون الصفحة ظاهرة، مرة تقريباً كل 45 ثانية؛ وهذا التدريب المحلي منفصل عن تعلّم كلمات ويكيبيديا ولا يختبر متعة اللعب.</p>
         <p>التجارب: {mapTrainer.model.attempts} · التغييرات المقبولة: {mapTrainer.model.accepted}. تؤثر النتائج في كثافة العناصر للمناظر العامة فقط، ولا تغيّر الأعداد الصريحة أو المزرعة.</p>
         <button type="button" className="btn btn-small" onClick={() => mapTrainer.setEnabled(!mapTrainer.model.enabled)}>
           {mapTrainer.model.enabled ? 'إيقاف التعلّم التلقائي' : 'تشغيل التعلّم التلقائي'}

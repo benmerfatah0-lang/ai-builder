@@ -2,7 +2,10 @@
 import http.client
 import importlib.util
 import json
+import os
 import threading
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import unittest
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
@@ -17,6 +20,7 @@ class PhoneServerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.server = ThreadingHTTPServer(('127.0.0.1', 0), phone_server.Handler)
+        cls.server.wiki_learner = type('StubLearner', (), {'snapshot': lambda self: {'status': 'learning'}})()
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
 
@@ -44,6 +48,11 @@ class PhoneServerTests(unittest.TestCase):
         self.assertEqual(self.request('/', method='GET')[0], 404)
         self.assertEqual(self.request('/model.gguf', method='GET')[0], 404)
         self.assertEqual(self.request('/world-builder-mobile.html', host='evil.example', method='GET')[0], 404)
+
+    def test_knowledge_endpoint(self):
+        status, body = self.request('/api/knowledge')
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)['status'], 'learning')
 
     @patch.object(phone_server, 'get_json')
     def test_connectivity_and_search_are_fixed_to_wikipedia(self, upstream):

@@ -1,33 +1,46 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { interpretOnline } from './onlineInterpreter';
-
+const emptyKnowledge = { version: 1, cursor: 0, status: 'starting', classes: {
+  desert: { docs: 0, tokens: {} }, forest: { docs: 0, tokens: {} }, mountains: { docs: 0, tokens: {} }, island: { docs: 0, tokens: {} },
+}, sources: [] };
+const knowledge = () => new Response(JSON.stringify(emptyKnowledge));
 afterEach(() => vi.unstubAllGlobals());
-describe('lightweight rule-based planning and Wikipedia', () => {
-  it('requires internet without asking any LLM for a simple request', async () => {
-    const mock = vi.fn().mockResolvedValue(new Response('{"online":true}'));
+describe('lightweight local planning and Wikipedia', () => {
+  it('requires internet, reads the learning state, and uses no LLM', async () => {
+    const mock = vi.fn().mockResolvedValueOnce(new Response('{"online":true}')).mockResolvedValueOnce(knowledge());
     vi.stubGlobal('fetch', mock);
     const result = await interpretOnline('بيت على يمين شجرة و 3 صخور', { seed: 12 });
-    expect(mock.mock.calls.map(([url]) => url)).toEqual(['/api/online']);
+    expect(mock.mock.calls.map(([url]) => url)).toEqual(['/api/online', '/api/knowledge']);
     expect(result.searched).toBe(false);
     expect(result.intent.assets?.map((x) => [x.assetId, x.count])).toEqual([['house', 1], ['tree', 1], ['boulder', 3]]);
-    expect(result.notes?.join()).toContain('كلمات محدودة');
+    expect(result.wikiLearning?.status).toBe('starting');
   });
-  it('searches Wikipedia only on request and uses a limited safe biome hint', async () => {
-    const mock = vi.fn().mockResolvedValueOnce(new Response('{"online":true}')).mockResolvedValueOnce(new Response(JSON.stringify({ results: [
+  it('searches Wikipedia on request and uses a limited safe biome hint', async () => {
+    const mock = vi.fn().mockResolvedValueOnce(new Response('{"online":true}')).mockResolvedValueOnce(knowledge()).mockResolvedValueOnce(new Response(JSON.stringify({ results: [
       { title: 'Place', url: 'https://en.wikipedia.org/wiki/Place', content: 'A desert landmark' },
       { title: 'Unsafe', url: 'javascript:alert(1)', content: 'ignored' },
       { title: 'Other site', url: 'https://example.com/', content: 'ignored' },
     ] })));
     vi.stubGlobal('fetch', mock);
     const result = await interpretOnline('ابحث عن مكان', { seed: 2 });
-    expect(mock.mock.calls.map(([url]) => url)).toEqual(['/api/online', '/api/search']);
+    expect(mock.mock.calls.map(([url]) => url)).toEqual(['/api/online', '/api/knowledge', '/api/search']);
     expect(result.intent.biome).toBe('desert');
-    expect(result.intent.prompt).toBe('ابحث عن مكان');
     expect(result.sources).toEqual([{ title: 'Place', url: 'https://en.wikipedia.org/wiki/Place' }]);
     expect(result.searched).toBe(true);
   });
-  it('manual search works without keyword; user biome wins over reference hint', async () => {
-    const mock = vi.fn().mockResolvedValueOnce(new Response('{"online":true}')).mockResolvedValueOnce(new Response(JSON.stringify({ results: [
+  it('uses persisted word associations from the background learner', async () => {
+    const learned = { ...emptyKnowledge, status: 'learning', classes: { ...emptyKnowledge.classes,
+      desert: { docs: 1, tokens: { 'واحات': 1 } } }, sources: [{ label: 'desert', title: 'واحة', url: 'https://ar.wikipedia.org/wiki/واحة' }] };
+    const mock = vi.fn().mockResolvedValueOnce(new Response('{"online":true}')).mockResolvedValueOnce(new Response(JSON.stringify(learned)));
+    vi.stubGlobal('fetch', mock);
+    const result = await interpretOnline('بيت في الواحات', { seed: 5 });
+    expect(result.intent.biome).toBe('desert');
+    expect(result.wikiLearning?.used).toBe(true);
+    expect(result.wikiLearning?.documents).toBe(1);
+    expect(result.wikiLearning?.sources[0]?.url).toContain('wikipedia.org/wiki/');
+  });
+  it('manual search preserves the user biome', async () => {
+    const mock = vi.fn().mockResolvedValueOnce(new Response('{"online":true}')).mockResolvedValueOnce(knowledge()).mockResolvedValueOnce(new Response(JSON.stringify({ results: [
       { title: 'x', url: 'https://ar.wikipedia.org/wiki/X', content: 'صحراء' },
     ] })));
     vi.stubGlobal('fetch', mock);
@@ -35,17 +48,18 @@ describe('lightweight rule-based planning and Wikipedia', () => {
     expect(result.intent.biome).toBe('forest');
     expect(result.searched).toBe(true);
   });
-  it('does not silently fall back if internet or requested search fails', async () => {
+  it('never silently falls back on internet or requested search errors', async () => {
     const mock = vi.fn().mockResolvedValueOnce(new Response('', { status: 502 })); vi.stubGlobal('fetch', mock);
     await expect(interpretOnline('بيت')).rejects.toThrow('ويكيبيديا');
     expect(mock).toHaveBeenCalledTimes(1);
-    mock.mockReset().mockResolvedValueOnce(new Response('{"online":true}')).mockResolvedValueOnce(new Response('', { status: 502 }));
+    mock.mockReset().mockResolvedValueOnce(new Response('{"online":true}')).mockResolvedValueOnce(knowledge()).mockResolvedValueOnce(new Response('', { status: 502 }));
     await expect(interpretOnline('ابحث عن مدينة')).rejects.toThrow('ويكيبيديا');
-    expect(mock).toHaveBeenCalledTimes(2);
+    expect(mock).toHaveBeenCalledTimes(3);
   });
-  it('explains an old static server and rejects false connectivity response', async () => {
-    const mock = vi.fn().mockResolvedValueOnce(new Response('', { status: 501 })); vi.stubGlobal('fetch', mock);
-    await expect(interpretOnline('بيت')).rejects.toThrow('world-builder-server.py');
+  it('warns when saved learning state is unavailable and rejects false connectivity', async () => {
+    const mock = vi.fn().mockResolvedValueOnce(new Response('{"online":true}')).mockResolvedValueOnce(new Response('', { status: 502 })); vi.stubGlobal('fetch', mock);
+    const result = await interpretOnline('بيت');
+    expect(result.notes?.join()).toContain('تعذّر قراءة حالة');
     mock.mockResolvedValueOnce(new Response('{"online":false}'));
     await expect(interpretOnline('بيت')).rejects.toThrow('التحقق');
   });

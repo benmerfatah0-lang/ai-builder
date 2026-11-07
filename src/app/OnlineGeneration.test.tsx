@@ -7,6 +7,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.localStorage.clear();
 describe('lightweight local planning interface', () => {
   it('generates without a model server and shows Wikipedia sources when requested', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response('{"online":true}'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ version: 1, cursor: 0, status: 'starting', classes: { desert: {docs:0,tokens:{}}, forest: {docs:0,tokens:{}}, mountains: {docs:0,tokens:{}}, island: {docs:0,tokens:{}} }, sources: [] })))
       .mockResolvedValueOnce(new Response(JSON.stringify({ results: [{ url: 'https://ar.wikipedia.org/wiki/صحراء', title: 'مصدر', content: 'صحراء' }] })));
     vi.stubGlobal('fetch', fetchMock);
     render(<App />);
@@ -16,7 +17,7 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
     expect(await screen.findByText('تم البحث في ويكيبيديا في هذا الطلب.')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'مصدر ↗' }).getAttribute('href')).toContain('ar.wikipedia.org/wiki/');
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/online', '/api/search']);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/online', '/api/knowledge', '/api/search']);
   }, 20000);
   it('generates the mining example and clearly explains that the mine is a facade', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"online":true}')));

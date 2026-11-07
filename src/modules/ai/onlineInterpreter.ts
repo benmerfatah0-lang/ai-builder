@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { applyWikiKnowledge, summarizeKnowledge } from './wikiKnowledge';
 import { interpretPromptLocally } from './promptInterpreter';
 import type { InterpretOptions, PromptInterpretation } from './types';
 
@@ -27,8 +28,19 @@ export async function interpretOnline(prompt: string, options: InterpretOptions 
   const online = z.object({ online: z.literal(true) }).safeParse(await postJSON('/api/online', {}));
   if (!online.success) throw new Error('تعذّر التحقق من اتصال ويكيبيديا.');
   const result = interpretPromptLocally(prompt, options);
+  let knowledge = null;
+  try { knowledge = summarizeKnowledge(await postJSON('/api/knowledge', {})); } catch { /* Shown explicitly in notes below. */ }
+  let usedKnowledge = false;
+  if (knowledge) {
+    const adjusted = applyWikiKnowledge(result.intent, knowledge);
+    result.intent = adjusted.intent;
+    usedKnowledge = adjusted.used;
+  }
   const searched = forceSearch || /ابحث|بحث|ويكيبيديا|معلم حقيقي|مكان حقيقي|landmark|wikipedia|search/i.test(prompt);
   const notes = ['المساعد يفهم كلمات محدودة فقط، وليس نموذج لغة عاماً. الأشكال الجديدة إجرائية وليست نماذج متعلّمة من مواقع الإنترنت.'];
+  if (!knowledge) notes.push('تعذّر قراءة حالة التعلم من ويكيبيديا في الخادم.');
+  else if (knowledge.status === 'unavailable') notes.push('تعذّر تحديث التعلم من ويكيبيديا مؤخراً (الإنترنت أو التخزين)؛ يستخدم التطبيق المعلومات المحفوظة إن وجدت.');
+  if (usedKnowledge) notes.push('استُخدمت ارتباطات كلمات تعلّمها التطبيق من مقتطفات ويكيبيديا لتقدير البيئة، وقد تخطئ.');
   let sources: { title: string; url: string; content: string }[] = [];
   if (searched) {
     const query = prompt.replace(/ابحث\s*(?:عن)?|(?:في|من)\s*ويكيبيديا|search\s*(?:for)?|wikipedia/gi, '').trim() || prompt;
@@ -51,5 +63,7 @@ export async function interpretOnline(prompt: string, options: InterpretOptions 
     if (!sources.length) notes.push('لم تظهر مصادر من ويكيبيديا لهذا البحث.');
   }
   return { ...result, providerId: 'tiny-shape-learner', providerLabel: 'المساعد الخفيف المحلي', offline: false,
-    searched, sources: sources.map(({ title, url }) => ({ title, url })), notes };
+    searched, sources: sources.map(({ title, url }) => ({ title, url })), notes,
+    ...(knowledge ? { wikiLearning: { status: knowledge.status, documents: knowledge.sources.length,
+      sources: knowledge.sources.slice(-4).reverse().map(({ title, url }) => ({ title, url })), used: usedKnowledge } } : {}) };
 }
