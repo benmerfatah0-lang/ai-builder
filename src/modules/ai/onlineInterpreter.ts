@@ -17,60 +17,52 @@ const planSchema = z.object({
 }).strict();
 
 
-type Keys = { groq: string; tavily: string };
-const GROQ_URL = '/api/groq';
-const TAVILY_URL = '/api/tavily';
-
 type SearchResult = { title: string; url: string; content: string };
-async function postJSON(url: string, key: string, body: object, service: string): Promise<unknown> {
+async function postJSON(url: string, body: object, service: string): Promise<unknown> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 90000);
+  // Local generation on a phone can take several minutes.
+  const timeout = setTimeout(() => controller.abort(), url === '/api/model' ? 600000 : 45000);
   try {
     const response = await fetch(url, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key.trim()}` },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body), signal: controller.signal,
     });
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403) throw new Error(`تعذّر استخدام مفتاح ${service} أو صلاحياته. راجع المفتاح والحساب.`);
-      if (response.status === 429 || response.status === 402) throw new Error(`بلغت حد الاستخدام أو الرصيد في ${service}. راجع حدود الخطة المجانية.`);
-      if ((response.status === 404 || response.status === 501) && response.headers.get('X-World-Builder-Proxy') !== '1') throw new Error('شغّل خادم الهاتف المرفق world-builder-server.py بدلاً من خادم الملفات العادي.');
-      if (response.status === 404) throw new Error(`الخدمة أو النموذج غير متاح في ${service} لهذا الحساب.`);
-      throw new Error(`تعذّر استخدام ${service} (رمز ${response.status}).`);
+      if ((response.status === 404 || response.status === 501) && response.headers.get('X-World-Builder-Proxy') !== '1') throw new Error('شغّل خادم الهاتف الجديد world-builder-server.py بدلاً من الخادم القديم.');
+      if (service === 'النموذج المحلي') throw new Error('النموذج المحلي غير جاهز أو تعذّر تشغيله. تأكّد من بدء الخادم وانتظر تحميل النموذج.');
+      throw new Error('تعذّر الاتصال بويكيبيديا. تحقّق من الإنترنت ثم حاول مجدداً.');
     }
     try { return await response.json(); }
     catch { throw new Error(`استجابت ${service} ببيانات غير صالحة.`); }
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw new Error(`انتهت مهلة الاتصال بـ ${service}.`);
-    if (error instanceof TypeError) throw new Error(`تعذّر الاتصال بـ ${service}؛ تحقّق من الإنترنت أو قيود المتصفح ثم حاول مجدداً.`);
+    if (error instanceof Error && error.name === 'AbortError') throw new Error(`انتهت مهلة ${service}. حاول وصفاً أبسط.`);
+    if (error instanceof TypeError) throw new Error(`تعذّر الاتصال بـ ${service}. تحقّق من تشغيل خادم الهاتف والإنترنت.`);
     throw error;
   } finally { clearTimeout(timeout); }
 }
-async function groqJSON(key: string, request: object): Promise<unknown> {
+async function localJSON(request: object): Promise<unknown> {
   const envelope = z.object({ choices: z.array(z.object({
     finish_reason: z.string().nullable().optional(),
     message: z.object({ content: z.string().nullable().optional() }).passthrough(),
-  }).passthrough()).min(1) }).passthrough().safeParse(await postJSON(GROQ_URL, key, request, 'Groq'));
-  if (!envelope.success) throw new Error('استجابت Groq ببيانات غير صالحة.');
+  }).passthrough()).min(1) }).passthrough().safeParse(await postJSON('/api/model', request, 'النموذج المحلي'));
+  if (!envelope.success) throw new Error('استجاب النموذج المحلي ببيانات غير صالحة.');
   const choice = envelope.data.choices[0]!;
-  if (choice.finish_reason && choice.finish_reason !== 'stop') throw new Error('لم يكتمل رد Groq. حاول وصفاً أقصر.');
+  if (choice.finish_reason && choice.finish_reason !== 'stop') throw new Error('لم يكتمل رد النموذج المحلي. حاول وصفاً أقصر.');
   try { return JSON.parse(choice.message.content ?? ''); }
-  catch { throw new Error('لم تُرجع Groq مخططاً صالحاً. حاول مجدداً.'); }
+  catch { throw new Error('لم يُرجع النموذج المحلي مخططاً صالحاً. حاول مجدداً.'); }
 }
-async function searchWeb(key: string, query: string): Promise<SearchResult[]> {
-  const response = await postJSON(TAVILY_URL, key, {
-    query, search_depth: 'basic', auto_parameters: false, max_results: 4,
-    include_answer: false, include_raw_content: false, include_images: false,
-  }, 'Tavily');
+async function searchWiki(query: string): Promise<SearchResult[]> {
+  const response = await postJSON('/api/search', { query }, 'ويكيبيديا');
   const envelope = z.object({ results: z.array(z.object({
-    title: z.string().optional(), url: z.string(), content: z.string().optional(),
+    title: z.string(), url: z.string(), content: z.string(),
   }).passthrough()).max(20) }).passthrough().safeParse(response);
-  if (!envelope.success) throw new Error('استجابت Tavily ببيانات بحث غير صالحة.');
+  if (!envelope.success) throw new Error('استجابت ويكيبيديا ببيانات بحث غير صالحة.');
   const sources: SearchResult[] = [];
   for (const item of envelope.data.results) {
     try {
       const url = new URL(item.url);
-      if ((url.protocol === 'https:' || url.protocol === 'http:') && !sources.some((source) => source.url === url.href)) {
-        sources.push({ title: item.title?.slice(0, 120) || url.hostname, url: url.href, content: (item.content ?? '').slice(0, 1200) });
+      if (url.protocol === 'https:' && (url.hostname === 'ar.wikipedia.org' || url.hostname === 'en.wikipedia.org') && !sources.some((source) => source.url === url.href)) {
+        sources.push({ title: item.title.slice(0, 120) || url.hostname, url: url.href, content: item.content.slice(0, 1200) });
       }
     } catch { /* Never display unsafe links. */ }
     if (sources.length === 4) break;
@@ -78,19 +70,18 @@ async function searchWeb(key: string, query: string): Promise<SearchResult[]> {
   return sources;
 }
 
-/** Calls Groq to decide on search and plan; Tavily runs only when requested. */
+/** Require a live internet check; the local model decides if Wikipedia search is needed. */
 export async function interpretOnline(
   prompt: string,
-  keys: Keys,
   options: InterpretOptions = {},
 ): Promise<PromptInterpretation> {
-  if (!keys.groq.trim() || !keys.tavily.trim()) throw new Error('أدخل مفتاحي Groq وTavily أو افتحهما من الحفظ أولاً.');
+  await postJSON('/api/online', {}, 'ويكيبيديا');
   const decision = z.object({ query: z.string().trim().min(1).max(400).nullable() }).strict()
-    .safeParse(await groqJSON(keys.groq, createSearchDecisionRequest(prompt)));
+    .safeParse(await localJSON(createSearchDecisionRequest(prompt)));
   if (!decision.success) throw new Error('تعذّر تحديد حاجة الوصف للبحث. حاول مجدداً.');
   const searched = decision.data.query !== null;
-  const references = searched ? await searchWeb(keys.tavily, decision.data.query!) : [];
-  const raw = await groqJSON(keys.groq, createOnlineRequest(prompt, references));
+  const references = searched ? await searchWiki(decision.data.query!) : [];
+  const raw = await localJSON(createOnlineRequest(prompt, references));
   const parsed = planSchema.safeParse(raw);
   if (!parsed.success) throw new Error('المخطط الذي أعادته الخدمة غير مدعوم. حاول وصفاً أبسط.');
   const data = parsed.data;
@@ -114,7 +105,7 @@ export async function interpretOnline(
       assets: assets.length ? assets : undefined, summary: data.summary,
       cues: assets.length ? assets.map((asset) => `${asset.count} ${asset.assetId}`) : [`biome: ${data.biome}`],
     },
-    providerId: 'groq-tavily', providerLabel: 'Groq + Tavily', offline: false,
+    providerId: 'local-wikipedia', providerLabel: 'Qwen محلي + ويكيبيديا', offline: false,
     sources: references.map(({ title, url }) => ({ title, url })), notes, searched,
   };
 }

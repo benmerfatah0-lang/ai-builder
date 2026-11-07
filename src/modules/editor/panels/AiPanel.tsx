@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { interpretOnline } from '../../ai/onlineInterpreter';
-import { deleteLocalKey, hasLocalKey, saveLocalKey, unlockLocalKey } from '../../ai/localKeyVault';
 import { generateWorldPlanWithReport } from '../../../core/generation/generateWorld';
 import type { PromptInterpretation } from '../../ai/types';
 import { useEditor } from '../store';
@@ -21,17 +20,8 @@ function randomSeed(): number {
   return Math.floor(Math.random() * 0xffffffff);
 }
 
-export function AiPanel({
-  notify,
-  apiKey,
-  onApiKeyChange,
-  searchKey, onSearchKeyChange,
-}: {
+export function AiPanel({ notify }: {
   notify: (message: string, tone?: 'neutral' | 'success' | 'danger') => void;
-  apiKey: string;
-  onApiKeyChange: (value: string) => void;
-  searchKey: string;
-  onSearchKeyChange: (value: string) => void;
 }) {
   const { dispatch } = useEditor();
   const [prompt, setPrompt] = useState('');
@@ -44,15 +34,6 @@ export function AiPanel({
   const [notes, setNotes] = useState<string[]>([]);
   const [stats, setStats] = useState<{ objects: number; groups: number } | null>(null);
   const [generationError, setGenerationError] = useState('');
-  const [vaultState] = useState(() => {
-    try { return { stored: hasLocalKey(), error: '' }; }
-    catch { return { stored: false, error: 'تعذّر الوصول إلى تخزين المتصفح.' }; }
-  });
-  const [accountError, setAccountError] = useState(vaultState.error);
-  const [accountBusy, setAccountBusy] = useState(false);
-  const [password, setPassword] = useState('');
-  const [storedKey, setStoredKey] = useState(vaultState.stored);
-
   const generate = async () => {
     const text = prompt.trim();
     if (!text || generating) return;
@@ -60,15 +41,11 @@ export function AiPanel({
     setResult(null);
     setNotes([]);
     setStats(null);
-    if (!apiKey.trim() || !searchKey.trim()) {
-      setGenerationError('أدخل مفتاحي Groq وTavily أو افتحهما من الحفظ أولاً.');
-      return;
-    }
     setGenerating(true);
     try {
       // Yield one frame so the button's busy state paints on slower phones.
       await new Promise((resolve) => window.setTimeout(resolve, 16));
-      const interpretation = await interpretOnline(text, { groq: apiKey, tavily: searchKey }, {
+      const interpretation = await interpretOnline(text, {
         seed,
         ...(style !== 'auto' ? { style } : {}),
         ...(scale !== 'auto' ? { scale } : {}),
@@ -141,44 +118,9 @@ export function AiPanel({
       </div>
 
       <div className="online-settings" dir="rtl">
-        <div className="online-heading"><span className="online-dot" /> Groq + Tavily · بدون استضافة سحابية</div>
-        <p>استخدم الخطتين المجانيتين فقط، ولا تفعّل الدفع أو الاستخدام الإضافي. النموذج والبحث لهما حدود وقد يتوقفان عند بلوغها. التطبيق لا يستطيع التحقق من خطتك؛ الحساب المدفوع قد يُحاسَب.</p>
-        <p>يُرسل الوصف إلى Groq، وعبارة البحث إلى Tavily عند الحاجة، وقد تُرسل نتائج البحث إلى Groq. يمر المفتاحان عبر خادم محلي على هاتفك فقط.</p>
-        <label className="field"><span className="field-label">مفتاح Groq API</span>
-          <input className="input online-key" type="password" autoComplete="off" spellCheck={false} value={apiKey}
-            onChange={(event) => onApiKeyChange(event.target.value)} placeholder="مفتاح Groq" aria-label="Groq API key" />
-        </label>
-        <label className="field"><span className="field-label">مفتاح Tavily للبحث</span>
-          <input className="input online-key" type="password" autoComplete="off" spellCheck={false} value={searchKey}
-            onChange={(event) => onSearchKeyChange(event.target.value)} placeholder="مفتاح Tavily" aria-label="Tavily API key" />
-        </label>
-        <p>لحفظ المفتاحين على هذا الهاتف، اختر كلمة مرور قوية. لن تتم مزامنتهما مع أي حساب أو جهاز آخر.</p>
-        <label className="field"><span className="field-label">كلمة مرور حفظ المفتاحين</span>
-          <input className="input online-key" type="password" autoComplete="new-password" value={password}
-            onChange={(event) => setPassword(event.target.value)} aria-label="كلمة مرور حفظ المفتاح" placeholder="8 أحرف على الأقل" />
-        </label>
-        <div className="account-actions">
-          <button type="button" className="btn btn-small" disabled={accountBusy || !apiKey.trim() || !searchKey.trim() || !password} onClick={() => {
-            setAccountBusy(true); setAccountError('');
-            void saveLocalKey({ groq: apiKey, tavily: searchKey }, password).then(() => { setStoredKey(true); setPassword(''); notify('حُفظ المفتاحان مشفّرين على الهاتف.', 'success'); })
-              .catch((error: unknown) => setAccountError(error instanceof Error ? error.message : 'تعذّر حفظ المفتاحين.'))
-              .finally(() => setAccountBusy(false));
-          }}>حفظ مشفّر</button>
-          {storedKey && <button type="button" className="btn btn-small" disabled={accountBusy || !password} onClick={() => {
-            setAccountBusy(true); setAccountError('');
-            void unlockLocalKey(password).then((keys) => { onApiKeyChange(keys.groq); onSearchKeyChange(keys.tavily); setPassword(''); notify('فُتح المفتاحان لهذا الاستخدام.', 'success'); })
-              .catch((error: unknown) => setAccountError(error instanceof Error ? error.message : 'تعذّر فتح المفتاحين.'))
-              .finally(() => setAccountBusy(false));
-          }}>فتح المفتاحين</button>}
-          {storedKey && <button type="button" className="btn btn-small" disabled={accountBusy} onClick={() => {
-            try { deleteLocalKey(); setStoredKey(false); onApiKeyChange(''); onSearchKeyChange(''); setPassword(''); setAccountError(''); notify('حُذف المفتاحان المحفوظان.', 'success'); }
-            catch (error) { setAccountError(error instanceof Error ? error.message : 'تعذّر حذف المفتاحين.'); }
-          }}>حذف المفتاحين</button>}
-        </div>
-        {accountError && <p className="online-error" role="alert">{accountError}</p>}
-        <p>{storedKey ? 'يوجد مفتاحان مشفّران في هذا المتصفح. أدخل كلمة المرور ثم اضغط فتح المفتاحين بعد إعادة فتح الصفحة.' : 'الحفظ اختياري. دون حفظ، يبقى المفتاحان في ذاكرة الصفحة فقط.'} لن تتمكن من فتحهما إذا نسيت كلمة المرور. التشفير لا يحمي من الإضافات الخبيثة أو جهاز مخترق؛ استخدم هاتفاً موثوقاً.</p>
-        <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">الحصول على مفتاح Groq ↗</a><br />
-        <a href="https://app.tavily.com/" target="_blank" rel="noopener noreferrer">الحصول على مفتاح Tavily ↗</a>
+        <div className="online-heading"><span className="online-dot" /> Qwen محلي + بحث ويكيبيديا</div>
+        <p>يعمل النموذج على الهاتف دون حساب أو مفتاح. يحتاج التطبيق إلى الإنترنت للتحقق من الاتصال والبحث في ويكيبيديا عند الحاجة؛ لا يبحث في بقية الويب. قد يكون النموذج الصغير بطيئاً أو يخطئ.</p>
+        <p>استخدم خادم الهاتف المرفق واترك Termux يعمل. عند البحث تُرسل عبارة البحث إلى ويكيبيديا.</p>
       </div>
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
 
@@ -192,7 +134,7 @@ export function AiPanel({
         {generating ? <span className="spinner small" /> : <Icon name="sparkles" size={17} />}
         {generating ? 'جاري تحليل الوصف وبناء العالم…' : 'أنشئ العالم'} <span className="generate-arrow">←</span>
       </button>
-      <p className="generate-caption" dir="rtl">✦ يتطلب اتصالاً بالإنترنت ومفتاحي Groq وTavily</p>
+      <p className="generate-caption" dir="rtl">✦ يتطلب الإنترنت وتشغيل النموذج المحلي في Termux</p>
       <div className="settings-heading" dir="rtl"><span>إعدادات متقدمة</span><span>02</span></div>
       <div className="seed-row">
         <NumberField
@@ -258,11 +200,11 @@ export function AiPanel({
           <p className="ai-summary">{result.intent.summary}{result.sources?.map((source, index) => (
             <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" aria-label={`المصدر ${index + 1}: ${source.title}`}> [{index + 1}]</a>
           ))}</p>
-          <p className="hint-text" dir="rtl">{result.searched ? 'تم استخدام البحث عبر الإنترنت في هذا الطلب.' : 'لم يُجرَ بحث عبر الإنترنت في هذا الطلب.'}</p>
-          {result.searched && !result.sources?.length && <p className="hint-text" dir="rtl">لم تُرفق الخدمة روابط مصادر لهذا الطلب.</p>}
+          <p className="hint-text" dir="rtl">{result.searched ? 'تم البحث في ويكيبيديا في هذا الطلب.' : 'لم يُجرَ بحث في ويكيبيديا في هذا الطلب.'}</p>
+          {result.searched && !result.sources?.length && <p className="hint-text" dir="rtl">لم يُعثر على روابط مصادر من ويكيبيديا لهذا الطلب.</p>}
           {result.sources && result.sources.length > 0 && (
             <div className="online-sources" dir="rtl">
-              <strong>مصادر البحث</strong>
+              <strong>مصادر ويكيبيديا</strong>
               {result.sources.map((source) => <a href={source.url} key={source.url} target="_blank" rel="noopener noreferrer">{source.title} ↗</a>)}
             </div>
           )}

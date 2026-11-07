@@ -13,32 +13,46 @@ as a project file or a glTF 2.0 model for Godot and Unity.
 
 ---
 
-## تشغيل نسخة الهاتف في Termux (Groq + Tavily)
+## تشغيل نسخة الهاتف في Termux (Qwen محلي + ويكيبيديا)
 
-التطبيق يستخدم نموذج Qwen عبر Groq، ويقرر تلقائياً إذا كان الوصف يحتاج إلى بحث عبر Tavily. يتطلب الاتصال بالإنترنت ومفتاحين؛ لا يستخدم OpenAI أو Gemini. الخادم محلي على الهاتف ولا يحتاج لاستضافة سحابية.
+لا تحتاج إلى حساب أو مفتاح API أو اشتراك. نموذج Qwen2.5-1.5B يعمل على الهاتف عبر llama.cpp؛ مطلوب إنترنت عند كل إنشاء للتحقق من اتصال ويكيبيديا، وللبحث فيها عند الحاجة فقط، وليس للبحث في الويب كله. النموذج صغير وقد يخطئ أو يكون بطيئاً، وقد يفشل على هاتف لا يملك ذاكرة كافية. ملف النموذج حجمه نحو **1.12 GB** ويحتاج أيضاً مساحة وRAM إضافية أثناء التشغيل. حزمة Termux لا تدعم أجهزة 32-bit (arm وi686).
 
-1. افتح Termux وثبّت Python وcurl إن لم يكونا موجودين:
+1. أوقف خادم الهاتف القديم في Termux بالضغط على Ctrl+C. ثبّت المتطلبات:
 
    ```sh
-   pkg update && pkg install python curl
+   pkg update && pkg install python curl coreutils llama-cpp
    ```
-2. أوقف أي خادم قديم على المنفذ 8080 بـ Ctrl+C، ثم نزّل الملفين وشغّل الخادم المحلي:
+
+2. نزّل التطبيق والخادم:
 
    ```sh
    mkdir -p ~/world-builder && cd ~/world-builder && \
    curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/world-builder-mobile.html' -o world-builder-mobile.html && \
-   curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/world-builder-server.py' -o world-builder-server.py && \
-   python world-builder-server.py
+   curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/world-builder-server.py' -o world-builder-server.py
    ```
-3. اترك Termux يعمل وافتح **http://127.0.0.1:8080/world-builder-mobile.html** في متصفح الهاتف. لإعادة التشغيل لاحقاً: `cd ~/world-builder && python world-builder-server.py`. إذا ظهر 404 أو رسالة المنفذ مستخدم، أوقف الخادم القديم وتأكد من تنزيل الملفين.
-4. أنشئ مفتاحاً من [Groq](https://console.groq.com/keys) ومفتاحاً من [Tavily](https://app.tavily.com/)، وأدخلهما في لوحة AI. **لا ترسل المفاتيح في المحادثة**.
-5. للحفظ على الهاتف أدخل كلمة مرور قوية واضغط **حفظ مشفّر**. بعد إعادة فتح الصفحة أدخل كلمة المرور واضغط **فتح المفتاحين**. اختر **حذف المفتاحين** لإزالتهما. يحفظ المتصفح المفتاحين مشفّرين بـPBKDF2 وAES-GCM في التخزين المحلي على نفس العنوان والمتصفح؛ مسح بيانات المتصفح يمحوهما. لا يمكن استرجاعهما إذا نسيت كلمة المرور. الخزنات القديمة لـOpenAI وGemini منفصلة ولا تُفتح أو تُرسل تلقائياً.
 
-**التكلفة والتوافر:** استخدم حسابين على الخطتين المجانيتين، ولا تفعّل فوترة أو استخداماً إضافياً. تعتمد الحدود والتوافر على الحساب وقد تتغير؛ [حدود Groq](https://console.groq.com/docs/rate-limits) و[حدود Tavily](https://docs.tavily.com/documentation/api-credits). يرسل التطبيق طلب بحث أساسي فقط عند الحاجة، دون تفعيل auto_parameters. التطبيق لا يتحقق من خطة الحساب أو يمنع الرسوم إذا كانت الفوترة المدفوعة مفعّلة. لا توجد أي مزامنة تلقائية بين الأجهزة.
+3. نزّل النموذج **مرة واحدة**. يمكن إعادة الأمر لاستكمال تنزيل انقطع؛ يتم التحقق من SHA-256 قبل استخدام الملف:
 
-**الخصوصية والأمان:** يرسل وصفك إلى Groq، وعبارة البحث إلى Tavily إذا قرر النموذج البحث، وقد تُرسل نتائج البحث إلى Groq. المفتاحان في ذاكرة الصفحة عند فتحهما، ويمران عبر خادم محلي يربط 127.0.0.1 فقط ويرسل كل مفتاح عبر HTTPS إلى خدمته دون تخزينه. التشفير لا يحمي من إضافات خبيثة أو جهاز مخترق. استخدم هاتفاً موثوقاً ولا تشارك المفتاحين.
+   ```sh
+   cd ~/world-builder && \
+   if [ ! -f model.gguf ]; then
+     curl -fL -C - 'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/62a8d092b0a1047016f3edbd0fde387598727aa5/qwen2.5-1.5b-instruct-q4_k_m.gguf' -o model.gguf.part && \
+     echo '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e  model.gguf.part' | sha256sum -c - && \
+     mv model.gguf.part model.gguf
+   fi
+   ```
 
-إذا قرر النموذج البحث ولم ينجح Tavily، يتوقف الإنشاء ويظهر الخطأ بدلاً من السقوط بصمت. يعرض التطبيق المصادر عند ورودها، ويوضح إذا لم يجرِ بحثاً. لا يجلب البحث نماذج ثلاثية الأبعاد؛ البناء محدود بالأصول المتاحة وقد تكون النتيجة تقريبية. نموذج المزرعة له ترتيب خاص.
+   إذا فشل التحقق، احذف `~/world-builder/model.gguf.part` وحاول تنزيله مجدداً. تنزيل النموذج قد يستهلك بيانات الهاتف.
+
+4. شغّل الخادم واترك Termux مفتوحاً:
+
+   ```sh
+   cd ~/world-builder && python world-builder-server.py
+   ```
+
+   افتح **http://127.0.0.1:8080/world-builder-mobile.html** في متصفح الهاتف. قد يستغرق تحميل النموذج وقتاً؛ إذا لم يكن جاهزاً انتظر وحاول مجدداً. لإيقاف التطبيق اضغط Ctrl+C. إذا كان المنفذ مستخدماً، أوقف الخادم القديم أولاً.
+
+**الخصوصية:** يعمل النموذج وخادم التطبيق على الجهاز وعنوانهما محلي فقط؛ لا يُرسل الوصف الكامل لخدمة نموذج خارجية. يرسل التطبيق طلب تحقق إلى ويكيبيديا قبل كل إنشاء، وإذا قرر النموذج البحث يرسل عبارة البحث إلى ويكيبيديا. تُعرض المصادر إن وُجدت، وقد تكون النتائج تقريبية أو غير كاملة. إذا تعذّر الاتصال أو فشل البحث المطلوب، يتوقف الإنشاء ولا يعمل بديل صامت. لا يستورد البحث نماذج 3D جديدة، والبناء محدود بالأصول المتاحة. مفاتيح الخدمات المحفوظة سابقاً في المتصفح لا تُستخدم ولا تُحذف تلقائياً؛ امسح بيانات الموقع إن أردت حذفها (وهذا يحذف المشاريع المحفوظة محلياً أيضاً، فصدّرها أولاً).
 
 To rebuild the standalone phone file after source changes, run `npm run build:mobile`.
 
@@ -96,7 +110,7 @@ To rebuild the standalone phone file after source changes, run `npm run build:mo
   floating toolbar, inspector) and a mobile layout with a bottom dock, bottom
   sheet, touch orbit + pinch-zoom, safe-area handling and 16 px inputs.
 
-AI planning uses Groq and, when necessary, Tavily web search. Free-tier limits and availability apply.
+AI planning uses a local llama.cpp model, with Wikipedia search when needed and a required internet check before each generation.
 No external 3D assets are downloaded; rendering, saving and export are local.
 
 ### What is deliberately not there yet
@@ -121,7 +135,7 @@ Full risk list and roadmap: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ## Quick start
 
 Requirements: **Node.js 20.19+ or 22.12+** (Vite 7). Online generation also
-requires internet and Groq and Tavily API keys. The phone version uses a loopback-only local server.
+requires internet, a local llama-server and the GGUF model. The phone version uses a loopback-only local server. Vite proxies `/api` to this server on port 8080; start it separately as above. The static website server does not provide the AI API.
 
 ```bash
 npm install
@@ -229,7 +243,7 @@ The viewport is a genuine WebGL 2 renderer, not a 2D fallback:
 | Resilience | GPU context-loss recovery, clear WebGL 2 error message with a retry button |
 | Proof | Live HUD: `WebGL 2 · <fps> fps · <draws> draws`; hover for the GPU/vendor string. Camera button exports a PNG of the current frame |
 
-Surface textures are generated in the browser without a CDN. Grass, sand, stone, wood, bark, roofs and foliage use small shared tiled maps; browser GLB exports embed these maps. AI planning makes network requests to Groq and, when needed, Tavily.
+Surface textures are generated in the browser without a CDN. Grass, sand, stone, wood, bark, roofs and foliage use small shared tiled maps; browser GLB exports embed these maps. AI planning checks connectivity with Wikipedia and sends search queries to Wikipedia when needed.
 
 ---
 
@@ -314,7 +328,7 @@ command works behind a preview proxy and from a phone on the local network.
 ## Tech stack
 
 React 19 · TypeScript 5.9 · Vite 7 · Three.js r186 · Zod 4 · IndexedDB · Vitest ·
-Testing Library · happy-dom · fake-indexeddb. Online AI uses the external Groq and Tavily APIs; usage is limited on free accounts.
+Testing Library · happy-dom · fake-indexeddb. AI planning uses local llama.cpp and optional Wikipedia search.
 
 ---
 
@@ -341,6 +355,6 @@ Testing Library · happy-dom · fake-indexeddb. Online AI uses the external Groq
 
 Phases 1–3 are complete pending real-device acceptance on desktop and Android.
 Next: click-to-place and terrain snapping → terrain sculpting/flattened building
-pads → performance profiling at 500+ objects → optional local-LLM provider →
+pads → performance profiling at 500+ objects → improved local-LLM planning →
 richer asset pipeline → native engine exports → PWA/offline install. Details and
 acceptance criteria are tracked in the architecture report.

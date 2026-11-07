@@ -20,3 +20,7 @@ data/private-accounts/
 # Python bytecode from the local phone server and its tests.
 __pycache__/
 *.py[cod]
+
+# Local models and incomplete downloads.
+*.gguf
+*.gguf.part

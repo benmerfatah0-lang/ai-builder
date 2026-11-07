@@ -2,8 +2,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
 const apiProxy = {
-  '/api/groq': { target: 'https://api.groq.com', changeOrigin: true, rewrite: () => '/openai/v1/chat/completions' },
-  '/api/tavily': { target: 'https://api.tavily.com', changeOrigin: true, rewrite: () => '/search' },
+  '/api': { target: 'http://127.0.0.1:8080', changeOrigin: true, headers: { origin: 'http://127.0.0.1:8080' } },
 };
 
 export default defineConfig({
