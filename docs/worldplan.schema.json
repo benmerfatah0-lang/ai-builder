@@ -480,6 +480,9 @@
                     "minimum": 0,
                     "maximum": 4294967295
                   },
+                  "desertHouse": {
+                    "type": "boolean"
+                  },
                   "learnedShape": {
                     "type": "object",
                     "properties": {
@@ -568,7 +571,12 @@
                   "cylinder",
                   "cone",
                   "torus",
-                  "plane"
+                  "plane",
+                  "mine-entrance",
+                  "mine-cart",
+                  "pickaxe",
+                  "excavator",
+                  "chest"
                 ]
               },
               "color": {
@@ -781,6 +789,9 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 4294967295
+                  },
+                  "desertHouse": {
+                    "type": "boolean"
                   },
                   "learnedShape": {
                     "type": "object",
@@ -1088,6 +1099,9 @@
                     "minimum": 0,
                     "maximum": 4294967295
                   },
+                  "desertHouse": {
+                    "type": "boolean"
+                  },
                   "learnedShape": {
                     "type": "object",
                     "properties": {
@@ -1385,6 +1399,9 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 4294967295
+                  },
+                  "desertHouse": {
+                    "type": "boolean"
                   },
                   "learnedShape": {
                     "type": "object",
@@ -1692,6 +1709,9 @@
                     "minimum": 0,
                     "maximum": 4294967295
                   },
+                  "desertHouse": {
+                    "type": "boolean"
+                  },
                   "learnedShape": {
                     "type": "object",
                     "properties": {
@@ -1981,6 +2001,9 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 4294967295
+                  },
+                  "desertHouse": {
+                    "type": "boolean"
                   },
                   "learnedShape": {
                     "type": "object",
@@ -2310,6 +2333,9 @@
                     "minimum": 0,
                     "maximum": 4294967295
                   },
+                  "desertHouse": {
+                    "type": "boolean"
+                  },
                   "learnedShape": {
                     "type": "object",
                     "properties": {
@@ -2628,6 +2654,9 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 4294967295
+                  },
+                  "desertHouse": {
+                    "type": "boolean"
                   },
                   "learnedShape": {
                     "type": "object",
@@ -2962,6 +2991,9 @@
                     "minimum": 0,
                     "maximum": 4294967295
                   },
+                  "desertHouse": {
+                    "type": "boolean"
+                  },
                   "learnedShape": {
                     "type": "object",
                     "properties": {
@@ -3286,6 +3318,9 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 4294967295
+                  },
+                  "desertHouse": {
+                    "type": "boolean"
                   },
                   "learnedShape": {
                     "type": "object",

@@ -147,6 +147,8 @@ export const objectMetaSchema = z.object({
   role: z.string().min(1).max(40).optional(),
   /** Seed for this object's own variation, independent of the world seed. */
   seed: z.number().int().min(0).max(4294967295).optional(),
+  /** A flat-roof desert house variation used by the mining town. */
+  desertHouse: z.boolean().optional(),
   /** Parameters of an app-generated trainable procedural design. */
   learnedShape: z.object({ detail: z.number().finite().min(0.7).max(1.3), seed: z.number().int().min(0).max(4294967295) }).optional(),
   /** Logical region used for regional regeneration, e.g. `west-field`. */
@@ -172,6 +174,7 @@ export const primitiveKindSchema = z.enum([
   'cone',
   'torus',
   'plane',
+  'mine-entrance', 'mine-cart', 'pickaxe', 'excavator', 'chest',
 ]);
 
 export const treeVariantSchema = z.enum(['pine', 'broadleaf', 'palm', 'cactus', 'bush']);

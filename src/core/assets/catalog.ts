@@ -4,6 +4,7 @@ import type {
   BuildingVariant,
   RockVariant,
   TreeVariant,
+  PrimitiveKind,
   WorldObject,
   WorldPlan,
 } from '../world-plan/schema';
@@ -73,6 +74,16 @@ function primitiveAsset(
       primitive,
       color,
       transform: { ...createTransform(position), scale },
+    }),
+  };
+}
+
+function miningAsset(id: PrimitiveKind, label: string, dimensions: [number, number, number], color: string, description: string): AssetDefinition {
+  return {
+    id, label, category: 'structures', description,
+    create: (_rng, position) => ({
+      ...baseObject(label, position, { category: id === 'mine-entrance' ? 'structure' : 'prop', geometry: `primitive.${id}`, dimensions }),
+      kind: 'primitive', primitive: id, color,
     }),
   };
 }
@@ -182,6 +193,11 @@ export function createLantern(position: [number, number, number], color = '#ffc4
 }
 
 export const ASSET_LIBRARY: AssetDefinition[] = [
+  miningAsset('mine-entrance', 'Mine entrance', [12, 6, 10], '#9b7555', 'A decorative mine entrance, not a navigable underground tunnel.'),
+  miningAsset('mine-cart', 'Mine cart', [3, 2, 2], '#6e4c32', 'Wooden mining cart with wheels and gold ore.'),
+  miningAsset('pickaxe', 'Pickaxe', [2, 2.5, 1], '#765638', 'A static pickaxe prop.'),
+  miningAsset('excavator', 'Excavator', [5.5, 4.5, 3], '#bd933a', 'A static low-poly excavator.'),
+  miningAsset('chest', 'Chest', [1.9, 1.6, 1.4], '#805631', 'A closed wooden treasure chest.'),
   primitiveAsset('box', 'Cube', 'box', '#b9b3a8', 'A six-sided block for buildings and props.'),
   primitiveAsset('sphere', 'Sphere', 'sphere', '#9aa7b5', 'A smooth sphere for orbs and markers.'),
   primitiveAsset('cylinder', 'Cylinder', 'cylinder', '#a39078', 'A cylinder for columns and platforms.'),

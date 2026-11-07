@@ -11,6 +11,7 @@ import { NumberField, SelectField } from '../../../ui/controls';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
 
 const EXAMPLES = [
+  'مدينة صحراوية قديمة فيها منجم عميق للذهب بعربات ومعاول وحفارات وصناديق',
   'بيت على يمين شجرة و 3 صخور',
   'منزل بجانب برج و 2 نخلة',
   'جزيرة استوائية فيها نخيل وبحر عند الغروب',
@@ -85,7 +86,9 @@ export function AiPanel({ notify, mapTrainer }: {
       dispatch({ type: 'replacePlan', plan: report.plan });
       setResult(interpretation);
       const learnedCount = report.plan.objects.filter((object) => object.meta.learnedShape).length;
+      const hasMine = report.plan.objects.some((object) => object.kind === 'primitive' && object.primitive === 'mine-entrance');
       setNotes([...(interpretation.notes ?? []),
+        ...(hasMine ? ['المنجم مدخل زخرفي يوحي بالعمق فقط؛ لا توجد أنفاق محفورة أو قابلة للدخول، والأدوات والحفارات ثابتة.'] : []),
         learnedCount ? `تم توليد ${learnedCount} من أشكال البيت أو الشجرة عريضة الأوراق أو الصخرة من النموذج الصغير.` :
           'لم يُستخدم تدريب الأشكال لهذا الوصف؛ جرّب وصفاً مثل: بيت وشجرة وصخرة. المزارع تحتفظ بقالبها الخاص.',
         ...report.warnings].slice(0, 12));

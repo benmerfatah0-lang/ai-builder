@@ -8,6 +8,11 @@ export interface AssetRequest {
 
 interface Match { id: string; start: number; end: number; text: string }
 const ALIASES: [string, string][] = [
+  ['mine-entrance', 'gold mines?|mines?|منجمين|منجمان|مناجم|منجم'],
+  ['mine-cart', 'mine carts?|mining carts?|carts?|عربات|عربة|عربه'],
+  ['pickaxe', 'pickaxes?|معاول|معول'],
+  ['excavator', 'excavators?|diggers?|حفارات|حفارة|حفاره'],
+  ['chest', 'chests?|treasure chests?|صناديق|صندوق|صنديق'],
   ['pine', 'pine trees?|pines?|اشجار الصنوبر|شجر الصنوبر|صنوبر'],
   ['palm', 'palm trees?|palms?|نخلتين|نخلتان|نخيل|نخلة|نخله|نخل'],
   ['broadleaf', 'broadleaf trees?|broadleaf'],
@@ -44,7 +49,7 @@ function normalize(text: string): string {
 }
 
 function countBefore(segment: string): number | undefined {
-  const match = /(?:^|\s)(\d{1,3}|one|two|three|four|five|six|ten|واحد|واحدة|واحده|اثنين|اثنان|اثنتين|ثلاث|ثلاثة|ثلاثه|اربع|اربعة|اربعه|خمس|خمسة|خمسه|عشر|عشرة|عشره)\s*$/u.exec(segment);
+  const match = /(?:^|\s)(?:و\s*)?(\d{1,3}|one|two|three|four|five|six|ten|واحد|واحدة|واحده|اثنين|اثنان|اثنتين|ثلاث|ثلاثة|ثلاثه|اربع|اربعة|اربعه|خمس|خمسة|خمسه|عشر|عشرة|عشره)\s*$/u.exec(segment);
   if (!match?.[1]) return undefined;
   return WORD_NUMBERS[match[1]] ?? Number(match[1]);
 }
@@ -63,7 +68,7 @@ export function parseAssetRequests(prompt: string): AssetRequest[] | undefined {
   const text = normalize(prompt);
   const matches: Match[] = [];
   for (const [id, alternatives] of ALIASES) {
-    const regex = new RegExp(`(?<![\\p{L}\\p{N}_])(?:و?ال|و)?(?:${alternatives})(?![\\p{L}\\p{N}_])`, 'gu');
+    const regex = new RegExp(`(?<![\\p{L}\\p{N}_])(?:و?ب?ال|و?ب|و)?(?:${alternatives})(?![\\p{L}\\p{N}_])`, 'gu');
     for (const match of text.matchAll(regex)) {
       if (match.index === undefined) continue;
       matches.push({ id, start: match.index, end: match.index + match[0].length, text: match[0] });
@@ -84,7 +89,7 @@ export function parseAssetRequests(prompt: string): AssetRequest[] | undefined {
   // requests use this asset layout instead.
   const hasArabic = /[\u0600-\u06ff]/.test(text);
   const hasRelation = selected.some((m, i) => i > 0 && directionBetween(text.slice(selected[i - 1]!.end, m.start)));
-  const hasSpecial = selected.some((m) => ['box', 'sphere', 'cylinder', 'cone', 'torus', 'wood-fence', 'dirt-path'].includes(m.id));
+  const hasSpecial = selected.some((m) => ['box', 'sphere', 'cylinder', 'cone', 'torus', 'wood-fence', 'dirt-path', 'mine-entrance', 'mine-cart', 'pickaxe', 'excavator', 'chest'].includes(m.id));
   if (!hasArabic && !hasRelation && !hasSpecial) return undefined;
 
   const requests: AssetRequest[] = [];
@@ -93,7 +98,7 @@ export function parseAssetRequests(prompt: string): AssetRequest[] | undefined {
     const between = text.slice(index ? selected[index - 1]!.end : 0, match.start);
     if (/(?:بدون|دون|بلا|without|no)\s*(?:ال)?\s*$/u.test(between)) continue;
     const number = countBefore(between);
-    const plural = /(?:trees|rocks|houses|towers|lanterns|palms|cubes|spheres|اشجار|بيوت|منازل|صخور|فوانيس|نخيل|مكعبات|شجيرات)$/.test(match.text);
+    const plural = /(?:trees|rocks|houses|towers|lanterns|palms|cubes|spheres|اشجار|بيوت|منازل|صخور|فوانيس|نخيل|مكعبات|شجيرات|عربات|معاول|حفارات|صناديق|مناجم|carts|pickaxes|excavators|chests|mines)$/.test(match.text);
     const dual = /(?:تين|تان|لين|لان|جين|جان|يتين|يتان)$/.test(match.text);
     requests.push({ assetId: match.id, count: number ?? (dual ? 2 : plural ? 3 : 1) });
     kept.push(match);
@@ -105,6 +110,20 @@ export function parseAssetRequests(prompt: string): AssetRequest[] | undefined {
     if (!direction) continue;
     if (direction === 'near') requests[i]!.relation = { target: i - 1, direction };
     else requests[i - 1]!.relation = { target: i, direction };
+  }
+  // A city with a mine needs buildings, even when the user didn't specify a count.
+  // Keep explicit relations/counts and associate otherwise unplaced mining props with the mine.
+  const mineIndex = requests.findIndex((request) => request.assetId === 'mine-entrance');
+  if (mineIndex >= 0) {
+    const noHouse = /(?:بدون|دون|بلا|without|no)\s+(?:ال)?(?:بيوت|منازل|بيت|منزل|houses?|homes?)/i.test(text);
+    if (!noHouse && /(?:مدينه|مدينة|city|village|قريه)/i.test(text) && !requests.some((request) => request.assetId === 'house')) {
+      requests.push({ assetId: 'house', count: 5, relation: { target: mineIndex, direction: 'near' } });
+    }
+    for (const [index, request] of requests.entries()) {
+      if (index !== mineIndex && !request.relation && ['mine-cart', 'pickaxe', 'excavator', 'chest'].includes(request.assetId)) {
+        request.relation = { target: mineIndex, direction: 'near' };
+      }
+    }
   }
   return requests.length ? requests : undefined;
 }

@@ -64,7 +64,10 @@ export function buildAssetLayout(
       let placed = 0;
       for (let n = 0; n < request.count && objects.length < maxObjects; n += 1) {
         const baseObject = asset.create(rng, [0, 0, 0]);
-        const object = intent.shapeModel ? applyShapeModel(baseObject, intent.shapeModel, rng) : baseObject;
+        const themed = baseObject.kind === 'building' && baseObject.variant === 'house' && intent.biome === 'desert' && requests.some((item) => item.assetId === 'mine-entrance')
+          ? { ...baseObject, color: '#c5a67c', roofColor: '#9b805f', meta: { ...baseObject.meta, desertHouse: true } }
+          : baseObject;
+        const object = intent.shapeModel ? applyShapeModel(themed, intent.shapeModel, rng) : themed;
         let position: [number, number, number] | undefined;
         for (let attempt = 0; attempt < 120; attempt += 1) {
           const [x, z] = candidate(request.relation?.direction, anchor, attempt);

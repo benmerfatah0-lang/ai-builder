@@ -14,6 +14,7 @@ export const SUPPORTED_GEOMETRY: readonly string[] = [
   'primitive.cone',
   'primitive.torus',
   'primitive.plane',
+  'primitive.mine-entrance', 'primitive.mine-cart', 'primitive.pickaxe', 'primitive.excavator', 'primitive.chest',
   'tree.pine',
   'tree.broadleaf',
   'tree.palm',

@@ -17,6 +17,7 @@ import { createTerrainSampler } from '../../core/generation/terrain';
 import { isEffectivelyVisible } from '../../core/world-plan/hierarchy';
 import { addMesh, material, mergeStaticMeshes } from './kit';
 import { getSurfaceTexture } from './textures';
+import { buildMiningObject } from './miningObjects';
 import { buildBarn, buildBush, buildBridge, buildCoop, buildFence, buildField, buildPath, buildRiver } from './proceduralObjects';
 
 export interface BuildSceneOptions {
@@ -171,6 +172,10 @@ export function createWaterMesh(plan: WorldPlan): THREE.Mesh | null {
 }
 
 function buildPrimitive(object: PrimitiveObject): THREE.Group {
+  if (['mine-entrance', 'mine-cart', 'pickaxe', 'excavator', 'chest'].includes(object.primitive)) {
+    const mining = buildMiningObject(object);
+    if (mining) return mining;
+  }
   const group = new THREE.Group();
   const mat = material(object.color, { roughness: 0.78, flatShading: object.primitive !== 'torus' });
   let geometry: THREE.BufferGeometry;
@@ -347,7 +352,19 @@ function buildRock(object: RockObject): THREE.Group {
   return group;
 }
 
+function buildDesertHouse(object: BuildingObject): THREE.Group {
+  const group = new THREE.Group();
+  const walls = material(object.color, { roughness: 0.95, map: getSurfaceTexture('plaster') });
+  const dark = material('#493224', { roughness: 1 });
+  addMesh(group, new THREE.BoxGeometry(3.4, 2.7, 3), walls, [0, 1.35, 0]);
+  addMesh(group, new THREE.BoxGeometry(3.65, 0.24, 3.25), walls, [0, 2.8, 0]);
+  addMesh(group, new THREE.BoxGeometry(0.8, 1.5, 0.1), dark, [0, 0.75, 1.55]);
+  for (const x of [-1, 1]) addMesh(group, new THREE.BoxGeometry(0.46, 0.55, 0.1), dark, [x, 1.75, 1.55]);
+  return group;
+}
+
 function buildBuilding(object: BuildingObject): THREE.Group {
+  if (object.variant === 'house' && object.meta.desertHouse) return buildDesertHouse(object);
   if (object.variant === 'house' && object.meta.learnedShape) return buildLearnedHouse(object);
   const group = new THREE.Group();
   const wall = material(object.color, { roughness: 0.93, map: getSurfaceTexture(object.variant === 'house' ? 'plaster' : 'masonry') });

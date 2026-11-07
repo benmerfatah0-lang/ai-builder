@@ -18,6 +18,14 @@ describe('lightweight local planning interface', () => {
     expect(screen.getByRole('link', { name: 'مصدر ↗' }).getAttribute('href')).toContain('ar.wikipedia.org/wiki/');
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/online', '/api/search']);
   }, 20000);
+  it('generates the mining example and clearly explains that the mine is a facade', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"online":true}')));
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.click(screen.getByRole('button', { name: /مدينة صحراوية قديمة فيها منجم/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    expect(await screen.findByText(/المنجم مدخل زخرفي يوحي بالعمق فقط/)).toBeTruthy();
+  }, 20000);
   it('shows an internet error without silently generating offline', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 502 })); vi.stubGlobal('fetch', fetchMock);
     render(<App />);
