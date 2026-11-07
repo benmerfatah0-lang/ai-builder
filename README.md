@@ -13,7 +13,7 @@ as a project file or a glTF 2.0 model for Godot and Unity.
 
 ---
 
-## تشغيل نسخة الهاتف في Termux (Gemini)
+## تشغيل نسخة الهاتف في Termux (OpenAI)
 
 1. افتح Termux وثبّت Python وcurl:
 
@@ -28,12 +28,12 @@ as a project file or a glTF 2.0 model for Godot and Unity.
    python -m http.server 8080 --bind 127.0.0.1
    ```
 3. اترك Termux يعمل وافتح في متصفح الهاتف: **http://127.0.0.1:8080/world-builder-mobile.html**. للوصول لاحقاً شغّل أمر Python من نفس المجلد مجدداً. لإيقافه اضغط Ctrl+C. إذا ظهر 404 فتأكد من نجاح التنزيل ووجود الملف داخل `~/world-builder`.
-4. أنشئ مفتاح Gemini من [Google AI Studio](https://aistudio.google.com/api-keys) وأدخله في لوحة AI داخل التطبيق، **ولا ترسله في المحادثة**. يتطلب إنشاء العالم اتصالاً بالإنترنت. لا تحتاج لاستضافة أو خادم حساب سحابي. لا توجد مزامنة بين الأجهزة.
+4. أنشئ مفتاح OpenAI API من [OpenAI Platform](https://platform.openai.com/api-keys) وأدخله في لوحة AI داخل التطبيق، **ولا ترسله في المحادثة**. يتطلب إنشاء العالم اتصالاً بالإنترنت. لا تحتاج لاستضافة أو خادم حساب سحابي. لا توجد مزامنة بين الأجهزة.
 5. للحفظ على الهاتف أدخل كلمة مرور قوية واضغط **حفظ مشفّر**. بعد إعادة فتح الصفحة أدخل كلمة المرور واضغط **فتح المفتاح**. اختر **حذف المفتاح** لإزالته. يحتفظ المتصفح بالمفتاح مشفراً بـ PBKDF2 وAES-GCM في التخزين المحلي على نفس العنوان والمتصفح؛ مسح بيانات المتصفح يمحوه. لا يمكن استرجاعه إذا نسيت كلمة المرور، وعندها أنشئ مفتاح API جديداً. المفتاح المفتوح في ذاكرة الصفحة ويمكن لإضافات خبيثة أو جهاز مخترق سرقته.
 
-**التكلفة والتوافر:** يوفر Google حصة مجانية محدودة لبعض الحسابات والنماذج، بما في ذلك البحث في 2.5 وفق صفحة الأسعار، لكنها ليست مضمونة للجميع وقد تختلف حسب البلد والحساب أو تتغير. إذا لم يكن النموذج متاحاً جرّب الخيار الآخر في التطبيق؛ قد لا يتوفر أي منهما لحسابك. لا تفعّل الفوترة إذا لم ترغب بتكاليف. عند استخدام مشروع مدفوع قد تفرض Google رسوماً، بما فيها البحث. راجع [الأسعار](https://ai.google.dev/gemini-api/docs/pricing) و[حدود الاستخدام](https://ai.google.dev/gemini-api/docs/rate-limits) في حسابك. في الخطة المجانية قد تستخدم Google المدخلات والمخرجات لتحسين منتجاتها، فلا ترسل معلومات حساسة.
+**التكلفة والأمان:** يستخدم التطبيق `gpt-5.4-nano` مع أداة البحث، وقد تُفرض رسوم على التوليد والبحث. يتطلب استخدام API رصيداً أو فوترة صالحة حسب حسابك؛ لا يعني اشتراك ChatGPT تلقائياً أن لديك رصيد API. راجع [الأسعار](https://openai.com/api/pricing/) و[الفوترة](https://platform.openai.com/settings/organization/billing/overview) قبل الاستخدام. يرسل المتصفح المفتاح مباشرةً إلى OpenAI؛ وهو ليس محمياً من الإضافات الخبيثة أو من جهاز مخترق، ولا يُوصى بهذا الأسلوب للمنتجات العامة. التشفير يحمي المفتاح المحفوظ فقط وليس المفتاح المفتوح. استخدم هاتفاً موثوقاً، وراقب الاستخدام وألغِ المفتاح إن شككت في تسريبه. خزنة Gemini السابقة منفصلة ولا تُرسل إلى OpenAI.
 
-يرسل التطبيق الوصف إلى Gemini مع إمكانية Google Search؛ يقرر النموذج إن كان البحث ضرورياً. يعرض التطبيق المصادر عند ورودها، ويصرح عند عدم وجود ما يؤكد البحث. لا يوجد بديل محلي صامت إذا فشل الاتصال أو التحقق. لا يجلب البحث نماذج ثلاثية الأبعاد؛ البناء محدود بالأصول المتاحة وقد تكون النتيجة تقريبية. نموذج المزرعة له ترتيب خاص. توليد JSON يستخدم نصاً وتحقيقاً محلياً لأن الدمج مع structured output والأدوات غير متاح في Gemini 2.5؛ قد يلزم إعادة المحاولة إذا لم يُرجع Gemini مخططاً صالحاً.
+يرسل التطبيق الوصف إلى OpenAI مع أداة البحث؛ يقرر النموذج إن كان البحث ضرورياً. يعرض التطبيق المصادر عند ورودها، ويصرح عند عدم وجود ما يؤكد البحث. لا يوجد بديل محلي صامت إذا فشل الاتصال أو التحقق. لا يجلب البحث نماذج ثلاثية الأبعاد؛ البناء محدود بالأصول المتاحة وقد تكون النتيجة تقريبية. نموذج المزرعة له ترتيب خاص.
 
 To rebuild the standalone phone file after source changes, run `npm run build:mobile`.
 
@@ -91,7 +91,7 @@ To rebuild the standalone phone file after source changes, run `npm run build:mo
   floating toolbar, inspector) and a mobile layout with a bottom dock, bottom
   sheet, touch orbit + pinch-zoom, safe-area handling and 16 px inputs.
 
-AI planning uses Gemini and sends the description to Google. Free-tier limits and availability apply.
+AI planning uses the OpenAI API and sends the description to OpenAI; usage may incur charges.
 No external 3D assets are downloaded; rendering, saving and export are local.
 
 ### What is deliberately not there yet
@@ -116,7 +116,7 @@ Full risk list and roadmap: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ## Quick start
 
 Requirements: **Node.js 20.19+ or 22.12+** (Vite 7). Online generation also
-requires internet and a Gemini API key. The standalone phone version needs no app server.
+requires internet and an OpenAI API key. The standalone phone version needs no app server.
 
 ```bash
 npm install
@@ -224,7 +224,7 @@ The viewport is a genuine WebGL 2 renderer, not a 2D fallback:
 | Resilience | GPU context-loss recovery, clear WebGL 2 error message with a retry button |
 | Proof | Live HUD: `WebGL 2 · <fps> fps · <draws> draws`; hover for the GPU/vendor string. Camera button exports a PNG of the current frame |
 
-Surface textures are generated in the browser without a CDN. Grass, sand, stone, wood, bark, roofs and foliage use small shared tiled maps; browser GLB exports embed these maps. AI planning makes network requests to Gemini.
+Surface textures are generated in the browser without a CDN. Grass, sand, stone, wood, bark, roofs and foliage use small shared tiled maps; browser GLB exports embed these maps. AI planning makes network requests to OpenAI.
 
 ---
 
@@ -309,7 +309,7 @@ command works behind a preview proxy and from a phone on the local network.
 ## Tech stack
 
 React 19 · TypeScript 5.9 · Vite 7 · Three.js r186 · Zod 4 · IndexedDB · Vitest ·
-Testing Library · happy-dom · fake-indexeddb. Online AI uses the external Gemini API, with a limited free tier for eligible accounts.
+Testing Library · happy-dom · fake-indexeddb. Online AI uses the external OpenAI API, which may incur charges.
 
 ---
 

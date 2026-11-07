@@ -1,5 +1,5 @@
 /** A passphrase-protected key vault tied to this browser origin, not a cloud sync. */
-const STORAGE_KEY = 'worldbuilder.gemini-vault.v1';
+const STORAGE_KEY = 'worldbuilder.openai-vault.v1';
 const ITERATIONS = 310000;
 const encoder = new TextEncoder();
 
@@ -24,7 +24,7 @@ export function hasLocalKey(storage?: Storage): boolean {
 }
 export async function saveLocalKey(apiKey: string, passphrase: string, storage?: Storage): Promise<void> {
   const key = apiKey.trim();
-  if (key.length < 10 || key.length > 512) throw new Error('أدخل مفتاح Gemini صحيحاً أولاً.');
+  if (key.length < 10 || key.length > 512) throw new Error('أدخل مفتاح OpenAI صحيحاً أولاً.');
   if (passphrase.length < 8) throw new Error('اختر كلمة مرور من 8 أحرف على الأقل.');
   subtle();
   const salt = crypto.getRandomValues(new Uint8Array(16));

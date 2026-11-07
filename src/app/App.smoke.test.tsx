@@ -27,7 +27,7 @@ async function bootDesktop() {
 
 function openTab(name: string) {
   fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${name}$`) }));
-  if (name === 'AI') fireEvent.change(screen.getByLabelText('Gemini API key'), { target: { value: 'test-key' } });
+  if (name === 'AI') fireEvent.change(screen.getByLabelText('OpenAI API key'), { target: { value: 'test-key' } });
 }
 
 describe('application runtime', () => {

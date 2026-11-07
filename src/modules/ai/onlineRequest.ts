@@ -10,7 +10,7 @@ export const SCALES = ['small', 'medium', 'large'] as const;
 export const STYLES = ['stylized', 'cartoon', 'natural'] as const;
 export const DENSITIES = ['sparse', 'normal', 'dense'] as const;
 
-// JSON schema is supplied in the prompt; Gemini 2.5 cannot combine enforced JSON schema with search. Limits are checked locally
+// Responses API structured output uses JSON Schema. Limits are checked locally
 // too, because the model and any text retrieved from the web are untrusted.
 const schema = {
   type: 'object', additionalProperties: false,
@@ -36,9 +36,10 @@ const INSTRUCTIONS = `You are a 3D world planner, not a chat assistant. Use web 
 
 export function createOnlineRequest(prompt: string) {
   return {
-    systemInstruction: { parts: [{ text: `${INSTRUCTIONS} Return ONLY a valid JSON object matching this schema, without markdown: ${JSON.stringify(schema)}` }] },
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    tools: [{ google_search: {} }],
-    generationConfig: { maxOutputTokens: 4096 },
+    model: 'gpt-5.4-nano', instructions: INSTRUCTIONS, input: prompt,
+    reasoning: { effort: 'low' }, store: false,
+    tools: [{ type: 'web_search' }], tool_choice: 'auto',
+    text: { format: { type: 'json_schema', name: 'world_plan', strict: true, schema } },
+    max_output_tokens: 6000,
   };
 }

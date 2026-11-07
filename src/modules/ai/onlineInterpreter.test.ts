@@ -9,27 +9,32 @@ const plan = {
     { assetId: 'palm', count: 2, direction: null, target: null },
   ], summary: 'برج ونخيل عند الغروب', limitations: ['البرج تقريبي'],
 };
-function apiResponse(value: unknown = plan) {
-  return { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(value) }] },
-    groundingMetadata: { webSearchQueries: ['test'], groundingChunks: [
-      { web: { uri: 'https://example.com/place', title: 'Place' } },
-      { web: { uri: 'javascript:alert(1)', title: 'Unsafe' } },
-    ] },
-  }] };
+function apiResponse(value: unknown = plan, searched = true) {
+  return { status: 'completed', output: [
+    ...(searched ? [{ type: 'web_search_call', status: 'completed' }] : []),
+    { type: 'message', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify(value), annotations: [
+      { type: 'url_citation', url: 'https://example.com/place', title: 'Place' },
+      { type: 'url_citation', url: 'javascript:alert(1)', title: 'Unsafe' },
+    ] }] },
+  ] };
 }
 afterEach(() => vi.unstubAllGlobals());
-describe('Gemini online interpreter', () => {
-  it('requests Google Search and validates the response before building', async () => {
+describe('OpenAI online interpreter', () => {
+  it('requests optional web search and validates the result before building', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(apiResponse()), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     const result = await interpretOnline('برج أثري في الصحراء', 'test-key', { seed: 12, scale: 'large' });
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
-    expect(init.headers['x-goog-api-key']).toBe('test-key');
+    expect(url).toBe('https://api.openai.com/v1/responses');
+    expect(init.headers.Authorization).toBe('Bearer test-key');
     const request = JSON.parse(init.body as string);
-    expect(request.tools).toEqual([{ google_search: {} }]);
-    expect(request.generationConfig.responseMimeType).toBeUndefined(); // 2.5 cannot combine schema enforcement with tools
-    expect(request.contents[0].parts[0].text).toBe('برج أثري في الصحراء');
+    expect(request.model).toBe('gpt-5.4-nano');
+    expect(request.tools).toEqual([{ type: 'web_search' }]);
+    expect(request.tool_choice).toBe('auto');
+    expect(request.store).toBe(false);
+    expect(request.text.format.type).toBe('json_schema');
+    expect(request.input).toBe('برج أثري في الصحراء');
+    expect(JSON.stringify(request)).not.toContain('test-key');
     expect(result.searched).toBe(true);
     expect(result.sources).toEqual([{ title: 'Place', url: 'https://example.com/place' }]);
     expect(result.notes).toContain('البرج تقريبي');
@@ -47,7 +52,7 @@ describe('Gemini online interpreter', () => {
     expect(mock).not.toHaveBeenCalled();
     await expect(interpretOnline('بيت', 'test-key')).rejects.toThrow('مفتاح');
     mock.mockResolvedValue(new Response('', { status: 429 }));
-    await expect(interpretOnline('بيت', 'test-key')).rejects.toThrow('حد الاستخدام');
+    await expect(interpretOnline('بيت', 'test-key')).rejects.toThrow('حد الطلبات');
     mock.mockResolvedValue(new Response('', { status: 404 }));
     await expect(interpretOnline('بيت', 'test-key')).rejects.toThrow('النموذج غير متاح');
   });
@@ -64,17 +69,17 @@ describe('Gemini online interpreter', () => {
       { assetId: 'house', count: 1, direction: null, target: null },
     ] }))));
     await expect(interpretOnline('مدينة', 'test-key')).rejects.toThrow('كثيرة');
-    mock.mockResolvedValue(new Response(JSON.stringify({ candidates: [{ finishReason: 'MAX_TOKENS' }] })));
+    mock.mockResolvedValue(new Response(JSON.stringify({ status: 'incomplete', output: [] })));
     await expect(interpretOnline('مدينة', 'test-key')).rejects.toThrow('لم يكتمل');
+    mock.mockResolvedValue(new Response(JSON.stringify({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'not json' }] }] })));
+    await expect(interpretOnline('مدينة', 'test-key')).rejects.toThrow('مخططاً صالحاً');
   });
-  it('does not expose the key on network failure, and accepts fenced JSON without search', async () => {
+  it('does not expose the key on network failure and reports when no search was used', async () => {
     const mock = vi.fn().mockRejectedValue(new Error('test-key must not be echoed'));
     vi.stubGlobal('fetch', mock);
     try { await interpretOnline('بيت', 'test-key'); } catch (error) { expect(String(error)).not.toContain('test-key'); }
-    mock.mockResolvedValue(new Response(JSON.stringify({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: `\`\`\`json\n${JSON.stringify(plan)}\n\`\`\`` }] } }] })));
-    const result = await interpretOnline('بيت', 'test-key', {}, 'gemini-2.5-flash-lite');
+    mock.mockResolvedValue(new Response(JSON.stringify(apiResponse(plan, false))));
+    const result = await interpretOnline('بيت', 'test-key');
     expect(result.searched).toBe(false);
-    expect(result.sources).toEqual([]);
-    expect(mock.mock.calls[1]![0]).toContain('gemini-2.5-flash-lite');
   });
 });

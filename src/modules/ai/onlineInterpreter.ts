@@ -17,66 +17,81 @@ const planSchema = z.object({
 }).strict();
 
 
-export type GeminiModel = 'gemini-2.5-flash' | 'gemini-2.5-flash-lite';
+interface ContentItem { type?: string; text?: string; annotations?: unknown[] }
+interface OutputItem { type?: string; status?: string; content?: ContentItem[] }
+interface ApiResponse { status?: string; output?: OutputItem[] }
 
-function httpError(status: number): string {
-  if (status === 400 || status === 401 || status === 403) return 'تعذّر استخدام مفتاح Gemini أو الميزة في حسابك. راجع المفتاح وصلاحيات الحساب.';
-  if (status === 404) return 'النموذج غير متاح لهذا الحساب. جرّب النموذج الآخر أو راجع النماذج المتاحة في Google AI Studio.';
-  if (status === 429) return 'تم بلوغ حد الاستخدام. انتظر أو راجع الحصة المجانية في Google AI Studio.';
-  return `تعذّر الاتصال بخدمة Gemini (رمز ${status}). حاول مجدداً.`;
+function citations(output: OutputItem[]): { title: string; url: string }[] {
+  const sources: { title: string; url: string }[] = [];
+  for (const item of output) for (const content of item.content ?? []) {
+    for (const annotation of content.annotations ?? []) {
+      if (!annotation || typeof annotation !== 'object') continue;
+      const data = annotation as Record<string, unknown>;
+      // Responses annotations may expose the citation directly or nested.
+      const nested = data.url_citation && typeof data.url_citation === 'object'
+        ? data.url_citation as Record<string, unknown> : data;
+      if (data.type !== 'url_citation' || typeof nested.url !== 'string') continue;
+      try {
+        const url = new URL(nested.url);
+        if (url.protocol !== 'https:' && url.protocol !== 'http:') continue;
+        if (sources.some((source) => source.url === url.href)) continue;
+        sources.push({ title: typeof nested.title === 'string' ? nested.title.slice(0, 120) : url.hostname, url: url.href });
+      } catch { /* Ignore invalid or unsafe URLs from the remote response. */ }
+      if (sources.length >= 8) return sources;
+    }
+  }
+  return sources;
 }
 
-/** Gemini uses a free tier when the user's project and model qualify. */
+function httpError(status: number): string {
+  if (status === 401 || status === 403) return 'تعذّر التحقق من مفتاح API أو صلاحياته. راجع المفتاح وإعدادات الحساب.';
+  if (status === 404) return 'النموذج غير متاح لهذا الحساب. راجع صلاحيات النموذج في OpenAI.';
+  if (status === 429) return 'تم تجاوز حد الطلبات أو الرصيد. راجع حدود الاستخدام والفوترة ثم حاول مجدداً.';
+  return `تعذّر الاتصال بخدمة الذكاء الاصطناعي (رمز ${status}). حاول مجدداً.`;
+}
+
+/** Sends the prompt directly to OpenAI. Storage of the key is controlled separately by the local vault. */
 export async function interpretOnline(
   prompt: string,
   apiKey: string,
   options: InterpretOptions = {},
-  model: GeminiModel = 'gemini-2.5-flash',
 ): Promise<PromptInterpretation> {
-  if (!apiKey.trim()) throw new Error('أدخل مفتاح Gemini API داخل التطبيق لتفعيل البحث والإنشاء.');
-  if (model !== 'gemini-2.5-flash' && model !== 'gemini-2.5-flash-lite') throw new Error('النموذج غير مدعوم.');
+  if (!apiKey.trim()) throw new Error('أدخل مفتاح OpenAI API داخل التطبيق لتفعيل البحث والإنشاء.');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 90000);
   let response: Response;
   try {
-    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey.trim() },
-      body: JSON.stringify(createOnlineRequest(prompt)), signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey.trim()}` },
+      body: JSON.stringify(createOnlineRequest(prompt)),
+      signal: controller.signal,
     });
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw new Error('انتهت مهلة الاتصال. تحقّق من الإنترنت وحاول مجدداً.');
-    throw new Error('تعذّر الاتصال بالإنترنت أو بخدمة Gemini. تحقّق من الاتصال وحاول مجدداً.');
-  } finally { clearTimeout(timeout); }
-  if (!response.ok) throw new Error(httpError(response.status));
-  const envelope = z.object({
-    candidates: z.array(z.object({
-      finishReason: z.string().optional(),
-      content: z.object({ parts: z.array(z.object({ text: z.string().optional(), thought: z.boolean().optional() }).passthrough()) }).optional(),
-      groundingMetadata: z.object({
-        webSearchQueries: z.array(z.string()).optional(),
-        groundingChunks: z.array(z.object({ web: z.object({ uri: z.string().optional(), title: z.string().optional() }).optional() }).passthrough()).optional(),
-      }).passthrough().optional(),
-    }).passthrough()).optional(),
-  }).passthrough();
-  const parsedEnvelope = envelope.safeParse(await response.json().catch(() => null));
-  const candidate = parsedEnvelope.success ? parsedEnvelope.data.candidates?.[0] : undefined;
-  if (!candidate || (candidate.finishReason && candidate.finishReason !== 'STOP')) throw new Error('لم يكتمل رد Gemini. جرّب وصفاً أبسط أو أعد المحاولة.');
-  const text = candidate.content?.parts.filter((part) => !part.thought).map((part) => part.text ?? '').join('').trim() ?? '';
-  const json = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-  let raw: unknown;
-  try { raw = JSON.parse(json); }
-  catch { throw new Error('لم تُرجع الخدمة مخططاً صالحاً للعالم. حاول مجدداً.'); }
-  const sources: { title: string; url: string }[] = [];
-  for (const chunk of candidate.groundingMetadata?.groundingChunks ?? []) {
-    try {
-      const url = new URL(chunk.web?.uri ?? '');
-      if ((url.protocol === 'https:' || url.protocol === 'http:') && !sources.some((item) => item.url === url.href)) {
-        sources.push({ url: url.href, title: chunk.web?.title?.slice(0, 120) || url.hostname });
-      }
-    } catch { /* Ignore invalid links from the service. */ }
-    if (sources.length >= 8) break;
+    throw new Error('تعذّر الاتصال بالإنترنت أو بخدمة OpenAI. تحقّق من الاتصال وحاول مجدداً.');
+  } finally {
+    clearTimeout(timeout);
   }
+  if (!response.ok) throw new Error(httpError(response.status));
+  let responseData: ApiResponse;
+  try {
+    const envelope = z.object({
+      status: z.string().optional(),
+      output: z.array(z.object({
+        type: z.string().optional(), status: z.string().optional(),
+        content: z.array(z.object({ type: z.string().optional(), text: z.string().optional(), annotations: z.array(z.unknown()).optional() }).passthrough()).optional(),
+      }).passthrough()).optional(),
+    }).passthrough();
+    responseData = envelope.parse(await response.json());
+  } catch { throw new Error('استجابت الخدمة ببيانات غير صالحة. حاول مجدداً.'); }
+  if (responseData.status && responseData.status !== 'completed') throw new Error('لم يكتمل رد الذكاء الاصطناعي. حاول وصفاً أقصر أو أعد المحاولة.');
+  const output = Array.isArray(responseData.output) ? responseData.output : [];
+  const message = output.filter((item) => item.type === 'message').flatMap((item) => item.content ?? [])
+    .find((item) => item.type === 'output_text' && typeof item.text === 'string');
+  let raw: unknown;
+  try { raw = JSON.parse(message?.text ?? ''); }
+  catch { throw new Error('لم تُرجع الخدمة مخططاً صالحاً للعالم. حاول مجدداً.'); }
   const parsed = planSchema.safeParse(raw);
   if (!parsed.success) throw new Error('المخطط الذي أعادته الخدمة غير مدعوم. حاول وصفاً أبسط.');
   const data = parsed.data;
@@ -100,7 +115,8 @@ export async function interpretOnline(
       assets: assets.length ? assets : undefined, summary: data.summary,
       cues: assets.length ? assets.map((asset) => `${asset.count} ${asset.assetId}`) : [`biome: ${data.biome}`],
     },
-    providerId: 'gemini-web', providerLabel: 'Gemini', offline: false,
-    sources, notes, searched: Boolean(candidate.groundingMetadata?.webSearchQueries?.length),
+    providerId: 'openai-web', providerLabel: 'OpenAI', offline: false,
+    sources: citations(output), notes,
+    searched: output.some((item) => item.type === 'web_search_call' && item.status === 'completed'),
   };
 }

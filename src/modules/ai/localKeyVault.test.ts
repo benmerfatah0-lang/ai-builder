@@ -28,6 +28,15 @@ describe('encrypted phone key vault', () => {
     deleteLocalKey(storage);
     expect(hasLocalKey(storage)).toBe(false);
   });
+  it('does not load or delete an old Gemini vault when using an OpenAI key', async () => {
+    const storage = memoryStorage();
+    storage.setItem('worldbuilder.gemini-vault.v1', 'old-encrypted-record');
+    expect(hasLocalKey(storage)).toBe(false);
+    await saveLocalKey('test-openai-secret-key', 'long password', storage);
+    expect(await unlockLocalKey('long password', storage)).toBe('test-openai-secret-key');
+    deleteLocalKey(storage);
+    expect(storage.getItem('worldbuilder.gemini-vault.v1')).toBe('old-encrypted-record');
+  });
   it('rejects weak passphrases without replacing an existing record', async () => {
     const storage = memoryStorage();
     await saveLocalKey('test-secret-api-key', 'long password', storage);

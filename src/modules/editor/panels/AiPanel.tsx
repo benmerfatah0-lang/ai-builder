@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { interpretOnline, type GeminiModel } from '../../ai/onlineInterpreter';
+import { interpretOnline } from '../../ai/onlineInterpreter';
 import { deleteLocalKey, hasLocalKey, saveLocalKey, unlockLocalKey } from '../../ai/localKeyVault';
 import { generateWorldPlanWithReport } from '../../../core/generation/generateWorld';
 import type { PromptInterpretation } from '../../ai/types';
@@ -49,7 +49,6 @@ export function AiPanel({
   const [accountBusy, setAccountBusy] = useState(false);
   const [password, setPassword] = useState('');
   const [storedKey, setStoredKey] = useState(vaultState.stored);
-  const [model, setModel] = useState<GeminiModel>('gemini-2.5-flash');
 
   const generate = async () => {
     const text = prompt.trim();
@@ -59,7 +58,7 @@ export function AiPanel({
     setNotes([]);
     setStats(null);
     if (!apiKey.trim()) {
-      setGenerationError('أدخل مفتاح Gemini API أو افتح المفتاح المحفوظ أولاً.');
+      setGenerationError('أدخل مفتاح OpenAI API أو افتح المفتاح المحفوظ أولاً.');
       return;
     }
     setGenerating(true);
@@ -71,7 +70,7 @@ export function AiPanel({
         ...(style !== 'auto' ? { style } : {}),
         ...(scale !== 'auto' ? { scale } : {}),
         ...(density !== 'auto' ? { density } : {}),
-      }, model);
+      });
       const report = generateWorldPlanWithReport(interpretation.intent);
       if (!report.validation.valid) {
         const first = report.validation.errors[0]?.message ?? 'Unknown validation error.';
@@ -139,22 +138,15 @@ export function AiPanel({
       </div>
 
       <div className="online-settings" dir="rtl">
-        <div className="online-heading"><span className="online-dot" /> Gemini · بدون استضافة سحابية</div>
-        <p>توجد خطة مجانية محدودة لحسابات ونماذج مؤهلة. البحث عند الحاجة يخضع للحدود والتوافر، وقد تُفرض رسوم إذا فعّلت الفوترة. يُرسل وصفك إلى Google.</p>
+        <div className="online-heading"><span className="online-dot" /> OpenAI · بدون استضافة سحابية</div>
+        <p>هذا يستخدم OpenAI API (النموذج gpt-5.4-nano) وقد يكلّف مالاً، بما في ذلك البحث. فوترة API منفصلة عن ChatGPT؛ راجع الرصيد والأسعار قبل الإنشاء. يُرسل وصفك ومفتاحك مباشرةً إلى OpenAI من المتصفح.</p>
         <label className="field">
-          <span className="field-label">مفتاح Gemini API</span>
+          <span className="field-label">مفتاح OpenAI API</span>
           <input className="input online-key" type="password" autoComplete="off" spellCheck={false}
             value={apiKey} onChange={(event) => onApiKeyChange(event.target.value)}
-            placeholder="أدخل المفتاح هنا" aria-label="Gemini API key" />
+            placeholder="أدخل المفتاح هنا" aria-label="OpenAI API key" />
         </label>
-        <label className="field">
-          <span className="field-label">النموذج</span>
-          <select className="input" value={model} aria-label="Gemini model" onChange={(event) => setModel(event.target.value as GeminiModel)}>
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
-          </select>
-        </label>
-        <p>لحفظ المفتاح على هذا الهاتف، اختر كلمة مرور قوية. لن تتم مزامنته مع Google أو الأجهزة الأخرى.</p>
+        <p>لحفظ المفتاح على هذا الهاتف، اختر كلمة مرور قوية. لن تتم مزامنته مع أي حساب أو جهاز آخر.</p>
         <label className="field">
           <span className="field-label">كلمة مرور حفظ المفتاح</span>
           <input className="input online-key" type="password" autoComplete="new-password" value={password}
@@ -179,8 +171,8 @@ export function AiPanel({
           }}>حذف المفتاح</button>}
         </div>
         {accountError && <p className="online-error" role="alert">{accountError}</p>}
-        <p>{storedKey ? 'يوجد مفتاح مشفّر في هذا المتصفح. أدخل كلمة المرور ثم اضغط فتح المفتاح بعد إعادة فتح الصفحة.' : 'الحفظ اختياري. دون حفظ، يبقى المفتاح في ذاكرة الصفحة فقط.'} لن تتمكن من فتح المفتاح إذا نسيت كلمة المرور. لا يقي التشفير من الإضافات الخبيثة أو جهاز مخترق؛ استخدم جهازاً موثوقاً.</p>
-        <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer">الحصول على مفتاح Gemini ↗</a>
+        <p>{storedKey ? 'يوجد مفتاح مشفّر في هذا المتصفح. أدخل كلمة المرور ثم اضغط فتح المفتاح بعد إعادة فتح الصفحة.' : 'الحفظ اختياري. دون حفظ، يبقى المفتاح في ذاكرة الصفحة فقط.'} لن تتمكن من فتح المفتاح إذا نسيت كلمة المرور. إدخال المفتاح في المتصفح قد يعرّضه للسرقة من البرامج أو الإضافات الخبيثة؛ التشفير لا يحمي جهازاً مخترقاً. استخدمه على هاتف موثوق ولا تشارك هذا الملف بعد تضمين أسرار فيه.</p>
+        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">الحصول على مفتاح OpenAI ↗</a>
       </div>
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
 
@@ -257,7 +249,9 @@ export function AiPanel({
             </span>
             <strong>World generated</strong>
           </div>
-          <p className="ai-summary">{result.intent.summary}</p>
+          <p className="ai-summary">{result.intent.summary}{result.sources?.map((source, index) => (
+            <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" aria-label={`المصدر ${index + 1}: ${source.title}`}> [{index + 1}]</a>
+          ))}</p>
           <p className="hint-text" dir="rtl">{result.searched ? 'تم استخدام البحث عبر الإنترنت في هذا الطلب.' : 'لم تُرجع الخدمة معلومات تؤكد إجراء البحث في هذا الطلب.'}</p>
           {result.searched && !result.sources?.length && <p className="hint-text" dir="rtl">لم تُرفق الخدمة روابط مصادر لهذا الطلب.</p>}
           {result.sources && result.sources.length > 0 && (
