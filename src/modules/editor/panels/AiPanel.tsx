@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { interpretOnline } from '../../ai/onlineInterpreter';
+import { interpretOnline, type GeminiModel } from '../../ai/onlineInterpreter';
+import { deleteLocalKey, hasLocalKey, saveLocalKey, unlockLocalKey } from '../../ai/localKeyVault';
 import { generateWorldPlanWithReport } from '../../../core/generation/generateWorld';
 import type { PromptInterpretation } from '../../ai/types';
 import { useEditor } from '../store';
-import type { useAccount } from '../useAccount';
 import { Icon } from '../../../ui/Icon';
 import { NumberField, SelectField } from '../../../ui/controls';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
@@ -25,12 +25,10 @@ export function AiPanel({
   notify,
   apiKey,
   onApiKeyChange,
-  account,
 }: {
   notify: (message: string, tone?: 'neutral' | 'success' | 'danger') => void;
   apiKey: string;
   onApiKeyChange: (value: string) => void;
-  account: ReturnType<typeof useAccount>;
 }) {
   const { dispatch } = useEditor();
   const [prompt, setPrompt] = useState('');
@@ -43,9 +41,15 @@ export function AiPanel({
   const [notes, setNotes] = useState<string[]>([]);
   const [stats, setStats] = useState<{ objects: number; groups: number } | null>(null);
   const [generationError, setGenerationError] = useState('');
-  const [accountError, setAccountError] = useState('');
+  const [vaultState] = useState(() => {
+    try { return { stored: hasLocalKey(), error: '' }; }
+    catch { return { stored: false, error: 'تعذّر الوصول إلى تخزين المتصفح.' }; }
+  });
+  const [accountError, setAccountError] = useState(vaultState.error);
   const [accountBusy, setAccountBusy] = useState(false);
-  const signedIn = account.account.status === 'signedIn' ? account.account : null;
+  const [password, setPassword] = useState('');
+  const [storedKey, setStoredKey] = useState(vaultState.stored);
+  const [model, setModel] = useState<GeminiModel>('gemini-2.5-flash');
 
   const generate = async () => {
     const text = prompt.trim();
@@ -54,12 +58,8 @@ export function AiPanel({
     setResult(null);
     setNotes([]);
     setStats(null);
-    if (signedIn && !signedIn.hasKey) {
-      setGenerationError('احفظ مفتاح API في حسابك أولاً.');
-      return;
-    }
-    if (!signedIn && !apiKey.trim()) {
-      setGenerationError('أدخل مفتاح OpenAI API في الخانة أدناه، ثم حاول مجدداً.');
+    if (!apiKey.trim()) {
+      setGenerationError('أدخل مفتاح Gemini API أو افتح المفتاح المحفوظ أولاً.');
       return;
     }
     setGenerating(true);
@@ -71,7 +71,7 @@ export function AiPanel({
         ...(style !== 'auto' ? { style } : {}),
         ...(scale !== 'auto' ? { scale } : {}),
         ...(density !== 'auto' ? { density } : {}),
-      }, signedIn?.hasKey ? { csrfToken: signedIn.csrfToken } : undefined);
+      }, model);
       const report = generateWorldPlanWithReport(interpretation.intent);
       if (!report.validation.valid) {
         const first = report.validation.errors[0]?.message ?? 'Unknown validation error.';
@@ -139,45 +139,48 @@ export function AiPanel({
       </div>
 
       <div className="online-settings" dir="rtl">
-        <div className="online-heading"><span className="online-dot" /> ذكاء اصطناعي متصل بالإنترنت</div>
-        <p>يستخدم OpenAI وقد يبحث عند الحاجة. يتطلب حساب API وفوترة وقد تُفرض رسوم. يُرسل الوصف إلى OpenAI.</p>
-        {account.account.status === 'loading' && <p>جارٍ التحقق من الحساب…</p>}
-        {(account.account.status === 'unconfigured' || account.account.status === 'unavailable') && (
-          <p>حفظ المفتاح في حساب Google غير مفعّل في هذه النسخة. يتطلب خادماً وإعداد Google؛ يمكنك استخدام المفتاح مؤقتاً في هذه الصفحة.</p>
-        )}
-        {account.account.status === 'signedOut' && (
-          <a className="account-signin" href="/api/auth/google" target="_blank" rel="noopener noreferrer">تسجيل الدخول باستخدام Google ↗</a>
-        )}
-        {signedIn && <p>الحساب: <strong>{signedIn.name}</strong> · {signedIn.hasKey ? 'المفتاح محفوظ على الخادم مشفّراً' : 'لم يُحفظ مفتاح بعد'}</p>}
+        <div className="online-heading"><span className="online-dot" /> Gemini · بدون استضافة سحابية</div>
+        <p>توجد خطة مجانية محدودة لحسابات ونماذج مؤهلة. البحث عند الحاجة يخضع للحدود والتوافر، وقد تُفرض رسوم إذا فعّلت الفوترة. يُرسل وصفك إلى Google.</p>
         <label className="field">
-          <span className="field-label">مفتاح OpenAI API {signedIn?.hasKey ? '(للاستبدال فقط)' : ''}</span>
+          <span className="field-label">مفتاح Gemini API</span>
           <input className="input online-key" type="password" autoComplete="off" spellCheck={false}
             value={apiKey} onChange={(event) => onApiKeyChange(event.target.value)}
-            placeholder={signedIn?.hasKey ? 'المفتاح الحالي محفوظ' : 'أدخل المفتاح هنا'} aria-label="OpenAI API key" />
+            placeholder="أدخل المفتاح هنا" aria-label="Gemini API key" />
         </label>
-        {signedIn && <div className="account-actions">
-          <button type="button" className="btn btn-small" disabled={accountBusy || !apiKey.trim()} onClick={() => {
+        <label className="field">
+          <span className="field-label">النموذج</span>
+          <select className="input" value={model} aria-label="Gemini model" onChange={(event) => setModel(event.target.value as GeminiModel)}>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
+          </select>
+        </label>
+        <p>لحفظ المفتاح على هذا الهاتف، اختر كلمة مرور قوية. لن تتم مزامنته مع Google أو الأجهزة الأخرى.</p>
+        <label className="field">
+          <span className="field-label">كلمة مرور حفظ المفتاح</span>
+          <input className="input online-key" type="password" autoComplete="new-password" value={password}
+            onChange={(event) => setPassword(event.target.value)} aria-label="كلمة مرور حفظ المفتاح" placeholder="8 أحرف على الأقل" />
+        </label>
+        <div className="account-actions">
+          <button type="button" className="btn btn-small" disabled={accountBusy || !apiKey.trim() || !password} onClick={() => {
             setAccountBusy(true); setAccountError('');
-            void account.saveKey(apiKey).then(() => { onApiKeyChange(''); notify('حُفظ المفتاح في حسابك.', 'success'); })
+            void saveLocalKey(apiKey, password).then(() => { setStoredKey(true); setPassword(''); notify('حُفظ المفتاح مشفّراً على الهاتف.', 'success'); })
               .catch((error: unknown) => setAccountError(error instanceof Error ? error.message : 'تعذّر حفظ المفتاح.'))
               .finally(() => setAccountBusy(false));
-          }}>حفظ في الحساب</button>
-          {signedIn.hasKey && <button type="button" className="btn btn-small" disabled={accountBusy} onClick={() => {
+          }}>حفظ مشفّر</button>
+          {storedKey && <button type="button" className="btn btn-small" disabled={accountBusy || !password} onClick={() => {
             setAccountBusy(true); setAccountError('');
-            void account.deleteKey().then(() => notify('حُذف المفتاح المحفوظ.', 'success'))
-              .catch((error: unknown) => setAccountError(error instanceof Error ? error.message : 'تعذّر حذف المفتاح.'))
+            void unlockLocalKey(password).then((key) => { onApiKeyChange(key); setPassword(''); notify('فُتح المفتاح لهذا الاستخدام.', 'success'); })
+              .catch((error: unknown) => setAccountError(error instanceof Error ? error.message : 'تعذّر فتح المفتاح.'))
               .finally(() => setAccountBusy(false));
+          }}>فتح المفتاح</button>}
+          {storedKey && <button type="button" className="btn btn-small" disabled={accountBusy} onClick={() => {
+            try { deleteLocalKey(); setStoredKey(false); onApiKeyChange(''); setPassword(''); setAccountError(''); notify('حُذف المفتاح المحفوظ.', 'success'); }
+            catch (error) { setAccountError(error instanceof Error ? error.message : 'تعذّر حذف المفتاح.'); }
           }}>حذف المفتاح</button>}
-          <button type="button" className="btn btn-small" disabled={accountBusy} onClick={() => {
-            setAccountBusy(true); setAccountError('');
-            void account.logout().then(() => onApiKeyChange(''))
-              .catch((error: unknown) => setAccountError(error instanceof Error ? error.message : 'تعذّر تسجيل الخروج.'))
-              .finally(() => setAccountBusy(false));
-          }}>تسجيل الخروج</button>
-        </div>}
+        </div>
         {accountError && <p className="online-error" role="alert">{accountError}</p>}
-        <p>{signedIn ? 'يُخزّن المفتاح مشفّراً على خادم التطبيق، وليس في Gmail. استخدم خادماً تثق به.' : 'دون تسجيل الدخول يبقى المفتاح في ذاكرة الصفحة فقط، ويُرسل مباشرة إلى OpenAI. استخدم جهازاً موثوقاً.'}</p>
-        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">إنشاء مفتاح من OpenAI ↗</a>
+        <p>{storedKey ? 'يوجد مفتاح مشفّر في هذا المتصفح. أدخل كلمة المرور ثم اضغط فتح المفتاح بعد إعادة فتح الصفحة.' : 'الحفظ اختياري. دون حفظ، يبقى المفتاح في ذاكرة الصفحة فقط.'} لن تتمكن من فتح المفتاح إذا نسيت كلمة المرور. لا يقي التشفير من الإضافات الخبيثة أو جهاز مخترق؛ استخدم جهازاً موثوقاً.</p>
+        <a href="https://aistudio.google.com/api-keys" target="_blank" rel="noopener noreferrer">الحصول على مفتاح Gemini ↗</a>
       </div>
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
 
@@ -255,7 +258,7 @@ export function AiPanel({
             <strong>World generated</strong>
           </div>
           <p className="ai-summary">{result.intent.summary}</p>
-          <p className="hint-text" dir="rtl">{result.searched ? 'تم استخدام البحث عبر الإنترنت في هذا الطلب.' : 'لم تستخدم الخدمة البحث في هذا الطلب.'}</p>
+          <p className="hint-text" dir="rtl">{result.searched ? 'تم استخدام البحث عبر الإنترنت في هذا الطلب.' : 'لم تُرجع الخدمة معلومات تؤكد إجراء البحث في هذا الطلب.'}</p>
           {result.searched && !result.sources?.length && <p className="hint-text" dir="rtl">لم تُرفق الخدمة روابط مصادر لهذا الطلب.</p>}
           {result.sources && result.sources.length > 0 && (
             <div className="online-sources" dir="rtl">

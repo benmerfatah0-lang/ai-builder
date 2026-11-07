@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import App from './App';
 
@@ -11,8 +11,7 @@ vi.mock('../modules/ai/onlineInterpreter', async () => {
     interpretPromptLocally(prompt, options) };
 });
 
-beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ configured: false, signedIn: false, hasKey: false }), { headers: { 'Content-Type': 'application/json' } }))));
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(cleanup);
 
 function worldNameValue(): string {
   return (screen.getByLabelText('World name') as HTMLInputElement).value;
@@ -28,7 +27,7 @@ async function bootDesktop() {
 
 function openTab(name: string) {
   fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${name}$`) }));
-  if (name === 'AI') fireEvent.change(screen.getByLabelText('OpenAI API key'), { target: { value: 'test-key' } });
+  if (name === 'AI') fireEvent.change(screen.getByLabelText('Gemini API key'), { target: { value: 'test-key' } });
 }
 
 describe('application runtime', () => {

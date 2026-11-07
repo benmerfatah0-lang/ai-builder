@@ -18,13 +18,9 @@
     "site:demo:watch": "esbuild website/src/demo.ts --bundle --format=esm --target=es2020 --outfile=website/public/demo.js --watch",
     "site:app": "tsc --noEmit && vite build --base=/app/ --outDir=website/public/app --emptyOutDir",
     "site:build": "npm run site:demo && npm run site:app",
-    "build:mobile": "node scripts/buildMobile.mjs",
-    "server": "tsx server/index.ts"
+    "build:mobile": "node scripts/buildMobile.mjs"
   },
   "dependencies": {
-    "express": "^5.3.0",
-    "express-session": "^1.19.0",
-    "google-auth-library": "^11.3.3",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "three": "^0.186.1",
@@ -33,17 +29,13 @@
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
-    "@types/express": "^5.0.6",
-    "@types/express-session": "^1.19.0",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@types/supertest": "^7.2.1",
     "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^5.2.0",
     "fake-indexeddb": "^6.2.2",
     "happy-dom": "^21.0.4",
-    "supertest": "^7.3.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vite": "^7.3.7",
