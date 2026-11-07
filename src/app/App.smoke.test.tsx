@@ -7,7 +7,7 @@ import App from './App';
 // own tests with mocked API responses.
 vi.mock('../modules/ai/onlineInterpreter', async () => {
   const { interpretPromptLocally } = await import('../modules/ai/promptInterpreter');
-  return { interpretOnline: async (prompt: string, _key: string, options: Parameters<typeof interpretPromptLocally>[1]) =>
+  return { interpretOnline: async (prompt: string, options: Parameters<typeof interpretPromptLocally>[1]) =>
     interpretPromptLocally(prompt, options) };
 });
 

@@ -1,3 +1,4 @@
+import { applyShapeModel } from '../../modules/ai/shapeLearner';
 import { ASSET_LIBRARY } from '../assets/catalog';
 import type { WorldObject, WorldPlan } from '../world-plan/schema';
 import { MAX_WORLD_OBJECTS } from '../world-plan/schema';
@@ -62,7 +63,8 @@ export function buildAssetLayout(
     } else {
       let placed = 0;
       for (let n = 0; n < request.count && objects.length < maxObjects; n += 1) {
-        const object = asset.create(rng, [0, 0, 0]);
+        const baseObject = asset.create(rng, [0, 0, 0]);
+        const object = intent.shapeModel ? applyShapeModel(baseObject, intent.shapeModel, rng) : baseObject;
         let position: [number, number, number] | undefined;
         for (let attempt = 0; attempt < 120; attempt += 1) {
           const [x, z] = candidate(request.relation?.direction, anchor, attempt);

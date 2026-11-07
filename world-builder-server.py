@@ -1,17 +1,9 @@
 #!/usr/bin/env python3
-"""Phone-only server: local llama.cpp plus limited Wikipedia search.
-
-No API keys or paid services are used. Both HTTP listeners bind only to the
-phone's loopback interface. Search requests go to Wikipedia over HTTPS.
-"""
+"""Loopback-only phone server with fixed Wikipedia endpoints; no API keys."""
 import argparse
 import json
 import os
 import re
-import secrets
-import shutil
-import socket
-import subprocess
 import sys
 from functools import partial
 from html.parser import HTMLParser
@@ -53,12 +45,6 @@ def get_json(request, timeout):
         return json.loads(body)
 
 
-def choose_model_port():
-    with socket.socket() as sock:
-        sock.bind(('127.0.0.1', 0))
-        return sock.getsockname()[1]
-
-
 class Handler(SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         # Prompts and URLs may contain personal data; do not log requests.
@@ -95,7 +81,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.valid_host() or self.headers.get('Origin', '') != f'http://{host}':
             self.api_result(403, {'error': 'invalid origin'})
             return
-        if self.path not in ('/api/online', '/api/search', '/api/model'):
+        if self.path not in ('/api/online', '/api/search'):
             self.api_result(404, {'error': 'unknown endpoint'})
             return
         if self.headers.get_content_type() != 'application/json':
@@ -112,17 +98,6 @@ class Handler(SimpleHTTPRequestHandler):
             self.api_result(400, {'error': 'invalid request'})
             return
         try:
-            if self.path == '/api/model':
-                process = self.server.model_process
-                if process is None or process.poll() is not None:
-                    self.api_result(503, {'error': 'model not running'})
-                    return
-                target = f'http://127.0.0.1:{self.server.model_port}/v1/chat/completions'
-                request = Request(target, data=json.dumps(payload).encode('utf-8'), method='POST', headers={
-                    'Content-Type': 'application/json', 'Authorization': f'Bearer {self.server.model_key}',
-                })
-                self.api_result(200, get_json(request, timeout=570))
-                return
             if self.path == '/api/online':
                 response = get_json(Request(ONLINE_URL, headers={'User-Agent': USER_AGENT}), timeout=25)
                 if not isinstance(response, dict) or 'query' not in response:
@@ -153,49 +128,22 @@ class Handler(SimpleHTTPRequestHandler):
                                 'content': strip_html(excerpt)})
             self.api_result(200, {'results': results})
         except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError):
-            self.api_result(503 if self.path == '/api/model' else 502, {'error': 'service unavailable'})
+            self.api_result(502, {'error': 'service unavailable'})
 
 
 def main():
     parser = argparse.ArgumentParser(description='World Builder local phone server')
     parser.add_argument('--port', type=int, default=8080)
     parser.add_argument('--directory', default=os.path.dirname(os.path.abspath(__file__)))
-    parser.add_argument('--model', default=None, help='path to the downloaded GGUF model')
     args = parser.parse_args()
-    model = args.model or os.path.join(args.directory, 'model.gguf')
-    binary = shutil.which('llama-server')
-    if not binary:
-        print('لم يُعثر على llama-server. ثبّت الحزمة: pkg install llama-cpp', file=sys.stderr)
-        return 1
-    if not os.path.isfile(model):
-        print('ملف النموذج model.gguf غير موجود. نزّله أولاً باتباع التعليمات.', file=sys.stderr)
-        return 1
     handler = partial(Handler, directory=args.directory)
     with ThreadingHTTPServer(('127.0.0.1', args.port), handler) as server:
-        server.model_port = choose_model_port()
-        server.model_key = secrets.token_urlsafe(32)
-        try:
-            server.model_process = subprocess.Popen([
-                binary, '-m', model, '--alias', 'world-builder', '--host', '127.0.0.1',
-                '--port', str(server.model_port), '--api-key', server.model_key,
-                '-c', '4096', '-t', '4', '--parallel', '1', '-ngl', '0',
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except OSError:
-            print('تعذّر بدء llama-server. تحقّق من تثبيت llama-cpp.', file=sys.stderr)
-            return 1
         print(f'افتح http://127.0.0.1:{args.port}/world-builder-mobile.html', flush=True)
-        print('النموذج يبدأ على الهاتف؛ قد يستغرق تحميله بعض الوقت. لإيقافه اضغط Ctrl+C.', flush=True)
+        print('لإيقاف الخادم اضغط Ctrl+C.', flush=True)
         try:
             server.serve_forever()
         except KeyboardInterrupt:
             pass
-        finally:
-            server.model_process.terminate()
-            try:
-                server.model_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                server.model_process.kill()
-                server.model_process.wait()
     return 0
 
 

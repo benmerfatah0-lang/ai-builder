@@ -147,6 +147,8 @@ export const objectMetaSchema = z.object({
   role: z.string().min(1).max(40).optional(),
   /** Seed for this object's own variation, independent of the world seed. */
   seed: z.number().int().min(0).max(4294967295).optional(),
+  /** Parameters of an app-generated trainable procedural design. */
+  learnedShape: z.object({ detail: z.number().finite().min(0.7).max(1.3), seed: z.number().int().min(0).max(4294967295) }).optional(),
   /** Logical region used for regional regeneration, e.g. `west-field`. */
   region: z.string().min(1).max(40).optional(),
   placement: z

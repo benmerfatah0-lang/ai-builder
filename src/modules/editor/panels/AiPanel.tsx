@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { interpretOnline } from '../../ai/onlineInterpreter';
+import { initialShapeModel, readShapeModel, saveShapeModel, resetShapeModel, trainShapeModel } from '../../ai/shapeLearner';
 import { generateWorldPlanWithReport } from '../../../core/generation/generateWorld';
 import type { PromptInterpretation } from '../../ai/types';
 import { useEditor } from '../store';
@@ -23,7 +24,27 @@ function randomSeed(): number {
 export function AiPanel({ notify }: {
   notify: (message: string, tone?: 'neutral' | 'success' | 'danger') => void;
 }) {
-  const { dispatch } = useEditor();
+  const { state, dispatch } = useEditor();
+  const [shapeModel, setShapeModel] = useState(() => {
+    try { return readShapeModel(window.localStorage); } catch { return initialShapeModel(); }
+  });
+  const [searchWikipedia, setSearchWikipedia] = useState(false);
+  const [trainingMessage, setTrainingMessage] = useState('');
+  const learnSelected = () => {
+    try {
+      const id = state.selection[state.selection.length - 1];
+      const object = state.plan.objects.find((item) => item.id === id);
+      if (!object) throw new Error('اختر بيتاً أو شجرة عريضة الأوراق أو صخرة مستديرة من المشهد أولاً.');
+      const updated = trainShapeModel(shapeModel, object);
+      saveShapeModel(window.localStorage, updated);
+      setShapeModel(updated);
+      setTrainingMessage('تم التدريب على أبعاد العنصر المحدد وحفظ النموذج على هذا المتصفح. أنشئ مشهداً جديداً لرؤية تأثيره.');
+    } catch (error) { setTrainingMessage(error instanceof Error ? error.message : 'تعذّر حفظ التدريب على الهاتف.'); }
+  };
+  const resetTraining = () => {
+    try { setShapeModel(resetShapeModel(window.localStorage)); setTrainingMessage('تم حذف التدريب الشخصي واستعادة الأمثلة الأصلية.'); }
+    catch { setTrainingMessage('تعذّر حذف التدريب من المتصفح.'); }
+  };
   const [prompt, setPrompt] = useState('');
   const [seed, setSeed] = useState<number>(() => randomSeed());
   const [style, setStyle] = useState<WorldStyle | 'auto'>('auto');
@@ -50,7 +71,8 @@ export function AiPanel({ notify }: {
         ...(style !== 'auto' ? { style } : {}),
         ...(scale !== 'auto' ? { scale } : {}),
         ...(density !== 'auto' ? { density } : {}),
-      });
+      }, searchWikipedia);
+      interpretation.intent.shapeModel = shapeModel;
       const report = generateWorldPlanWithReport(interpretation.intent);
       if (!report.validation.valid) {
         const first = report.validation.errors[0]?.message ?? 'Unknown validation error.';
@@ -58,7 +80,11 @@ export function AiPanel({ notify }: {
       }
       dispatch({ type: 'replacePlan', plan: report.plan });
       setResult(interpretation);
-      setNotes([...(interpretation.notes ?? []), ...report.warnings].slice(0, 12));
+      const learnedCount = report.plan.objects.filter((object) => object.meta.learnedShape).length;
+      setNotes([...(interpretation.notes ?? []),
+        learnedCount ? `تم توليد ${learnedCount} من أشكال البيت أو الشجرة عريضة الأوراق أو الصخرة من النموذج الصغير.` :
+          'لم يُستخدم تدريب الأشكال لهذا الوصف؛ جرّب وصفاً مثل: بيت وشجرة وصخرة. المزارع تحتفظ بقالبها الخاص.',
+        ...report.warnings].slice(0, 12));
       setStats({ objects: report.plan.objects.length, groups: report.plan.groups.length });
       notify(
         report.warnings.length > 0
@@ -118,9 +144,18 @@ export function AiPanel({ notify }: {
       </div>
 
       <div className="online-settings" dir="rtl">
-        <div className="online-heading"><span className="online-dot" /> Qwen محلي + بحث ويكيبيديا</div>
-        <p>يعمل النموذج على الهاتف دون حساب أو مفتاح. يحتاج التطبيق إلى الإنترنت للتحقق من الاتصال والبحث في ويكيبيديا عند الحاجة؛ لا يبحث في بقية الويب. قد يكون النموذج الصغير بطيئاً أو يخطئ.</p>
-        <p>استخدم خادم الهاتف المرفق واترك Termux يعمل. عند البحث تُرسل عبارة البحث إلى ويكيبيديا.</p>
+        <div className="online-heading"><span className="online-dot" /> المساعد الخفيف + ويكيبيديا</div>
+        <p>يفهم كلمات محدودة ويصنع أشكالاً إجرائية للبيوت والأشجار عريضة الأوراق والصخور المستديرة. ليس نموذج لغة أو مولّد نماذج عام. يحتاج اتصالاً بالإنترنت قبل كل إنشاء.</p>
+        <label><input type="checkbox" checked={searchWikipedia} onChange={(event) => setSearchWikipedia(event.target.checked)} /> ابحث في ويكيبيديا عن هذا الوصف</label>
+        <p>يمكنه البحث أيضاً عند ذكر «ابحث» أو «ويكيبيديا». يقرأ كلمات محدودة من النتائج لتقدير البيئة فقط؛ لا يتدرّب تلقائياً من المواقع ولا يبحث في كل الويب.</p>
+      </div>
+      <div className="online-settings" dir="rtl">
+        <div className="online-heading">تدريب الأشكال على الهاتف</div>
+        <p>هذا نموذج إحصائي صغير يتعلّم متوسط الأبعاد والتفاصيل، وليس شبكة تولّد أي شكل. لتدريبه: اختر بيتاً أو شجرة عريضة الأوراق أو صخرة مستديرة من المشهد، وعدّل حجمها في لوحة Inspect، ثم اضغط الزر. تتعلم الفئة من المثال الذي اخترته فقط.</p>
+        <p>الأمثلة الشخصية: {shapeModel.house.count + shapeModel.tree.count + shapeModel.rock.count - 9}. التدريب محفوظ في هذا المتصفح فقط.</p>
+        <button type="button" className="btn btn-small" onClick={learnSelected}>تعلّم من العنصر المحدد</button>{' '}
+        <button type="button" className="btn btn-small" onClick={resetTraining}>حذف التدريب الشخصي</button>
+        {trainingMessage && <p role="status">{trainingMessage}</p>}
       </div>
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
 
@@ -134,7 +169,7 @@ export function AiPanel({ notify }: {
         {generating ? <span className="spinner small" /> : <Icon name="sparkles" size={17} />}
         {generating ? 'جاري تحليل الوصف وبناء العالم…' : 'أنشئ العالم'} <span className="generate-arrow">←</span>
       </button>
-      <p className="generate-caption" dir="rtl">✦ يتطلب الإنترنت وتشغيل النموذج المحلي في Termux</p>
+      <p className="generate-caption" dir="rtl">✦ يتطلب الإنترنت وخادم الهاتف في Termux، دون تنزيل نموذج كبير</p>
       <div className="settings-heading" dir="rtl"><span>إعدادات متقدمة</span><span>02</span></div>
       <div className="seed-row">
         <NumberField
@@ -185,7 +220,7 @@ export function AiPanel({ notify }: {
         />
       </div>
       <p className="hint-text">
-        نفس المخطط والبذرة يعيدان التوزيع، لكن نتائج الذكاء الاصطناعي والبحث قد تتغير بين الطلبات.
+        نفس الوصف والبذرة وبيانات التدريب تعيد الشكل والتوزيع؛ قد تتغير نتائج البحث.
       </p>
 
 
@@ -231,14 +266,14 @@ export function AiPanel({ notify }: {
             </div>
           )}
           <p className="hint-text">
-            Seed {result.intent.seed} · {result.providerLabel} · {result.offline ? 'offline' : 'remote'}
+            Seed {result.intent.seed} · {result.providerLabel} · {result.offline ? 'offline' : 'internet'}
           </p>
         </div>
       )}
 
       <div className="callout callout-info" dir="rtl">
         <Icon name="info" size={16} />
-        <span>البحث يساعد على فهم وصفك، لكن البناء يقتصر على عناصر المكتبة الحالية؛ لا تُستورد نماذج جديدة من المواقع. قد لا تكون النتيجة نسخة دقيقة من مكان حقيقي.</span>
+        <span>الأشكال تُبنى محلياً بقواعد بسيطة وفق الأبعاد المتعلَّمة؛ لا تُستورد نماذج من المواقع، ولا تتعلم أوزان الأشكال من نص ويكيبيديا. قد لا تكون النتيجة نسخة دقيقة من مكان حقيقي.</span>
       </div>
     </div>
   );

@@ -1,3 +1,4 @@
+import type { ShapeModel } from './shapeLearner';
 import type { AssetRequest } from './assetRequests';
 
 export type BiomeId = 'meadow' | 'forest' | 'mountains' | 'desert' | 'island' | 'ruins';
@@ -29,6 +30,8 @@ export interface FarmFeatures {
 }
 
 export interface WorldIntent {
+  /** Optional local shape model for explicit supported assets. */
+  shapeModel?: ShapeModel;
   /** Original prompt, preserved for provenance. */
   prompt: string;
   name: string;

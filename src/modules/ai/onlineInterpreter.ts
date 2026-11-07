@@ -1,111 +1,55 @@
 import { z } from 'zod';
 import { interpretPromptLocally } from './promptInterpreter';
-import type { AssetRequest } from './assetRequests';
 import type { InterpretOptions, PromptInterpretation } from './types';
 
-import { ASSETS, DIRECTIONS, BIOMES, TIMES, SCALES, STYLES, DENSITIES, createOnlineRequest, createSearchDecisionRequest } from './onlineRequest';
-
-const planSchema = z.object({
-  biome: z.enum(BIOMES), timeOfDay: z.enum(TIMES), water: z.boolean(),
-  scale: z.enum(SCALES), style: z.enum(STYLES), density: z.enum(DENSITIES),
-  assets: z.array(z.object({
-    assetId: z.enum(ASSETS), count: z.number().int().min(1).max(100),
-    direction: z.enum(DIRECTIONS).nullable(), target: z.number().int().min(0).nullable(),
-  }).strict()).max(24),
-  summary: z.string().min(1).max(300),
-  limitations: z.array(z.string().min(1).max(300)).max(8),
-}).strict();
-
-
-type SearchResult = { title: string; url: string; content: string };
-async function postJSON(url: string, body: object, service: string): Promise<unknown> {
+/** Wikipedia is the only network source; all planning is rule-based on-device. */
+async function postJSON(path: string, body: object): Promise<unknown> {
   const controller = new AbortController();
-  // Local generation on a phone can take several minutes.
-  const timeout = setTimeout(() => controller.abort(), url === '/api/model' ? 600000 : 45000);
+  const timeout = setTimeout(() => controller.abort(), 45000);
   try {
-    const response = await fetch(url, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body), signal: controller.signal,
-    });
+    const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal });
     if (!response.ok) {
-      if ((response.status === 404 || response.status === 501) && response.headers.get('X-World-Builder-Proxy') !== '1') throw new Error('شغّل خادم الهاتف الجديد world-builder-server.py بدلاً من الخادم القديم.');
-      if (service === 'النموذج المحلي') throw new Error('النموذج المحلي غير جاهز أو تعذّر تشغيله. تأكّد من بدء الخادم وانتظر تحميل النموذج.');
+      if ((response.status === 404 || response.status === 501) && response.headers.get('X-World-Builder-Proxy') !== '1') {
+        throw new Error('شغّل خادم الهاتف الجديد world-builder-server.py بدلاً من الخادم القديم.');
+      }
       throw new Error('تعذّر الاتصال بويكيبيديا. تحقّق من الإنترنت ثم حاول مجدداً.');
     }
-    try { return await response.json(); }
-    catch { throw new Error(`استجابت ${service} ببيانات غير صالحة.`); }
+    return await response.json();
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') throw new Error(`انتهت مهلة ${service}. حاول وصفاً أبسط.`);
-    if (error instanceof TypeError) throw new Error(`تعذّر الاتصال بـ ${service}. تحقّق من تشغيل خادم الهاتف والإنترنت.`);
+    if (error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')) throw new Error('تعذّر الاتصال. تحقّق من تشغيل خادم الهاتف والإنترنت.');
+    if (error instanceof SyntaxError) throw new Error('استجاب الخادم ببيانات غير صالحة.');
     throw error;
   } finally { clearTimeout(timeout); }
 }
-async function localJSON(request: object): Promise<unknown> {
-  const envelope = z.object({ choices: z.array(z.object({
-    finish_reason: z.string().nullable().optional(),
-    message: z.object({ content: z.string().nullable().optional() }).passthrough(),
-  }).passthrough()).min(1) }).passthrough().safeParse(await postJSON('/api/model', request, 'النموذج المحلي'));
-  if (!envelope.success) throw new Error('استجاب النموذج المحلي ببيانات غير صالحة.');
-  const choice = envelope.data.choices[0]!;
-  if (choice.finish_reason && choice.finish_reason !== 'stop') throw new Error('لم يكتمل رد النموذج المحلي. حاول وصفاً أقصر.');
-  try { return JSON.parse(choice.message.content ?? ''); }
-  catch { throw new Error('لم يُرجع النموذج المحلي مخططاً صالحاً. حاول مجدداً.'); }
-}
-async function searchWiki(query: string): Promise<SearchResult[]> {
-  const response = await postJSON('/api/search', { query }, 'ويكيبيديا');
-  const envelope = z.object({ results: z.array(z.object({
-    title: z.string(), url: z.string(), content: z.string(),
-  }).passthrough()).max(20) }).passthrough().safeParse(response);
-  if (!envelope.success) throw new Error('استجابت ويكيبيديا ببيانات بحث غير صالحة.');
-  const sources: SearchResult[] = [];
-  for (const item of envelope.data.results) {
-    try {
-      const url = new URL(item.url);
-      if (url.protocol === 'https:' && (url.hostname === 'ar.wikipedia.org' || url.hostname === 'en.wikipedia.org') && !sources.some((source) => source.url === url.href)) {
-        sources.push({ title: item.title.slice(0, 120) || url.hostname, url: url.href, content: item.content.slice(0, 1200) });
-      }
-    } catch { /* Never display unsafe links. */ }
-    if (sources.length === 4) break;
-  }
-  return sources;
-}
+const searchResult = z.object({ results: z.array(z.object({ title: z.string(), url: z.string(), content: z.string() })).max(20) });
 
-/** Require a live internet check; the local model decides if Wikipedia search is needed. */
-export async function interpretOnline(
-  prompt: string,
-  options: InterpretOptions = {},
-): Promise<PromptInterpretation> {
-  await postJSON('/api/online', {}, 'ويكيبيديا');
-  const decision = z.object({ query: z.string().trim().min(1).max(400).nullable() }).strict()
-    .safeParse(await localJSON(createSearchDecisionRequest(prompt)));
-  if (!decision.success) throw new Error('تعذّر تحديد حاجة الوصف للبحث. حاول مجدداً.');
-  const searched = decision.data.query !== null;
-  const references = searched ? await searchWiki(decision.data.query!) : [];
-  const raw = await localJSON(createOnlineRequest(prompt, references));
-  const parsed = planSchema.safeParse(raw);
-  if (!parsed.success) throw new Error('المخطط الذي أعادته الخدمة غير مدعوم. حاول وصفاً أبسط.');
-  const data = parsed.data;
-  if (data.assets.reduce((sum, asset) => sum + asset.count, 0) > 300) throw new Error('المخطط يحتوي عناصر كثيرة جداً. اطلب عدداً أقل.');
-  const assets: AssetRequest[] = data.assets.map((asset, index) => {
-    const valid = asset.direction !== null && asset.target !== null && asset.target < data.assets.length && asset.target !== index;
-    return { assetId: asset.assetId, count: asset.count, ...(valid ? { relation: { target: asset.target!, direction: asset.direction! } } : {}) };
-  });
-  const local = interpretPromptLocally(`${data.biome} ${data.timeOfDay}${data.water ? ' water' : ''}`, options).intent;
-  const original = interpretPromptLocally(prompt, options).intent;
-  const notes = [...data.limitations];
-  if (original.features?.farm) notes.push('للمزارع يُستخدم قالب المزرعة المتاح، وقد يختلف ترتيب عناصره عن المخطط المقترح.');
-  if (data.assets.some((asset, index) => (asset.direction === null) !== (asset.target === null) || asset.target === index || (asset.target !== null && asset.target >= data.assets.length))) {
-    notes.push('تعذّر فهم بعض علاقات المواضع، فاستُخدم توزيع بديل.');
+export async function interpretOnline(prompt: string, options: InterpretOptions = {}, forceSearch = false): Promise<PromptInterpretation> {
+  const online = z.object({ online: z.literal(true) }).safeParse(await postJSON('/api/online', {}));
+  if (!online.success) throw new Error('تعذّر التحقق من اتصال ويكيبيديا.');
+  const result = interpretPromptLocally(prompt, options);
+  const searched = forceSearch || /ابحث|بحث|ويكيبيديا|معلم حقيقي|مكان حقيقي|landmark|wikipedia|search/i.test(prompt);
+  const notes = ['المساعد يفهم كلمات محدودة فقط، وليس نموذج لغة عاماً. الأشكال الجديدة إجرائية وليست نماذج متعلّمة من مواقع الإنترنت.'];
+  let sources: { title: string; url: string; content: string }[] = [];
+  if (searched) {
+    const query = prompt.replace(/ابحث\s*(?:عن)?|(?:في|من)\s*ويكيبيديا|search\s*(?:for)?|wikipedia/gi, '').trim() || prompt;
+    const parsed = searchResult.safeParse(await postJSON('/api/search', { query }));
+    if (!parsed.success) throw new Error('استجابت ويكيبيديا ببيانات بحث غير صالحة.');
+    sources = parsed.data.results.filter((item) => {
+      try { const url = new URL(item.url); return url.protocol === 'https:' && ['ar.wikipedia.org', 'en.wikipedia.org'].includes(url.hostname); }
+      catch { return false; }
+    }).slice(0, 4).map((item) => ({ title: item.title.slice(0, 120), url: item.url, content: item.content.slice(0, 1200) }));
+    // Search text is untrusted: only use a small, fixed vocabulary for biome hints.
+    // An explicit biome in the user's own prompt always takes precedence.
+    if (!/صحر|غاب|جزير|جبل|desert|forest|island|mountain/i.test(prompt)) {
+      const text = sources.map((source) => source.content).join(' ');
+      if (/صحراء|desert/i.test(text)) result.intent.biome = 'desert';
+      else if (/جزيرة|island/i.test(text)) result.intent.biome = 'island';
+      else if (/غابة|forest/i.test(text)) result.intent.biome = 'forest';
+      else if (/جبل|mountain/i.test(text)) result.intent.biome = 'mountains';
+      if (result.intent.biome !== 'meadow') notes.push('استُخدمت كلمة من نتائج ويكيبيديا لاختيار البيئة؛ تحقق من المصادر فقد تكون النتيجة تقريبية.');
+    }
+    if (!sources.length) notes.push('لم تظهر مصادر من ويكيبيديا لهذا البحث.');
   }
-  return {
-    intent: {
-      ...local, prompt, name: original.name, seed: original.seed, biome: data.biome, timeOfDay: data.timeOfDay,
-      water: data.water, scale: options.scale ?? data.scale, style: options.style ?? data.style,
-      density: options.density ?? data.density, features: original.features,
-      assets: assets.length ? assets : undefined, summary: data.summary,
-      cues: assets.length ? assets.map((asset) => `${asset.count} ${asset.assetId}`) : [`biome: ${data.biome}`],
-    },
-    providerId: 'local-wikipedia', providerLabel: 'Qwen محلي + ويكيبيديا', offline: false,
-    sources: references.map(({ title, url }) => ({ title, url })), notes, searched,
-  };
+  return { ...result, providerId: 'tiny-shape-learner', providerLabel: 'المساعد الخفيف المحلي', offline: false,
+    searched, sources: sources.map(({ title, url }) => ({ title, url })), notes };
 }

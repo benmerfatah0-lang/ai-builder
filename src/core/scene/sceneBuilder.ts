@@ -205,7 +205,61 @@ function buildPrimitive(object: PrimitiveObject): THREE.Group {
   return group;
 }
 
+/** Shapes assembled from the learned dimensions and a reproducible variation seed. */
+function buildLearnedTree(object: TreeObject): THREE.Group {
+  const group = new THREE.Group();
+  const shape = object.meta.learnedShape!;
+  const foliage = material(object.color, { roughness: 0.94, flatShading: true, map: getSurfaceTexture('foliage') });
+  const trunk = material(object.trunkColor, { roughness: 1, flatShading: true, map: getSurfaceTexture('bark') });
+  addMesh(group, new THREE.CylinderGeometry(0.17, 0.31, 2.1, 7), trunk, [0, 1.05, 0]);
+  addMesh(group, new THREE.IcosahedronGeometry(1.05 * shape.detail, 1), foliage, [0, 2.8, 0]);
+  const count = 3 + shape.seed % 3;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + (shape.seed % 63) / 10;
+    addMesh(group, new THREE.IcosahedronGeometry(0.55 * shape.detail, 1), foliage,
+      [Math.cos(angle) * 0.68, 2.35 + ((shape.seed >>> (i * 3)) % 3) * 0.14, Math.sin(angle) * 0.68]);
+  }
+  return group;
+}
+
+function buildLearnedRock(object: RockObject): THREE.Group {
+  const group = new THREE.Group();
+  const shape = object.meta.learnedShape!;
+  const geometry = new THREE.IcosahedronGeometry(0.9, 1);
+  const positions = geometry.getAttribute('position') as THREE.BufferAttribute;
+  // Equal vertex coordinates receive equal displacement, even when unindexed.
+  for (let i = 0; i < positions.count; i++) {
+    const x = positions.getX(i), y = positions.getY(i), z = positions.getZ(i);
+    const noise = Math.sin(x * 13.31 + y * 17.71 + z * 29.91 + (shape.seed % 10000)) * 0.14;
+    const factor = 1 + noise * shape.detail;
+    positions.setXYZ(i, x * factor, y * factor, z * factor);
+  }
+  geometry.computeVertexNormals();
+  const mat = material(object.color, { roughness: 0.96, flatShading: true, map: getSurfaceTexture('stone') });
+  addMesh(group, geometry, mat, [0, 1.05, 0]);
+  return group;
+}
+
+function buildLearnedHouse(object: BuildingObject): THREE.Group {
+  const group = new THREE.Group();
+  const shape = object.meta.learnedShape!;
+  const wall = material(object.color, { roughness: 0.93, map: getSurfaceTexture('plaster') });
+  const roof = material(object.roofColor, { roughness: 0.85, flatShading: true, map: getSurfaceTexture('roof') });
+  const dark = material('#3a2a20', { roughness: 1 });
+  const windowMat = material('#a9c9d6', { roughness: 0.4 });
+  addMesh(group, new THREE.BoxGeometry(3.55, 0.3, 3.15), material('#8d8579'), [0, 0.15, 0]);
+  addMesh(group, new THREE.BoxGeometry(3.4, 2.6, 3), wall, [0, 1.6, 0]);
+  const roofHeight = 1.4 * shape.detail;
+  const roofMesh = addMesh(group, new THREE.ConeGeometry(2.55, roofHeight, 4), roof, [0, 2.9 + roofHeight / 2, 0]);
+  roofMesh.rotation.y = Math.PI / 4;
+  addMesh(group, new THREE.BoxGeometry(0.72, 1.3, 0.1), dark, [0, 0.95, 1.55]);
+  const windows = shape.seed % 2 ? [-1, 1] : [1];
+  for (const x of windows) addMesh(group, new THREE.BoxGeometry(0.5, 0.55, 0.08), windowMat, [x, 1.9, 1.56]);
+  return group;
+}
+
 function buildTree(object: TreeObject): THREE.Group {
+  if (object.variant === 'broadleaf' && object.meta.learnedShape) return buildLearnedTree(object);
   const group = new THREE.Group();
   const foliage = material(object.color, { roughness: 0.94, flatShading: true, map: getSurfaceTexture('foliage') });
   const trunk = material(object.trunkColor, { roughness: 1, flatShading: true, map: getSurfaceTexture('bark') });
@@ -273,6 +327,7 @@ function buildTree(object: TreeObject): THREE.Group {
 }
 
 function buildRock(object: RockObject): THREE.Group {
+  if (object.variant === 'boulder' && object.meta.learnedShape) return buildLearnedRock(object);
   const group = new THREE.Group();
   const mat = material(object.color, { roughness: 0.96, flatShading: true, map: getSurfaceTexture('stone') });
 
@@ -293,6 +348,7 @@ function buildRock(object: RockObject): THREE.Group {
 }
 
 function buildBuilding(object: BuildingObject): THREE.Group {
+  if (object.variant === 'house' && object.meta.learnedShape) return buildLearnedHouse(object);
   const group = new THREE.Group();
   const wall = material(object.color, { roughness: 0.93, map: getSurfaceTexture(object.variant === 'house' ? 'plaster' : 'masonry') });
   const roof = material(object.roofColor, { roughness: 0.85, flatShading: true, map: getSurfaceTexture('roof') });

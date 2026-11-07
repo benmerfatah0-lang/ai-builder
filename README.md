@@ -1,6 +1,6 @@
 # AI World Builder
 
-A 3D world editor for the browser with online AI planning and local rendering. Describe a world in
+A 3D world editor for the browser with lightweight local planning and optional Wikipedia search. Describe a world in
 text, inspect and edit it in a Three.js viewport, save it locally, and export it
 as a project file or a glTF 2.0 model for Godot and Unity.
 
@@ -13,46 +13,29 @@ as a project file or a glTF 2.0 model for Godot and Unity.
 
 ---
 
-## تشغيل نسخة الهاتف في Termux (Qwen محلي + ويكيبيديا)
+## تشغيل نسخة الهاتف في Termux (مساعد خفيف + ويكيبيديا)
 
-لا تحتاج إلى حساب أو مفتاح API أو اشتراك. نموذج Qwen2.5-1.5B يعمل على الهاتف عبر llama.cpp؛ مطلوب إنترنت عند كل إنشاء للتحقق من اتصال ويكيبيديا، وللبحث فيها عند الحاجة فقط، وليس للبحث في الويب كله. النموذج صغير وقد يخطئ أو يكون بطيئاً، وقد يفشل على هاتف لا يملك ذاكرة كافية. ملف النموذج حجمه نحو **1.12 GB** ويحتاج أيضاً مساحة وRAM إضافية أثناء التشغيل. حزمة Termux لا تدعم أجهزة 32-bit (arm وi686).
+النسخة المصغرة لا تحتاج إلى Qwen أو llama.cpp أو ملف نموذج كبير أو حساب أو مفتاح API. تستخدم تفسيراً محلياً قائماً على كلمات محدودة، ونموذجاً إحصائياً صغيراً يتعلم متوسط الأبعاد من أمثلة مبدئية مصممة للتطبيق ومن العناصر التي تختارها للتدريب. يبني البرنامج هندسة إجرائية لبيت وشجرة عريضة الأوراق وصخرة مستديرة؛ **ليس نموذج لغة أو نموذجاً عاماً يتعلم أشكالاً جديدة من الإنترنت**. يتطلب الاتصال بويكيبيديا قبل كل إنشاء، ويمكن البحث فيها عند الطلب؛ لا يبحث في باقي الويب. تُستخدم كلمات قليلة من النتائج لاختيار البيئة فقط، ولا تستخدم صفحات الويب للتدريب.
 
-1. أوقف خادم الهاتف القديم في Termux بالضغط على Ctrl+C. ثبّت المتطلبات:
+1. أوقف الخادم القديم في Termux بالضغط على Ctrl+C، ثم ثبّت Python وcurl إن لم يكونا مثبتين:
 
    ```sh
-   pkg update && pkg install python curl coreutils llama-cpp
+   pkg update && pkg install python curl
    ```
-
-2. نزّل التطبيق والخادم:
+2. نزّل **الملفين معاً** لتحديث نسختك وشغّل الخادم:
 
    ```sh
    mkdir -p ~/world-builder && cd ~/world-builder && \
    curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/world-builder-mobile.html' -o world-builder-mobile.html && \
-   curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/world-builder-server.py' -o world-builder-server.py
+   curl -fL 'https://github.com/benmerfatah0-lang/ai-builder/raw/refs/heads/arena/6c5ab37a-ai-builder/world-builder-server.py' -o world-builder-server.py && \
+   python world-builder-server.py
    ```
 
-3. نزّل النموذج **مرة واحدة**. يمكن إعادة الأمر لاستكمال تنزيل انقطع؛ يتم التحقق من SHA-256 قبل استخدام الملف:
+3. اترك Termux مفتوحاً وافتح **http://127.0.0.1:8080/world-builder-mobile.html** في متصفح الهاتف، ثم حدّث الصفحة. اكتب مثلاً «بيت وشجرة وصخرة» واضغط «أنشئ العالم». إذا كان المنفذ مستخدماً أوقف الخادم القديم أولاً. لإعادة التشغيل لاحقاً: `cd ~/world-builder && python world-builder-server.py`.
+4. لتدريب الأشكال اختر بيتاً أو شجرة عريضة الأوراق أو صخرة مستديرة من المشهد، وعدّل حجمها في **Inspect**، ثم افتح **AI** واضغط «تعلّم من العنصر المحدد». يعيد ذلك حساب متوسط أبعاد فئتها. أنشئ مشهداً جديداً لرؤية تأثيره؛ البيانات تحفظ في المتصفح ويمكن حذفها من اللوحة. الأشكال المدربة تطبّق على طلبات الأصول الصريحة، لا قالب المزرعة أو النباتات الأخرى.
+5. للبحث اختر «ابحث في ويكيبيديا عن هذا الوصف» أو اكتب «ابحث». ستظهر المصادر إن وُجدت. فشل التحقق من الاتصال أو البحث المطلوب يوقف الإنشاء، ولا يوجد بديل صامت. تعبيرات الوصف ومعلومات النتائج محدودة وقد يخطئ التفسير.
 
-   ```sh
-   cd ~/world-builder && \
-   if [ ! -f model.gguf ]; then
-     curl -fL -C - 'https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/62a8d092b0a1047016f3edbd0fde387598727aa5/qwen2.5-1.5b-instruct-q4_k_m.gguf' -o model.gguf.part && \
-     echo '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e  model.gguf.part' | sha256sum -c - && \
-     mv model.gguf.part model.gguf
-   fi
-   ```
-
-   إذا فشل التحقق، احذف `~/world-builder/model.gguf.part` وحاول تنزيله مجدداً. تنزيل النموذج قد يستهلك بيانات الهاتف.
-
-4. شغّل الخادم واترك Termux مفتوحاً:
-
-   ```sh
-   cd ~/world-builder && python world-builder-server.py
-   ```
-
-   افتح **http://127.0.0.1:8080/world-builder-mobile.html** في متصفح الهاتف. قد يستغرق تحميل النموذج وقتاً؛ إذا لم يكن جاهزاً انتظر وحاول مجدداً. لإيقاف التطبيق اضغط Ctrl+C. إذا كان المنفذ مستخدماً، أوقف الخادم القديم أولاً.
-
-**الخصوصية:** يعمل النموذج وخادم التطبيق على الجهاز وعنوانهما محلي فقط؛ لا يُرسل الوصف الكامل لخدمة نموذج خارجية. يرسل التطبيق طلب تحقق إلى ويكيبيديا قبل كل إنشاء، وإذا قرر النموذج البحث يرسل عبارة البحث إلى ويكيبيديا. تُعرض المصادر إن وُجدت، وقد تكون النتائج تقريبية أو غير كاملة. إذا تعذّر الاتصال أو فشل البحث المطلوب، يتوقف الإنشاء ولا يعمل بديل صامت. لا يستورد البحث نماذج 3D جديدة، والبناء محدود بالأصول المتاحة. مفاتيح الخدمات المحفوظة سابقاً في المتصفح لا تُستخدم ولا تُحذف تلقائياً؛ امسح بيانات الموقع إن أردت حذفها (وهذا يحذف المشاريع المحفوظة محلياً أيضاً، فصدّرها أولاً).
+النموذج القديم `~/world-builder/model.gguf` لم يعد يُستخدم ولا يُحذف تلقائياً. لا تحذف بيانات المتصفح قبل تصدير المشاريع المهمة؛ مسحها قد يحذف التدريب والمشاريع. لا يجري أي اختبار سرعة أو اختبار على جهاز Android حقيقي ضمن اختبارات المشروع.
 
 To rebuild the standalone phone file after source changes, run `npm run build:mobile`.
 
@@ -75,10 +58,10 @@ To rebuild the standalone phone file after source changes, run `npm run build:mo
   instanced crops, connecting dirt lanes that follow the terrain, an orchard,
   windbreak trees, and an optional creek with a planked bridge. Footprints are
   collision-checked against a spatial grid, so solids do not intersect.
-- **Text-to-world generation** — an online AI interprets descriptions and may
-  use web search before returning a validated, bounded list of catalog assets.
+- **Text-to-world generation** — a limited rule-based interpreter recognises
+  descriptions and can use Wikipedia biome hints before building a validated, bounded list of assets.
   The local procedural planner builds that list into a **WorldPlan v3**.
-  The same plan and seed rebuild the same placement, but online results can vary.
+  A tiny trainable statistical model affects procedural house, broadleaf and boulder shapes for explicit asset requests. The same plan and seed rebuild the same placement, but search results can vary.
 - **Validate before build** — every plan is checked structurally (Zod +
   hierarchy) and semantically (unsupported geometry, out-of-bounds objects,
   floating/buried solids, overlapping buildings, a bridge without a river).
@@ -110,7 +93,7 @@ To rebuild the standalone phone file after source changes, run `npm run build:mo
   floating toolbar, inspector) and a mobile layout with a bottom dock, bottom
   sheet, touch orbit + pinch-zoom, safe-area handling and 16 px inputs.
 
-AI planning uses a local llama.cpp model, with Wikipedia search when needed and a required internet check before each generation.
+Planning uses a local rule-based interpreter and a trainable statistical shape model, with Wikipedia search when requested and a required internet check before each generation.
 No external 3D assets are downloaded; rendering, saving and export are local.
 
 ### What is deliberately not there yet
@@ -135,7 +118,7 @@ Full risk list and roadmap: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ## Quick start
 
 Requirements: **Node.js 20.19+ or 22.12+** (Vite 7). Online generation also
-requires internet, a local llama-server and the GGUF model. The phone version uses a loopback-only local server. Vite proxies `/api` to this server on port 8080; start it separately as above. The static website server does not provide the AI API.
+requires internet and the loopback-only Python phone server; no LLM or downloaded model is required. Vite proxies `/api` to this server on port 8080; start it separately as above. The static website server does not provide the AI API.
 
 ```bash
 npm install
@@ -328,7 +311,7 @@ command works behind a preview proxy and from a phone on the local network.
 ## Tech stack
 
 React 19 · TypeScript 5.9 · Vite 7 · Three.js r186 · Zod 4 · IndexedDB · Vitest ·
-Testing Library · happy-dom · fake-indexeddb. AI planning uses local llama.cpp and optional Wikipedia search.
+Testing Library · happy-dom · fake-indexeddb. AI planning uses local rules, a statistical shape model and optional Wikipedia search.
 
 ---
 
@@ -355,6 +338,6 @@ Testing Library · happy-dom · fake-indexeddb. AI planning uses local llama.cpp
 
 Phases 1–3 are complete pending real-device acceptance on desktop and Android.
 Next: click-to-place and terrain snapping → terrain sculpting/flattened building
-pads → performance profiling at 500+ objects → improved local-LLM planning →
+pads → performance profiling at 500+ objects → improved local language understanding →
 richer asset pipeline → native engine exports → PWA/offline install. Details and
 acceptance criteria are tracked in the architecture report.
