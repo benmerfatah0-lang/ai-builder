@@ -3,6 +3,7 @@ import { interpretOnline } from '../../ai/onlineInterpreter';
 import { generateWorldPlanWithReport } from '../../../core/generation/generateWorld';
 import type { PromptInterpretation } from '../../ai/types';
 import { useEditor } from '../store';
+import type { useAccount } from '../useAccount';
 import { Icon } from '../../../ui/Icon';
 import { NumberField, SelectField } from '../../../ui/controls';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
@@ -24,10 +25,12 @@ export function AiPanel({
   notify,
   apiKey,
   onApiKeyChange,
+  account,
 }: {
   notify: (message: string, tone?: 'neutral' | 'success' | 'danger') => void;
   apiKey: string;
   onApiKeyChange: (value: string) => void;
+  account: ReturnType<typeof useAccount>;
 }) {
   const { dispatch } = useEditor();
   const [prompt, setPrompt] = useState('');
@@ -40,6 +43,9 @@ export function AiPanel({
   const [notes, setNotes] = useState<string[]>([]);
   const [stats, setStats] = useState<{ objects: number; groups: number } | null>(null);
   const [generationError, setGenerationError] = useState('');
+  const [accountError, setAccountError] = useState('');
+  const [accountBusy, setAccountBusy] = useState(false);
+  const signedIn = account.account.status === 'signedIn' ? account.account : null;
 
   const generate = async () => {
     const text = prompt.trim();
@@ -48,7 +54,11 @@ export function AiPanel({
     setResult(null);
     setNotes([]);
     setStats(null);
-    if (!apiKey.trim()) {
+    if (signedIn && !signedIn.hasKey) {
+      setGenerationError('احفظ مفتاح API في حسابك أولاً.');
+      return;
+    }
+    if (!signedIn && !apiKey.trim()) {
       setGenerationError('أدخل مفتاح OpenAI API في الخانة أدناه، ثم حاول مجدداً.');
       return;
     }
@@ -61,7 +71,7 @@ export function AiPanel({
         ...(style !== 'auto' ? { style } : {}),
         ...(scale !== 'auto' ? { scale } : {}),
         ...(density !== 'auto' ? { density } : {}),
-      });
+      }, signedIn?.hasKey ? { csrfToken: signedIn.csrfToken } : undefined);
       const report = generateWorldPlanWithReport(interpretation.intent);
       if (!report.validation.valid) {
         const first = report.validation.errors[0]?.message ?? 'Unknown validation error.';
@@ -130,14 +140,43 @@ export function AiPanel({
 
       <div className="online-settings" dir="rtl">
         <div className="online-heading"><span className="online-dot" /> ذكاء اصطناعي متصل بالإنترنت</div>
-        <p>يستخدم OpenAI للبحث عند الحاجة ثم يختار من مكتبة العناصر المتاحة. لا يستطيع تنزيل نماذج ثلاثية الأبعاد جديدة.</p>
+        <p>يستخدم OpenAI وقد يبحث عند الحاجة. يتطلب حساب API وفوترة وقد تُفرض رسوم. يُرسل الوصف إلى OpenAI.</p>
+        {account.account.status === 'loading' && <p>جارٍ التحقق من الحساب…</p>}
+        {(account.account.status === 'unconfigured' || account.account.status === 'unavailable') && (
+          <p>حفظ المفتاح في حساب Google غير مفعّل في هذه النسخة. يتطلب خادماً وإعداد Google؛ يمكنك استخدام المفتاح مؤقتاً في هذه الصفحة.</p>
+        )}
+        {account.account.status === 'signedOut' && (
+          <a className="account-signin" href="/api/auth/google" target="_blank" rel="noopener noreferrer">تسجيل الدخول باستخدام Google ↗</a>
+        )}
+        {signedIn && <p>الحساب: <strong>{signedIn.name}</strong> · {signedIn.hasKey ? 'المفتاح محفوظ على الخادم مشفّراً' : 'لم يُحفظ مفتاح بعد'}</p>}
         <label className="field">
-          <span className="field-label">مفتاح OpenAI API</span>
+          <span className="field-label">مفتاح OpenAI API {signedIn?.hasKey ? '(للاستبدال فقط)' : ''}</span>
           <input className="input online-key" type="password" autoComplete="off" spellCheck={false}
             value={apiKey} onChange={(event) => onApiKeyChange(event.target.value)}
-            placeholder="أدخل المفتاح هنا" aria-label="OpenAI API key" />
+            placeholder={signedIn?.hasKey ? 'المفتاح الحالي محفوظ' : 'أدخل المفتاح هنا'} aria-label="OpenAI API key" />
         </label>
-        <p>يتطلب حساب API وفوترة وقد تُفرض رسوم، بما فيها البحث. يُرسل وصفك ومفتاحك إلى OpenAI؛ المفتاح يبقى في الذاكرة حتى إغلاق الصفحة ولا يُحفظ في المشروع. استخدم جهازاً موثوقاً.</p>
+        {signedIn && <div className="account-actions">
+          <button type="button" className="btn btn-small" disabled={accountBusy || !apiKey.trim()} onClick={() => {
+            setAccountBusy(true); setAccountError('');
+            void account.saveKey(apiKey).then(() => { onApiKeyChange(''); notify('حُفظ المفتاح في حسابك.', 'success'); })
+              .catch((error: unknown) => setAccountError(error instanceof Error ? error.message : 'تعذّر حفظ المفتاح.'))
+              .finally(() => setAccountBusy(false));
+          }}>حفظ في الحساب</button>
+          {signedIn.hasKey && <button type="button" className="btn btn-small" disabled={accountBusy} onClick={() => {
+            setAccountBusy(true); setAccountError('');
+            void account.deleteKey().then(() => notify('حُذف المفتاح المحفوظ.', 'success'))
+              .catch((error: unknown) => setAccountError(error instanceof Error ? error.message : 'تعذّر حذف المفتاح.'))
+              .finally(() => setAccountBusy(false));
+          }}>حذف المفتاح</button>}
+          <button type="button" className="btn btn-small" disabled={accountBusy} onClick={() => {
+            setAccountBusy(true); setAccountError('');
+            void account.logout().then(() => onApiKeyChange(''))
+              .catch((error: unknown) => setAccountError(error instanceof Error ? error.message : 'تعذّر تسجيل الخروج.'))
+              .finally(() => setAccountBusy(false));
+          }}>تسجيل الخروج</button>
+        </div>}
+        {accountError && <p className="online-error" role="alert">{accountError}</p>}
+        <p>{signedIn ? 'يُخزّن المفتاح مشفّراً على خادم التطبيق، وليس في Gmail. استخدم خادماً تثق به.' : 'دون تسجيل الدخول يبقى المفتاح في ذاكرة الصفحة فقط، ويُرسل مباشرة إلى OpenAI. استخدم جهازاً موثوقاً.'}</p>
         <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">إنشاء مفتاح من OpenAI ↗</a>
       </div>
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}

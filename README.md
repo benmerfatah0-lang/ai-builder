@@ -25,14 +25,14 @@ template; model-generated suggestions may not determine every farm placement.
 
 An internet connection and an OpenAI **API key** with access to the model and
 search tool are required. A ChatGPT subscription alone is not an API key. API
-calls and searches may incur charges under the user's OpenAI account. Enter the
-key in the editor, not in chat; it is kept in React memory for the current page
-session, is not saved in projects or browser storage, and is sent directly to
-OpenAI along with the prompt. The key is visible to the browser and extensions,
-so use only on a trusted personal device. This client-side design is not a safe
-way to distribute a shared organization key. Refreshing the page clears it.
-Network, billing, access and invalid-plan errors are shown instead of silently
-falling back to local rules. Rendering, editing, saving and exporting are local.
+calls and searches may incur charges. When configured, Google sign-in lets users
+save an encrypted API key on their own app server and use it from another device;
+see [Google account setup](docs/GOOGLE_ACCOUNT.md). The key is not stored in Gmail
+and the server operator can decrypt it. Without that server, the key remains in
+browser memory until refresh and is sent directly to OpenAI. Never share keys in
+chat or use an untrusted server or browser. Network, billing, access and
+invalid-plan errors are shown instead of silently falling back to local rules.
+Rendering, editing, saving and exporting are local.
 
 The downloadable single-file phone version can be refreshed after source changes
 with `npm run build:mobile`. Serve that file with a local HTTP server on Android.
@@ -116,7 +116,8 @@ Full risk list and roadmap: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ## Quick start
 
 Requirements: **Node.js 20.19+ or 22.12+** (Vite 7). Online generation also
-requires internet and an OpenAI API key entered in the UI for each page session.
+requires internet and an OpenAI API key. Account sync also needs the separately
+configured server described in [the setup guide](docs/GOOGLE_ACCOUNT.md).
 
 ```bash
 npm install

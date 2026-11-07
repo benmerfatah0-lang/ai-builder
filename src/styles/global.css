@@ -2918,3 +2918,5 @@ kbd {
 .online-settings a, .online-sources a { color: #eea87e; overflow-wrap: anywhere; }
 .online-error { color: #f4a093; font-size: 12px; line-height: 1.7; }
 .online-sources { display: flex; flex-direction: column; gap: 5px; font-size: 11px; margin: 12px 0; }
+.account-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.account-signin { display: inline-block; margin: 4px 0; font-weight: 700; }

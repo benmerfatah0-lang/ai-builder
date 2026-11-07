@@ -28,6 +28,7 @@
     "src",
     "vite.config.ts",
     "scripts",
-    "website/src"
+    "website/src",
+    "server"
   ]
 }

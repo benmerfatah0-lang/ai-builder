@@ -19,6 +19,7 @@ import { createStarterWorld } from '../../core/generation/starter';
 import { createId } from '../../core/utils/id';
 import { useEditor } from './store';
 import { useAutosave } from './useAutosave';
+import { useAccount } from './useAccount';
 import {
   ALL_AXES,
   Viewport,
@@ -74,6 +75,7 @@ export function Workspace() {
   const [activeTab, setActiveTab] = useState<DesktopTab>('ai');
   // The API key lives only in this mounted editor session, never in a project or browser storage.
   const [onlineKey, setOnlineKey] = useState('');
+  const account = useAccount();
   const [mobilePanel, setMobilePanel] = useState<MobilePanel | null>('ai');
   const [tool, setTool] = useState<TransformTool>('translate');
   const [space, setSpace] = useState<TransformSpace>('world');
@@ -417,7 +419,7 @@ export function Workspace() {
           />
         );
       case 'ai':
-        return <AiPanel notify={notify} apiKey={onlineKey} onApiKeyChange={setOnlineKey} />;
+        return <AiPanel notify={notify} apiKey={onlineKey} onApiKeyChange={setOnlineKey} account={account} />;
       case 'inspector':
         return (
           <InspectorPanel

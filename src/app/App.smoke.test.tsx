@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import App from './App';
 
@@ -11,7 +11,8 @@ vi.mock('../modules/ai/onlineInterpreter', async () => {
     interpretPromptLocally(prompt, options) };
 });
 
-afterEach(cleanup);
+beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ configured: false, signedIn: false, hasKey: false }), { headers: { 'Content-Type': 'application/json' } }))));
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 function worldNameValue(): string {
   return (screen.getByLabelText('World name') as HTMLInputElement).value;
