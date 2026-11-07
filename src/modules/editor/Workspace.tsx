@@ -72,6 +72,8 @@ export function Workspace() {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<DesktopTab>('ai');
+  // The API key lives only in this mounted editor session, never in a project or browser storage.
+  const [onlineKey, setOnlineKey] = useState('');
   const [mobilePanel, setMobilePanel] = useState<MobilePanel | null>('ai');
   const [tool, setTool] = useState<TransformTool>('translate');
   const [space, setSpace] = useState<TransformSpace>('world');
@@ -289,10 +291,6 @@ export function Workspace() {
     [dispatch, isMobile],
   );
 
-  const handleGenerated = () => {
-    if (isMobile) setMobilePanel(null);
-  };
-
   // Keyboard shortcuts (ignored while typing in a field).
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -419,7 +417,7 @@ export function Workspace() {
           />
         );
       case 'ai':
-        return <AiPanel notify={notify} onGenerated={handleGenerated} />;
+        return <AiPanel notify={notify} apiKey={onlineKey} onApiKeyChange={setOnlineKey} />;
       case 'inspector':
         return (
           <InspectorPanel

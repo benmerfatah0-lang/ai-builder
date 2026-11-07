@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { localPromptInterpreter } from '../../ai/promptInterpreter';
+import { interpretOnline } from '../../ai/onlineInterpreter';
 import { generateWorldPlanWithReport } from '../../../core/generation/generateWorld';
 import type { PromptInterpretation } from '../../ai/types';
 import { useEditor } from '../store';
@@ -22,10 +22,12 @@ function randomSeed(): number {
 
 export function AiPanel({
   notify,
-  onGenerated,
+  apiKey,
+  onApiKeyChange,
 }: {
   notify: (message: string, tone?: 'neutral' | 'success' | 'danger') => void;
-  onGenerated?: () => void;
+  apiKey: string;
+  onApiKeyChange: (value: string) => void;
 }) {
   const { dispatch } = useEditor();
   const [prompt, setPrompt] = useState('');
@@ -37,15 +39,24 @@ export function AiPanel({
   const [result, setResult] = useState<PromptInterpretation | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
   const [stats, setStats] = useState<{ objects: number; groups: number } | null>(null);
+  const [generationError, setGenerationError] = useState('');
 
   const generate = async () => {
     const text = prompt.trim();
     if (!text || generating) return;
+    setGenerationError('');
+    setResult(null);
+    setNotes([]);
+    setStats(null);
+    if (!apiKey.trim()) {
+      setGenerationError('أدخل مفتاح OpenAI API في الخانة أدناه، ثم حاول مجدداً.');
+      return;
+    }
     setGenerating(true);
     try {
       // Yield one frame so the button's busy state paints on slower phones.
       await new Promise((resolve) => window.setTimeout(resolve, 16));
-      const interpretation = await localPromptInterpreter.interpret(text, {
+      const interpretation = await interpretOnline(text, apiKey, {
         seed,
         ...(style !== 'auto' ? { style } : {}),
         ...(scale !== 'auto' ? { scale } : {}),
@@ -58,7 +69,7 @@ export function AiPanel({
       }
       dispatch({ type: 'replacePlan', plan: report.plan });
       setResult(interpretation);
-      setNotes(report.warnings.slice(0, 8));
+      setNotes([...(interpretation.notes ?? []), ...report.warnings].slice(0, 12));
       setStats({ objects: report.plan.objects.length, groups: report.plan.groups.length });
       notify(
         report.warnings.length > 0
@@ -66,12 +77,10 @@ export function AiPanel({
           : 'New world generated. Undo restores the previous world.',
         'success',
       );
-      onGenerated?.();
     } catch (error) {
-      notify(
-        error instanceof Error ? error.message : 'World generation failed.',
-        'danger',
-      );
+      const message = error instanceof Error ? error.message : 'تعذّر إنشاء العالم. حاول مجدداً.';
+      setGenerationError(message);
+      notify(message, 'danger');
     } finally {
       setGenerating(false);
     }
@@ -119,6 +128,20 @@ export function AiPanel({
         ))}
       </div>
 
+      <div className="online-settings" dir="rtl">
+        <div className="online-heading"><span className="online-dot" /> ذكاء اصطناعي متصل بالإنترنت</div>
+        <p>يستخدم OpenAI للبحث عند الحاجة ثم يختار من مكتبة العناصر المتاحة. لا يستطيع تنزيل نماذج ثلاثية الأبعاد جديدة.</p>
+        <label className="field">
+          <span className="field-label">مفتاح OpenAI API</span>
+          <input className="input online-key" type="password" autoComplete="off" spellCheck={false}
+            value={apiKey} onChange={(event) => onApiKeyChange(event.target.value)}
+            placeholder="أدخل المفتاح هنا" aria-label="OpenAI API key" />
+        </label>
+        <p>يتطلب حساب API وفوترة وقد تُفرض رسوم، بما فيها البحث. يُرسل وصفك ومفتاحك إلى OpenAI؛ المفتاح يبقى في الذاكرة حتى إغلاق الصفحة ولا يُحفظ في المشروع. استخدم جهازاً موثوقاً.</p>
+        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">إنشاء مفتاح من OpenAI ↗</a>
+      </div>
+      {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
+
       <button
         type="button"
         className="btn btn-primary generate-btn"
@@ -127,9 +150,9 @@ export function AiPanel({
         aria-label="Generate world"
       >
         {generating ? <span className="spinner small" /> : <Icon name="sparkles" size={17} />}
-        {generating ? 'جاري بناء العالم…' : 'أنشئ العالم'} <span className="generate-arrow">←</span>
+        {generating ? 'جاري البحث وبناء العالم…' : 'أنشئ العالم'} <span className="generate-arrow">←</span>
       </button>
-      <p className="generate-caption" dir="rtl">✦ يعمل مباشرة في متصفحك · لا تحتاج إلى حساب</p>
+      <p className="generate-caption" dir="rtl">✦ يتطلب اتصالاً بالإنترنت ومفتاح API</p>
       <div className="settings-heading" dir="rtl"><span>إعدادات متقدمة</span><span>02</span></div>
       <div className="seed-row">
         <NumberField
@@ -180,7 +203,7 @@ export function AiPanel({
         />
       </div>
       <p className="hint-text">
-        Same description, seed and overrides rebuild the same layout, colors and placements.
+        نفس المخطط والبذرة يعيدان التوزيع، لكن نتائج الذكاء الاصطناعي والبحث قد تتغير بين الطلبات.
       </p>
 
 
@@ -193,6 +216,14 @@ export function AiPanel({
             <strong>World generated</strong>
           </div>
           <p className="ai-summary">{result.intent.summary}</p>
+          <p className="hint-text" dir="rtl">{result.searched ? 'تم استخدام البحث عبر الإنترنت في هذا الطلب.' : 'لم تستخدم الخدمة البحث في هذا الطلب.'}</p>
+          {result.searched && !result.sources?.length && <p className="hint-text" dir="rtl">لم تُرفق الخدمة روابط مصادر لهذا الطلب.</p>}
+          {result.sources && result.sources.length > 0 && (
+            <div className="online-sources" dir="rtl">
+              <strong>مصادر البحث</strong>
+              {result.sources.map((source) => <a href={source.url} key={source.url} target="_blank" rel="noopener noreferrer">{source.title} ↗</a>)}
+            </div>
+          )}
           {stats && (
             <p className="hint-text">
               {stats.objects} objects · {stats.groups} groups · plan v3
@@ -223,7 +254,7 @@ export function AiPanel({
 
       <div className="callout callout-info" dir="rtl">
         <Icon name="info" size={16} />
-        <span>يستخدم العناصر المتوفرة في المكتبة مثل المنازل والأشجار والصخور والأشكال. اذكر العدد، أو موضع عنصر بالنسبة لآخر: يمين، يسار، أمام، خلف أو بجانب. الاتجاهات بحسب محاور العالم. يعتمد الفهم على كلمات محددة وليس على نموذج ذكاء اصطناعي عام؛ وصف المزارع يستخدم قالب المزرعة.</span>
+        <span>البحث يساعد على فهم وصفك، لكن البناء يقتصر على عناصر المكتبة الحالية؛ لا تُستورد نماذج جديدة من المواقع. قد لا تكون النتيجة نسخة دقيقة من مكان حقيقي.</span>
       </div>
     </div>
   );

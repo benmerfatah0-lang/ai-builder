@@ -1,7 +1,15 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import App from './App';
+
+// Exercise the editor workflow deterministically; the HTTP provider has its
+// own tests with mocked API responses.
+vi.mock('../modules/ai/onlineInterpreter', async () => {
+  const { interpretPromptLocally } = await import('../modules/ai/promptInterpreter');
+  return { interpretOnline: async (prompt: string, _key: string, options: Parameters<typeof interpretPromptLocally>[1]) =>
+    interpretPromptLocally(prompt, options) };
+});
 
 afterEach(cleanup);
 
@@ -19,6 +27,7 @@ async function bootDesktop() {
 
 function openTab(name: string) {
   fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${name}$`) }));
+  if (name === 'AI') fireEvent.change(screen.getByLabelText('OpenAI API key'), { target: { value: 'test-key' } });
 }
 
 describe('application runtime', () => {

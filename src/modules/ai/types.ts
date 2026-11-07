@@ -61,6 +61,10 @@ export interface PromptInterpretation {
   providerLabel: string;
   /** True when interpretation runs fully in the browser with no network calls. */
   offline: boolean;
+  /** Web citations, returned only when the online provider supplies them. */
+  sources?: { title: string; url: string }[];
+  notes?: string[];
+  searched?: boolean;
 }
 
 export interface InterpretOptions {

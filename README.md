@@ -1,6 +1,6 @@
 # AI World Builder
 
-A free-first, local-first 3D world editor for the browser. Describe a world in
+A 3D world editor for the browser with online AI planning and local rendering. Describe a world in
 text, inspect and edit it in a Three.js viewport, save it locally, and export it
 as a project file or a glTF 2.0 model for Godot and Unity.
 
@@ -13,18 +13,26 @@ as a project file or a glTF 2.0 model for Godot and Unity.
 
 ---
 
-## Arabic asset composition
+## Online AI and internet search
 
-Arabic descriptions can request library assets and counts, for example
-`بيت على يمين شجرة و 3 صخور` or `منزل بجانب برج و 2 نخلة`.
-The local interpreter supports a limited vocabulary for houses, towers, trees,
-palms, cacti, rocks, lanterns, simple shapes, fences and paths. It recognises
-left/right/front/behind/near between two named assets, in world coordinates, and
-places the requested library objects on terrain with spacing and water checks.
-It reports when placement cannot be completed. General landscape prompts retain
-the biome generator and farm prompts retain the structured farm planner; this
-is rule-based, not unrestricted natural language understanding. Counts are
-limited by placement and a maximum of 300 explicit assets.
+The editor's Generate button always sends the description to the OpenAI
+Responses API (`gpt-4.1-mini`) with its web-search tool available. The model
+can search unfamiliar or factual topics; the result indicates whether a search
+was actually used and displays any citations returned. The result is validated
+against a fixed catalog and built locally. It cannot download new 3D models and
+may approximate unsupported objects. Explicit farm prompts use the existing farm
+template; model-generated suggestions may not determine every farm placement.
+
+An internet connection and an OpenAI **API key** with access to the model and
+search tool are required. A ChatGPT subscription alone is not an API key. API
+calls and searches may incur charges under the user's OpenAI account. Enter the
+key in the editor, not in chat; it is kept in React memory for the current page
+session, is not saved in projects or browser storage, and is sent directly to
+OpenAI along with the prompt. The key is visible to the browser and extensions,
+so use only on a trusted personal device. This client-side design is not a safe
+way to distribute a shared organization key. Refreshing the page clears it.
+Network, billing, access and invalid-plan errors are shown instead of silently
+falling back to local rules. Rendering, editing, saving and exporting are local.
 
 The downloadable single-file phone version can be refreshed after source changes
 with `npm run build:mobile`. Serve that file with a local HTTP server on Android.
@@ -48,11 +56,10 @@ with `npm run build:mobile`. Serve that file with a local HTTP server on Android
   instanced crops, connecting dirt lanes that follow the terrain, an orchard,
   windbreak trees, and an optional creek with a planked bridge. Footprints are
   collision-checked against a spatial grid, so solids do not intersect.
-- **Text-to-world generation** — a deterministic, fully offline interpreter maps
-  descriptions to biome, style, scale, density, time of day, water and farm
-  features, then a seeded planner produces a **WorldPlan v3**. The same
-  description and seed rebuild the same world; matched cues and generation
-  warnings are shown in the UI.
+- **Text-to-world generation** — an online AI interprets descriptions and may
+  use web search before returning a validated, bounded list of catalog assets.
+  The local procedural planner builds that list into a **WorldPlan v3**.
+  The same plan and seed rebuild the same placement, but online results can vary.
 - **Validate before build** — every plan is checked structurally (Zod +
   hierarchy) and semantically (unsupported geometry, out-of-bounds objects,
   floating/buried solids, overlapping buildings, a bridge without a river).
@@ -84,15 +91,15 @@ with `npm run build:mobile`. Serve that file with a local HTTP server on Android
   floating toolbar, inspector) and a mobile layout with a bottom dock, bottom
   sheet, touch orbit + pinch-zoom, safe-area handling and 16 px inputs.
 
-No paid APIs, accounts, telemetry or remote assets are used. All generation,
-rendering, saving and exporting happens in the browser.
+AI planning uses a paid external API and sends the description to OpenAI.
+No external 3D assets are downloaded; rendering, saving and export are local.
 
 ### What is deliberately not there yet
 
 No placeholder buttons or mock features are shipped:
 
-- The “AI” is a **deterministic rule-based planner**, not an LLM. A local LLM can
-  implement the existing `PromptInterpreter` interface later.
+- Web search informs the AI but does not import new models or guarantee an exact
+  replica; available 3D objects and compositions are limited by the local catalog.
 - No click-to-place on terrain, box selection or terrain sculpting yet. Buildings
   are grounded, but terrain edits do not re-snap existing objects.
 - GLB export has geometry, materials, vertex colours and generated textures, but no lights, colliders,
@@ -108,8 +115,8 @@ Full risk list and roadmap: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Quick start
 
-Requirements: **Node.js 20.19+ or 22.12+** (Vite 7). No API keys or environment
-variables are needed.
+Requirements: **Node.js 20.19+ or 22.12+** (Vite 7). Online generation also
+requires internet and an OpenAI API key entered in the UI for each page session.
 
 ```bash
 npm install
@@ -217,7 +224,7 @@ The viewport is a genuine WebGL 2 renderer, not a 2D fallback:
 | Resilience | GPU context-loss recovery, clear WebGL 2 error message with a retry button |
 | Proof | Live HUD: `WebGL 2 · <fps> fps · <draws> draws`; hover for the GPU/vendor string. Camera button exports a PNG of the current frame |
 
-Everything is local: surface textures are generated in the browser, with no CDNs or network requests. Grass, sand, stone, wood, bark, roofs and foliage use small shared tiled maps; browser GLB exports embed these maps.
+Surface textures are generated in the browser without a CDN. Grass, sand, stone, wood, bark, roofs and foliage use small shared tiled maps; browser GLB exports embed these maps. AI planning makes network requests to OpenAI.
 
 ---
 
@@ -302,7 +309,7 @@ command works behind a preview proxy and from a phone on the local network.
 ## Tech stack
 
 React 19 · TypeScript 5.9 · Vite 7 · Three.js r186 · Zod 4 · IndexedDB · Vitest ·
-Testing Library · happy-dom · fake-indexeddb. All open source, no paid services.
+Testing Library · happy-dom · fake-indexeddb. Online AI uses an external paid API.
 
 ---
 
