@@ -3,6 +3,8 @@ import {
   useContext,
   useMemo,
   useReducer,
+  useState,
+  type SetStateAction,
   type Dispatch,
   type ReactNode,
 } from 'react';
@@ -38,6 +40,7 @@ import {
   ungroupNode,
 } from '../../core/world-plan/hierarchy';
 import { createId } from '../../core/utils/id';
+import type { ConstructionPreview } from './constructionPreview';
 
 const HISTORY_LIMIT = 80;
 
@@ -541,6 +544,8 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
 interface EditorContextValue {
   state: EditorState;
   dispatch: Dispatch<EditorAction>;
+  constructionPreview: ConstructionPreview | null;
+  setConstructionPreview: Dispatch<SetStateAction<ConstructionPreview | null>>;
 }
 
 const EditorContext = createContext<EditorContextValue | null>(null);
@@ -553,7 +558,8 @@ export function EditorProvider({
   initialPlan: WorldPlan;
 }) {
   const [state, dispatch] = useReducer(editorReducer, initialPlan, createInitialEditorState);
-  const value = useMemo(() => ({ state, dispatch }), [state]);
+  const [constructionPreview, setConstructionPreview] = useState<ConstructionPreview | null>(null);
+  const value = useMemo(() => ({ state, dispatch, constructionPreview, setConstructionPreview }), [state, constructionPreview]);
   return <EditorContext.Provider value={value}>{children}</EditorContext.Provider>;
 }
 

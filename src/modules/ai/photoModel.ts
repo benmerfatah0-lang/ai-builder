@@ -13,7 +13,7 @@ import type { ImageReference } from './imageReferences';
 
 export interface TinyImage { width: number; height: number; rgba: Uint8Array }
 /** Isolate a simple transparent or uniform-edged background. No object recognition. */
-export function photoToModel(image: TinyImage, source: ImageReference): PhotoModel {
+export function photoToModel(image: TinyImage, source: ImageReference, includeBackground = false): PhotoModel {
   const { width: w, height: h, rgba } = image;
   if (w < 2 || h < 2 || w > 24 || h > 24 || rgba.length !== w * h * 4) throw new Error('بيانات الصورة غير صالحة.');
   const pixel = (i: number) => [rgba[i * 4]!, rgba[i * 4 + 1]!, rgba[i * 4 + 2]!, rgba[i * 4 + 3]!] as const;
@@ -29,9 +29,9 @@ export function photoToModel(image: TinyImage, source: ImageReference): PhotoMod
     if (transparent) return false;
     return Math.hypot(r-background[0]!, g-background[1]!, b-background[2]!) < 55;
   };
-  if (!transparent && edges.filter(close).length < edges.length * .8) throw new Error('خلفية الصورة معقدة؛ اختر صورة لجسم واحد على خلفية بسيطة أو شفافة.');
+  if (!includeBackground && !transparent && edges.filter(close).length < edges.length * .8) throw new Error('خلفية الصورة معقدة؛ اختر صورة لجسم واحد على خلفية بسيطة أو شفافة.');
   const removed = new Uint8Array(w * h), queue: number[] = [];
-  for (const i of edges) if (close(i) && !removed[i]) { removed[i] = 1; queue.push(i); }
+  for (const i of edges) if (!includeBackground && close(i) && !removed[i]) { removed[i] = 1; queue.push(i); }
   for (let index = 0; index < queue.length; index++) {
     const i = queue[index]!, x = i % w, y = Math.floor(i / w);
     for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]] as const) {
@@ -42,7 +42,7 @@ export function photoToModel(image: TinyImage, source: ImageReference): PhotoMod
     }
   }
   const foreground = Array.from({ length: w*h }, (_, i) => i).filter((i) => !removed[i] && pixel(i)[3] >= 128);
-  if (foreground.length < 6 || foreground.length > w*h*.8) throw new Error('تعذّر فصل شكل واضح من الصورة؛ جرّب صورة أخرى بخلفية بسيطة.');
+  if (foreground.length < 6 || (!includeBackground && foreground.length > w*h*.8)) throw new Error('تعذّر فصل شكل واضح من الصورة؛ جرّب صورة أخرى بخلفية بسيطة.');
   const minX=Math.min(...foreground.map((i) => i%w)), maxX=Math.max(...foreground.map((i) => i%w));
   const minY=Math.min(...foreground.map((i) => Math.floor(i/w))), maxY=Math.max(...foreground.map((i) => Math.floor(i/w)));
   const mask = new Uint8Array(w*h); for (const i of foreground) mask[i]=1;
@@ -50,12 +50,12 @@ export function photoToModel(image: TinyImage, source: ImageReference): PhotoMod
     const x=i%w, y=Math.floor(i/w);
     // The depth is a simple symmetric assumption based on distance to the silhouette edge.
     let distance=1;
-    while (distance < 12 && x-distance >= 0 && x+distance < w && y-distance >= 0 && y+distance < h &&
+    while (!includeBackground && distance < 12 && x-distance >= 0 && x+distance < w && y-distance >= 0 && y+distance < h &&
       mask[y*w+x-distance] && mask[y*w+x+distance] && mask[(y-distance)*w+x] && mask[(y+distance)*w+x]) distance++;
     const [r,g,b] = pixel(i);
     return { x: x-minX, y: y-minY, depth: distance, color: `#${[r,g,b].map((v) => v.toString(16).padStart(2,'0')).join('')}` };
   });
-  return photoModelSchema.parse({ width: maxX-minX+1, height: maxY-minY+1, cells,
+  return photoModelSchema.parse({ mode: includeBackground ? 'full-image-slab' : 'silhouette', width: maxX-minX+1, height: maxY-minY+1, cells,
     source: { title: source.title, url: source.url, author: source.author, license_name: source.license_name, license_url: source.license_url } });
 }
 

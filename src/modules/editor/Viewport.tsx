@@ -32,6 +32,7 @@ import {
 import { createSkyDome, placeSkyDome, type SkyHandle } from '../../core/scene/sky';
 import { animateWater, type WaterAnimation } from '../../core/scene/water';
 import { Icon } from '../../ui/Icon';
+import type { ConstructionPreview } from './constructionPreview';
 
 export type TransformTool = 'translate' | 'rotate' | 'scale';
 export type TransformSpace = 'world' | 'local';
@@ -51,6 +52,7 @@ export interface ViewportProps {
   onSelect: (id: string | null, additive: boolean) => void;
   onTransformCommit: (id: string, transform: Transform) => void;
   onTransformStart?: () => void;
+  constructionPreview?: ConstructionPreview | null;
 }
 
 interface Runtime {
@@ -86,8 +88,10 @@ export function Viewport({
   onSelect,
   onTransformCommit,
   onTransformStart,
+  constructionPreview,
 }: ViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const framedConstruction = useRef<string | null>(null);
   const runtimeRef = useRef<Runtime | null>(null);
   const planRef = useRef(plan);
   const selectionRef = useRef(selection);
@@ -510,6 +514,27 @@ export function Viewport({
     }
   }, []);
 
+  // Temporary build stages are visual only, outside the project and picking tree.
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime || !constructionPreview || constructionPreview.base !== plan) {
+      if (!constructionPreview) framedConstruction.current = null;
+      return;
+    }
+    const group = new THREE.Group();
+    group.name = 'construction-preview';
+    for (const object of constructionPreview.objects) group.add(createWorldObjectGroup(object, false));
+    runtime.scene.add(group);
+    if (framedConstruction.current !== constructionPreview.key && constructionPreview.objects.length) {
+      framedConstruction.current = constructionPreview.key;
+      const [x,y,z] = constructionPreview.objects[constructionPreview.objects.length - 1]!.transform.position;
+      runtime.controls.target.set(x, y + 1.5, z);
+      runtime.camera.position.set(x + 12, y + 9, z + 15);
+      runtime.controls.update();
+    }
+    return () => { group.removeFromParent(); disposeObject3D(group); };
+  }, [constructionPreview, plan, status]);
+
   // Terrain, water and grid.
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -708,9 +733,12 @@ export function Viewport({
     controls.setSpace(space);
   }, [selection, plan, tool, space]);
 
-  // Frame a different world when one is opened.
+  // Frame a selected new object on opening the editor, otherwise frame the world.
   useEffect(() => {
-    runtimeRef.current?.frameWorld();
+    // A freshly mounted Forge preview has already framed its construction site.
+    if (constructionPreview?.base === plan) return;
+    if (selectionRef.current.length) runtimeRef.current?.frameSelection(selectionRef.current);
+    else runtimeRef.current?.frameWorld();
   }, [plan.id]);
 
   // Frame requests from the toolbar and keyboard shortcuts.
@@ -752,6 +780,7 @@ export function Viewport({
         {selectedCount > 1 && (
           <span className="hud-pill hud-pill-accent">{selectedCount} selected</span>
         )}
+        {constructionPreview && constructionPreview.base === plan && <span className="hud-pill hud-pill-accent" dir="rtl">بناء «{constructionPreview.label}» {Math.min(constructionPreview.rows, constructionPreview.total)} / {constructionPreview.total} · معاينة مؤقتة</span>}
         {profile && (
           <span
             className="hud-pill hud-pill-subtle viewport-gpu"

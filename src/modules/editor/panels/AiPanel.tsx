@@ -36,13 +36,14 @@ function randomSeed(): number {
   return Math.floor(Math.random() * 0xffffffff);
 }
 
-export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }: {
+export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, active = true }: {
   mapTrainer: MapTrainer;
   variant?: 'panel' | 'forge';
+  active?: boolean;
   onOpenStudio?: () => void;
   notify: (message: string, tone?: 'neutral' | 'success' | 'danger') => void;
 }) {
-  const { state, dispatch } = useEditor();
+  const { state, dispatch, setConstructionPreview } = useEditor();
   const currentPlan = useRef(state.plan); currentPlan.current = state.plan;
   const [shapeModel, setShapeModel] = useState(() => {
     try { return readShapeModel(window.localStorage); } catch { return initialShapeModel(); }
@@ -203,21 +204,22 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
             setNotes((old) => [`تم تخطي «${item.topic.term}» دون إضافته.`, ...old]);
             if (studio.index + 1 < studio.requests.length) setStudio({ ...studio, index: studio.index + 1 });
             else { setStudio(null); setStudioPending(false); }
-          }} onComplete={(model) => {
+          }} onPreview={setConstructionPreview} showMapPreview={variant === 'forge' && active}
+          onPrepare={(model) => {
+            if (currentPlan.current !== studio.plan || currentPrompt.current.trim() !== studio.text) throw new Error('تغيّر العالم أو الوصف؛ أوقف البناء وأعد المحاولة.');
             const item = studio.requests[studio.index]!;
-            if (currentPlan.current !== studio.plan || currentPrompt.current.trim() !== studio.text) {
+            return { base: studio.plan, before: studio.plan, after: addPhotoModels(studio.plan, model, item.topic.term, item.count, item.relation) };
+          }} onComplete={(model, prepared) => {
+            const item = studio.requests[studio.index]!;
+            if (!prepared || currentPlan.current !== studio.plan || currentPrompt.current.trim() !== studio.text) {
               setGenerationError('تغيّر العالم أو الوصف أثناء البناء؛ أُوقفت بقية الإضافات.'); setStudio(null); setStudioPending(false); return;
             }
-            let next = studio.plan;
-            try {
-              next = addPhotoModels(next, model, item.topic.term, item.count, item.relation);
-              dispatch({ type: 'replacePlan', plan: next });
-              setStats({ objects: next.objects.length, groups: next.groups.length });
-              setNotes((old) => [item.count === 1 ? `أُضيف مجسم الصورة التقريبي؛ «${item.topic.term}»، الخلف والعمق افتراضيان.` : `أُضيف ${item.count} من «${item.topic.term}» من الصورة تقريبياً؛ الخلف والعمق افتراضيان.`, ...old]);
-            } catch (error) {
-              setNotes((old) => [`لم تُضف نسخ «${item.topic.term}»: ${error instanceof Error ? error.message : 'تعذّر البناء.'}`, ...old]);
-              next = studio.plan;
-            }
+            const next = prepared.after;
+            dispatch({ type: 'replacePlan', plan: next });
+            const added = next.objects.filter((object) => !prepared.base.objects.some((old) => old.id === object.id));
+            if (added.length) dispatch({ type: 'select', ids: [added[added.length - 1]!.id], mode: 'replace' });
+            setStats({ objects: next.objects.length, groups: next.groups.length });
+            setNotes((old) => [model.mode === 'full-image-slab' ? `أُضيف ${item.count} من «${item.topic.term}»: لوح الصورة كاملة بما فيها الخلفية.` : item.count === 1 ? `أُضيف مجسم الصورة التقريبي؛ «${item.topic.term}»، الخلف والعمق افتراضيان.` : `أُضيف ${item.count} من «${item.topic.term}» من الصورة تقريبياً؛ الخلف والعمق افتراضيان.`, ...old]);
             if (studio.index + 1 < studio.requests.length) setStudio({ ...studio, index: studio.index + 1, plan: next });
             else { setStudio(null); setStudioPending(false); }
           }} />

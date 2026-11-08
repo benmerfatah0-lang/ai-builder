@@ -1,3 +1,4 @@
+import { KeepAlive } from './KeepAlive';
 import {
   useCallback,
   useEffect,
@@ -64,7 +65,7 @@ const PANEL_TITLES: Record<MobilePanel, string> = {
 };
 
 export function Workspace() {
-  const { state, dispatch } = useEditor();
+  const { state, dispatch, constructionPreview } = useEditor();
   const mapTrainer = useMapTrainer();
   const [repository, setRepository] = useState<WorldRepository>(() => getWorldRepository());
   const [storageKind, setStorageKind] = useState<'indexeddb' | 'memory'>(
@@ -465,8 +466,8 @@ export function Workspace() {
         <button type="button" className={view === 'studio' ? 'is-active' : ''} onClick={() => setView('studio')} aria-current={view === 'studio' ? 'page' : undefined}><Icon name="cube" size={16} /><span>Builder</span><small>المحرر</small></button>
       </nav>
 
-      {view === 'forge' ? <ForgeHome worlds={worlds} mapTrainer={mapTrainer} storageKind={storageKind} notify={notify} onOpenStudio={() => { setView('studio'); setMobilePanel(null); }} onOpenLibrary={openLibrary} onOpenWorld={(id) => void openWorld(id)} /> : <>
-      <main className={`workspace ${isMobile && mobilePanel ? 'has-sheet' : ''}`}>
+      <KeepAlive active={view === 'forge'}><ForgeHome active={view === 'forge'} worlds={worlds} mapTrainer={mapTrainer} storageKind={storageKind} notify={notify} onOpenStudio={() => { setView('studio'); setMobilePanel(null); }} onOpenLibrary={openLibrary} onOpenWorld={(id) => void openWorld(id)} /></KeepAlive>
+      <main hidden={view !== 'studio'} className={`workspace ${isMobile && mobilePanel ? 'has-sheet' : ''}`}>
         <aside className="sidebar desktop-only" aria-label="Editor panels">
           <nav className="panel-tabs" role="tablist">
             {DESKTOP_TABS.map((tab) => (
@@ -483,12 +484,16 @@ export function Workspace() {
               </button>
             ))}
           </nav>
-          <div className="panel-content">{renderPanel(activeTab)}</div>
+          <div className="panel-content">
+            {!isMobile && <KeepAlive active={view === 'studio' && activeTab === 'ai'}><AiPanel notify={notify} mapTrainer={mapTrainer} /></KeepAlive>}
+            {activeTab !== 'ai' && renderPanel(activeTab)}
+          </div>
         </aside>
 
         <section className="viewport-wrap" aria-label="3D viewport">
-          <Viewport
+          {view === 'studio' && <Viewport
             plan={state.plan}
+            constructionPreview={constructionPreview}
             selection={state.selection}
             tool={tool}
             space={space}
@@ -499,7 +504,7 @@ export function Workspace() {
             onTransformCommit={(id, transform) =>
               dispatch({ type: 'setTransform', id, transform })
             }
-          />
+          />}
           <ViewportToolbar
             tool={tool}
             space={space}
@@ -520,11 +525,11 @@ export function Workspace() {
         </aside>
       </main>
 
-      {isMobile && mobilePanel && (
-        <div className="mobile-sheet" role="dialog" aria-label={PANEL_TITLES[mobilePanel]}>
+      {isMobile && (
+        <div className="mobile-sheet" role="dialog" hidden={!mobilePanel || view !== 'studio'} aria-label={mobilePanel ? PANEL_TITLES[mobilePanel] : 'Editor panel'}>
           <div className="sheet-head">
             <span className="sheet-handle" />
-            <h2>{PANEL_TITLES[mobilePanel]}</h2>
+            <h2>{mobilePanel ? PANEL_TITLES[mobilePanel] : ''}</h2>
             <button
               type="button"
               className="icon-btn"
@@ -534,12 +539,12 @@ export function Workspace() {
               <Icon name="close" size={17} />
             </button>
           </div>
-          <div className="sheet-body">{renderPanel(mobilePanel)}</div>
+          <div className="sheet-body"><KeepAlive active={view === 'studio' && mobilePanel === 'ai'}><AiPanel notify={notify} mapTrainer={mapTrainer} /></KeepAlive>{mobilePanel && mobilePanel !== 'ai' && renderPanel(mobilePanel)}</div>
         </div>
       )}
 
       {isMobile && (
-        <nav className="mobile-dock" aria-label="Editor panels">
+        <nav className="mobile-dock" hidden={view !== 'studio'} aria-label="Editor panels">
           {MOBILE_TABS.map((tab) => (
             <button
               key={tab.id}
@@ -555,7 +560,6 @@ export function Workspace() {
         </nav>
       )}
 
-      </>}
 
       <WorldLibraryDialog
         open={libraryOpen}

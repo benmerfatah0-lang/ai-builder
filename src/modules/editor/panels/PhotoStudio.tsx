@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { buildPhotoModelGeometry } from '../../../core/scene/photoModel';
 import type { PhotoModel } from '../../../core/world-plan/schema';
 import type { ImageReference } from '../../ai/imageReferences';
-import { photoToModel } from '../../ai/photoModel';
+import { photoToModel, type TinyImage } from '../../ai/photoModel';
+import { constructionStage, type PreparedConstruction, type ConstructionPreview } from '../constructionPreview';
+import { Viewport } from '../Viewport';
 import { readPhotoPixels, searchImageReferencePage } from '../../ai/onlineInterpreter';
 import type { TopicResearch } from '../../ai/unknownResearch';
 
@@ -35,19 +37,24 @@ function Preview({ model, rows }: { model: PhotoModel; rows: number }) {
   useEffect(() => {
     if (!mesh.current) return;
     const old = mesh.current.geometry;
-    mesh.current.geometry = buildPhotoModelGeometry(model, model.cells.filter((cell) => cell.y < rows));
+    mesh.current.geometry = buildPhotoModelGeometry(model, model.cells.filter((cell) => cell.y >= model.height - rows));
     old.dispose();
   }, [model, rows]);
   return <><div ref={host} aria-label="معاينة المجسم ثلاثية الأبعاد" style={{ width: '100%', minHeight: unavailable ? 0 : 240, overflow: 'hidden', touchAction: 'none' }} />
     {unavailable && <p>معاينة WebGL غير متاحة على هذا الجهاز؛ يمكن متابعة البناء دون معاينة.</p>}</>;
 }
 
-/** User selects only if search returned multiple ambiguous candidates. */
-export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغلاق الاستوديو' }: { topic: TopicResearch; onComplete: (model: PhotoModel) => void; onCancel: () => void; cancelLabel?: string }) {
+/** Candidate choice, actual placement preparation and a real, transient build preview. */
+export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغلاق الاستوديو', onPrepare, onPreview, showMapPreview = false }: {
+  topic: TopicResearch; onComplete: (model: PhotoModel, prepared?: PreparedConstruction) => void; onCancel: () => void; cancelLabel?: string;
+  onPrepare?: (model: PhotoModel) => PreparedConstruction; onPreview?: Dispatch<SetStateAction<ConstructionPreview | null>>; showMapPreview?: boolean;
+}) {
+  const root = useRef<HTMLElement>(null);
+  const progressRoot = useRef<HTMLDivElement>(null);
+  useEffect(() => { root.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); }, []);
   const [images, setImages] = useState(topic.images);
   const [next, setNext] = useState(topic.imageNext ?? null);
-  const [pageBusy, setPageBusy] = useState(false);
-  const [pageError, setPageError] = useState('');
+  const [pageBusy, setPageBusy] = useState(false), [pageError, setPageError] = useState('');
   const pageRequest = useRef<AbortController | null>(null);
   const ambiguous = useRef(topic.images.length > 1 || topic.imageNext != null || topic.images.length === 0);
   const [selected, setSelected] = useState<ImageReference | null>(() => !ambiguous.current && topic.images.length === 1 ? topic.images[0]! : null);
@@ -61,40 +68,66 @@ export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغل
     } catch (error) { if (!request.signal.aborted) setPageError(error instanceof Error ? error.message : 'تعذّر تحميل المزيد.'); }
     finally { if (pageRequest.current === request) pageRequest.current = null; if (!request.signal.aborted) setPageBusy(false); }
   };
+  const [attempt, setAttempt] = useState(0);
   const [model, setModel] = useState<PhotoModel | null>(null);
-  const [rows, setRows] = useState(0);
-  const [error, setError] = useState('');
-  const [finished, setFinished] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [prepared, setPrepared] = useState<PreparedConstruction | undefined>();
+  const [pixels, setPixels] = useState<TinyImage | null>(null);
+  const [rows, setRows] = useState(0), [error, setError] = useState('');
+  const [canUseSlab, setCanUseSlab] = useState(false);
+  const [finished, setFinished] = useState(false), [loading, setLoading] = useState(false);
   const complete = useRef(onComplete); complete.current = onComplete;
+  const prepare = useRef(onPrepare); prepare.current = onPrepare;
+  const preview = useRef(onPreview); preview.current = onPreview;
+  const previewKey = useRef(`photo-${Math.random().toString(36).slice(2)}`);
+  const build = (image: TinyImage, source: ImageReference, includeBackground = false) => {
+    let built: PhotoModel;
+    try { built = photoToModel(image, source, includeBackground); }
+    catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'تعذّر فصل الصورة.');
+      setCanUseSlab(!includeBackground); setLoading(false); return;
+    }
+    try {
+      const draft = prepare.current?.(built);
+      setPrepared(draft); setModel(built); setRows(0); setError(''); setCanUseSlab(false); setLoading(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'تعذّر تحديد موقع البناء.'); setCanUseSlab(false); setLoading(false);
+    }
+  };
   useEffect(() => {
     if (!selected) return;
     let cancelled = false;
-    setError(''); setModel(null); setRows(0); setLoading(true);
-    void readPhotoPixels(selected).then((pixels) => {
+    setError(''); setModel(null); setPrepared(undefined); setPixels(null); setCanUseSlab(false); setRows(0); setLoading(true);
+    void readPhotoPixels(selected).then((result) => {
       if (cancelled) return;
-      const built = photoToModel(pixels, selected);
-      setModel(built); setLoading(false);
+      setPixels(result); build(result, selected);
     }).catch((reason: unknown) => {
       if (!cancelled) { setError(reason instanceof Error ? reason.message : 'تعذّر قراءة الصورة.'); setLoading(false); }
     });
     return () => { cancelled = true; };
-  }, [selected]);
+  }, [selected, attempt]);
+  useEffect(() => { if (model) progressRoot.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); }, [model]);
+  const stage = prepared && model ? constructionStage(prepared, rows, previewKey.current, topic.term, model.height) : null;
+  useEffect(() => {
+    if (!stage) return;
+    preview.current?.(stage);
+    const owner = stage.key;
+    return () => { preview.current?.((previous) => previous?.key === owner ? null : previous); };
+  }, [prepared, model, rows]);
   useEffect(() => {
     if (!model) return;
     let current = 0;
     const timer = window.setInterval(() => {
       current++;
       setRows(current);
-      if (current >= model.height) { window.clearInterval(timer); setFinished(true); complete.current(model); }
-    }, 70);
+      if (current >= model.height) { window.clearInterval(timer); setFinished(true); complete.current(model, prepared); }
+    }, 90);
     return () => window.clearInterval(timer);
-  }, [model]);
-  return <section className="wiki-library" dir="rtl" aria-label="استوديو تقريب الصورة">
+  }, [model, prepared]);
+  return <section ref={root} className="wiki-library" dir="rtl" aria-label="استوديو تقريب الصورة">
     <strong>استوديو بناء «{topic.term}»</strong>
     {topic.imageNotice && <p>{topic.imageNotice}</p>}
-    <p>تقريب منخفض الدقة من شكل المقدمة؛ العمق والخلف متناظران تقديرياً ولا نعرف شكلهما الحقيقي. يحتاج صورة جسم واحد بخلفية شفافة أو موحدة؛ قد يفصلها خطأ.</p>
-    {ambiguous.current && <div className="wiki-list"><span>النتائج ملتبسة؛ اختر الصورة الأقرب، ويفضّل أن تكون بخلفية بسيطة:</span>{images.map((image) => <button className="image-ref-card" type="button" key={image.url} onClick={() => setSelected(image)} disabled={finished} aria-pressed={selected?.url === image.url}>
+    <p>تقريب منخفض الدقة؛ الخلف والعمق مفترضان، وليسا استعادة حقيقية. يحتاج الفصل صورة جسم واحد بخلفية شفافة أو موحدة.</p>
+    {ambiguous.current && <div className="wiki-list"><span>لبدء البناء اضغط على الصورة الأقرب، ويفضّل أن تكون بخلفية بسيطة:</span>{images.map((image) => <button className="image-ref-card" type="button" key={image.url} onClick={() => { if (selected?.url === image.url) setAttempt((old) => old + 1); else setSelected(image); }} disabled={finished} aria-pressed={selected?.url === image.url}>
       <img src={image.thumbnail} alt={image.title} loading="lazy" width="120" referrerPolicy="no-referrer"/><span>{image.title} · {image.author} · {image.license_name}</span>
     </button>)}
       {next !== null && <button type="button" className="btn btn-small" disabled={finished || pageBusy} onClick={() => void loadMore()}>{pageBusy ? 'جارٍ تحميل الصور…' : 'المزيد من الصور'}</button>}
@@ -103,8 +136,14 @@ export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغل
     </div>}
     {selected && <p>الصورة: <a href={selected.url} target="_blank" rel="noopener noreferrer">{selected.title}</a> · {selected.author} · <a href={selected.license_url} target="_blank" rel="noopener noreferrer">{selected.license_name}</a></p>}
     {loading && <p role="status">أقرأ مصغّرة الصورة وأحاول فصل الجسم…</p>}
-    {error && <p role="alert" className="online-error">{error} لم يُضف مجسم. اختر نتيجة أخرى أو أعد البحث بصورة مختلفة.</p>}
-    {model && <><Preview model={model} rows={rows} /><p role="status">بناء طبقات الشكل: {Math.min(rows, model.height)} / {model.height} · اسحب لتدوير المعاينة</p></>}
+    {error && <p role="alert" className="online-error">{error} لم يُضف مجسم. اختر نتيجة أخرى أو ألغِ البناء.</p>}
+    {error && selected && <button type="button" className="btn btn-small" onClick={() => setAttempt((old) => old + 1)}>إعادة محاولة الصورة</button>}
+    {canUseSlab && pixels && selected && <div><p>تعذّر فصل الجسم. يمكن بدلاً من ذلك إنشاء لوح مجسّم من الصورة كاملة، <strong>بما فيها الخلفية</strong>؛ ليس نموذجاً مفصولاً للجسم.</p>
+      <button type="button" className="btn btn-small" onClick={() => build(pixels, selected, true)}>استخدم الصورة كاملة كلوح تقريبي</button></div>}
+    {model && <div ref={progressRoot}>
+      {showMapPreview && stage ? <div className="construction-map-preview" aria-label="معاينة البناء داخل الماب"><Viewport plan={stage.base} constructionPreview={stage} selection={[]} tool="translate" space="world" snap={false} showGrid={false} onSelect={() => {}} onTransformCommit={() => {}} /></div> : !onPreview && <Preview model={model} rows={rows} />}
+      <p role="status">بناء طبقات الشكل في موضعه على الماب: {Math.min(rows, model.height)} / {model.height}. المعاينة مؤقتة حتى اكتمال الإدراج.</p>
+    </div>}
     <button type="button" className="btn btn-small" onClick={onCancel}>{cancelLabel}</button>
   </section>;
 }

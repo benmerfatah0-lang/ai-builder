@@ -38,6 +38,12 @@ describe('bounded single-photo reconstruction', () => {
     expect(() => photoToModel(fixture(true),source)).toThrow(/خلفية الصورة معقدة/);
     expect(() => photoToModel({ width: 24,height: 24,rgba:new Uint8Array(3) },source)).toThrow();
   });
+  it('only creates an explicitly marked thin whole-image slab on request', () => {
+    const slab = photoToModel(fixture(true), source, true);
+    expect(slab.mode).toBe('full-image-slab');
+    expect([slab.width, slab.height, slab.cells.length]).toEqual([12,12,144]);
+    expect(slab.cells.every((cell) => cell.depth === 1)).toBe(true);
+  });
   it('restricts automatic changes to simple additions of one topic', () => {
     expect(isSinglePhotoRequest('أضف لي فيل','فيل','edit')).toBe(true);
     expect(isSinglePhotoRequest('عالم فيه فيل','فيل','generate')).toBe(true);

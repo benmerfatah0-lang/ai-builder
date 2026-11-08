@@ -13,12 +13,12 @@ import { useEditor } from '../store';
 import { Icon } from '../../../ui/Icon';
 
 export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
-  const { state, dispatch } = useEditor();
+  const { state, dispatch, setConstructionPreview } = useEditor();
   const [command, setCommand] = useState('');
   const [feedback, setFeedback] = useState<{ text: string; error: boolean } | null>(null);
   const [research, setResearch] = useState<ResearchReport | null>(null);
   const [busy, setBusy] = useState(false);
-  const [studio, setStudio] = useState<{ requests: PhotoRequest[]; index: number; plan: WorldPlan; draft: WorldPlan; selection: string; command: string; seq: number } | null>(null);
+  const [studio, setStudio] = useState<{ requests: PhotoRequest[]; index: number; plan: WorldPlan; draft: WorldPlan; selection: string; command: string; seq: number; slabUsed: boolean } | null>(null);
   const sequence = useRef(0);
   const researchAbort = useRef<AbortController | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -57,7 +57,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
       if (isAdd && mixed && !(photos.requests.length === 1 && photos.requests[0]?.relation && !photos.warnings.length)) setFeedback({ text: 'في التعديل المركب، أضف العناصر المعروفة والمجهولة في أوامر منفصلة؛ لم يتغير العالم.', error: true });
       else if (isAdd && photos.warnings.length) setFeedback({ text: `${photos.warnings.join(' ')} لم يتغير العالم.`, error: true });
       else if (isAdd && photos.requests.length) {
-        setStudio({ requests: photos.requests, index: 0, plan: original.plan, draft: original.plan, selection: original.selection.join('\0'), command: text, seq: current });
+        setStudio({ requests: photos.requests, index: 0, plan: original.plan, draft: original.plan, selection: original.selection.join('\0'), command: text, seq: current, slabUsed: false });
         setFeedback({ text: 'وجدت صوراً؛ سأحاول بناء أشكال تقريبية منها، إذا كانت الخلفيات مناسبة.', error: false });
       }
       return;
@@ -102,18 +102,24 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
       {studio && <div dir="rtl">
         <p role="status">العنصر {studio.index + 1} من {studio.requests.length} · العدد المطلوب: {studio.requests[studio.index]!.count}</p>
         <PhotoStudio key={`${studio.index}:${studio.requests[studio.index]!.topic.term}`} topic={studio.requests[studio.index]!.topic} cancelLabel="إلغاء التعديل"
-          onCancel={() => { sequence.current++; setStudio(null); setFeedback({ text: 'أُلغي التعديل؛ لم يتغير العالم.', error: true }); }} onComplete={(model) => {
+          onCancel={() => { sequence.current++; setStudio(null); setFeedback({ text: 'أُلغي التعديل؛ لم يتغير العالم.', error: true }); }}
+          onPreview={setConstructionPreview}
+          onPrepare={(model) => {
+            if (studio.seq !== sequence.current || currentEditor.current.plan !== studio.plan || currentEditor.current.selection.join('\0') !== studio.selection || currentCommand.current !== studio.command) throw new Error('تغيّر العالم أو التحديد أو الأمر؛ ألغِ التعديل وأعد المحاولة.');
+            const item = studio.requests[studio.index]!;
+            return { base: studio.plan, before: studio.draft, after: addPhotoModels(studio.draft, model, item.topic.term, item.count, item.relation) };
+          }} onComplete={(model, prepared) => {
           const item = studio.requests[studio.index]!;
-          if (studio.seq !== sequence.current || currentEditor.current.plan !== studio.plan || currentEditor.current.selection.join('\0') !== studio.selection || currentCommand.current !== studio.command) {
+          if (!prepared || studio.seq !== sequence.current || currentEditor.current.plan !== studio.plan || currentEditor.current.selection.join('\0') !== studio.selection || currentCommand.current !== studio.command) {
             setFeedback({ text: 'تغيّر العالم أو التحديد أو الأمر أثناء البناء؛ لم يُضف المجسم. أعد المحاولة.', error: true }); setStudio(null); return;
           }
-          try {
-            const draft = addPhotoModels(studio.draft, model, item.topic.term, item.count, item.relation);
-            if (studio.index + 1 < studio.requests.length) { setStudio({ ...studio, draft, index: studio.index + 1 }); return; }
-            dispatch({ type: 'replacePlan', plan: draft });
-            setFeedback({ text: studio.requests.length === 1 && item.count === 1 ? 'أُضيف مجسم الصورة التقريبي في مكان متاح؛ الخلف والعمق تقديريان. يمكن التراجع بـ Undo.' : 'أُضيفت مجسمات الصور التقريبية معاً؛ الخلف والعمق تقديريان. يمكن التراجع عن التعديل كاملاً بـ Undo.', error: false });
-            setCommand(''); setStudio(null);
-          } catch (error) { setFeedback({ text: `${error instanceof Error ? error.message : 'تعذّر إضافة المجسم.'} لم يُطبّق أي جزء من التعديل.`, error: true }); setStudio(null); }
+          const draft = prepared.after;
+          if (studio.index + 1 < studio.requests.length) { setStudio({ ...studio, draft, slabUsed: studio.slabUsed || model.mode === 'full-image-slab', index: studio.index + 1 }); return; }
+          dispatch({ type: 'replacePlan', plan: draft });
+          const added = draft.objects.filter((object) => !prepared.base.objects.some((old) => old.id === object.id));
+          if (added.length) dispatch({ type: 'select', ids: [added[added.length - 1]!.id], mode: 'replace' });
+          setFeedback({ text: studio.slabUsed || model.mode === 'full-image-slab' ? 'أُضيفت العناصر معاً؛ واحد أو أكثر لوح للصورة كاملة بما فيها الخلفية. يمكن التراجع عن التعديل كاملاً بـ Undo.' : studio.requests.length === 1 && item.count === 1 ? 'أُضيف مجسم الصورة التقريبي في مكان متاح؛ الخلف والعمق تقديريان. يمكن التراجع بـ Undo.' : 'أُضيفت مجسمات الصور التقريبية معاً؛ الخلف والعمق تقديريان. يمكن التراجع عن التعديل كاملاً بـ Undo.', error: false });
+          setCommand(''); setStudio(null);
         }} />
       </div>}
       {busy && <button type="button" className="btn btn-small" onClick={() => { sequence.current++; researchAbort.current?.abort(); setBusy(false); setFeedback({ text: 'أُوقف البحث؛ لم يُطبّق تعديل.', error: true }); }}>إيقاف البحث</button>}

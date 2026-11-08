@@ -4,6 +4,7 @@ import type { MapTrainer } from './useMapTrainer';
 import { AiPanel } from './panels/AiPanel';
 
 interface ForgeHomeProps {
+  active?: boolean;
   worlds: WorldSummary[];
   mapTrainer: MapTrainer;
   storageKind: 'indexeddb' | 'memory';
@@ -14,9 +15,9 @@ interface ForgeHomeProps {
 }
 
 /** WorldForge-inspired landing page, backed by the real local editor. */
-export function ForgeHome({ worlds, mapTrainer, storageKind, notify, onOpenStudio, onOpenLibrary, onOpenWorld }: ForgeHomeProps) {
+export function ForgeHome({ active = true, worlds, mapTrainer, storageKind, notify, onOpenStudio, onOpenLibrary, onOpenWorld }: ForgeHomeProps) {
   return (
-    <main className="forge-home">
+    <main className="forge-home" hidden={!active}>
       <div className="forge-home-inner">
         <section className="forge-hero" dir="rtl" aria-labelledby="forge-title">
           <div className="forge-hero-symbol" aria-hidden="true"><Icon name="sparkles" size={21} /></div>
@@ -28,7 +29,7 @@ export function ForgeHome({ worlds, mapTrainer, storageKind, notify, onOpenStudi
               <span className="forge-card-icon"><Icon name="sparkles" size={18} /></span>
               <div><span>THE INCANTATION</span><h2>صف عالمك</h2></div>
             </div>
-            <AiPanel variant="forge" mapTrainer={mapTrainer} notify={notify} onOpenStudio={onOpenStudio} />
+            <AiPanel variant="forge" active={active} mapTrainer={mapTrainer} notify={notify} onOpenStudio={onOpenStudio} />
           </div>
           <button type="button" className="forge-studio-link" onClick={onOpenStudio}>
             <Icon name="cube" size={16} /> افتح المحرر مباشرةً
