@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Loopback-only phone server with fixed Wikipedia endpoints; no API keys."""
 import argparse
+import base64
 import io
 import json
 import os
@@ -122,6 +123,24 @@ def analyze_reference_image(url):
         return {'center_color': color}
 
 
+def reference_image_pixels(url):
+    """Return only a tiny image for a lossy silhouette approximation; no original saved."""
+    if not isinstance(url, str) or len(url) > 1200 or not good_thumb(url) or not url.startswith('https://upload.wikimedia.org/wikipedia/commons/thumb/') or '/240px-' not in url:
+        raise ValueError('invalid thumbnail')
+    try:
+        from PIL import Image
+    except ImportError as error:
+        raise RuntimeError('missing pillow') from error
+    raw = get_image(Request(url, headers={'User-Agent': USER_AGENT}), timeout=25)
+    with Image.open(io.BytesIO(raw)) as image:
+        if image.format not in ('JPEG', 'PNG') or image.width < 1 or image.height < 1 or image.width * image.height > 1_000_000:
+            raise ValueError('invalid image')
+        image.load()
+        image.thumbnail((24, 24))
+        rgba = image.convert('RGBA')
+        return {'width': rgba.width, 'height': rgba.height, 'rgba': base64.b64encode(rgba.tobytes()).decode('ascii')}
+
+
 
 class NoRedirects(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -198,7 +217,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.valid_host() or self.headers.get('Origin', '') != f'http://{host}':
             self.api_result(403, {'error': 'invalid origin'})
             return
-        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/image-analyze', '/api/dictionary', '/api/knowledge', '/api/house-learning'):
+        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/image-analyze', '/api/image-pixels', '/api/dictionary', '/api/knowledge', '/api/house-learning'):
             self.api_result(404, {'error': 'unknown endpoint'})
             return
         if self.headers.get_content_type() != 'application/json':
@@ -227,12 +246,12 @@ class Handler(SimpleHTTPRequestHandler):
                     raise ValueError('invalid connectivity response')
                 self.api_result(200, {'online': True})
                 return
-            if self.path == '/api/image-analyze':
+            if self.path in ('/api/image-analyze', '/api/image-pixels'):
                 if not isinstance(payload.get('url'), str) or not good_thumb(payload['url']) or not payload['url'].startswith('https://upload.wikimedia.org/wikipedia/commons/thumb/') or '/240px-' not in payload['url'] or len(payload['url']) > 1200:
                     self.api_result(400, {'error': 'invalid thumbnail'})
                     return
                 try:
-                    result = analyze_reference_image(payload['url'])
+                    result = analyze_reference_image(payload['url']) if self.path == '/api/image-analyze' else reference_image_pixels(payload['url'])
                 except RuntimeError:
                     self.api_result(503, {'error': 'missing_pillow'})
                     return

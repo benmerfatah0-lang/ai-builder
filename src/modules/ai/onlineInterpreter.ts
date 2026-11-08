@@ -14,10 +14,10 @@ async function postJSON(path: string, body: object): Promise<unknown> {
   try {
     const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal });
     if (!response.ok) {
-      if ((response.status === 404 || response.status === 501) && (['/api/image-search', '/api/image-analyze', '/api/dictionary'].includes(path) || response.headers.get('X-World-Builder-Proxy') !== '1')) {
+      if ((response.status === 404 || response.status === 501) && (['/api/image-search', '/api/image-analyze', '/api/image-pixels', '/api/dictionary'].includes(path) || response.headers.get('X-World-Builder-Proxy') !== '1')) {
         throw new Error('شغّل خادم الهاتف الجديد world-builder-server.py بدلاً من الخادم القديم.');
       }
-      if (path === '/api/image-analyze') throw new Error(response.status === 503 ? 'تحليل الصور يحتاج python-pillow في Termux.' : 'تعذّر تحليل الصورة المصغرة.');
+      if (path === '/api/image-analyze' || path === '/api/image-pixels') throw new Error(response.status === 503 ? 'تحليل الصور يحتاج python-pillow في Termux.' : 'تعذّر تحليل الصورة المصغرة.');
       if (path === '/api/dictionary') throw new Error('تعذّر الاتصال بقاموس ويكاموس.');
       throw new Error(path === '/api/image-search' ? 'تعذّر البحث في Wikimedia Commons. تحقّق من الإنترنت ثم حاول مجدداً.' : 'تعذّر الاتصال بويكيبيديا. تحقّق من الإنترنت ثم حاول مجدداً.');
     }
@@ -54,6 +54,18 @@ export async function analyzeImageReference(image: ImageReference): Promise<stri
   const parsed = z.object({ center_color: z.string().regex(/^#[0-9a-f]{6}$/) }).safeParse(response);
   if (!parsed.success) throw new Error('تعذّر تحليل بيانات الصورة.');
   return parsed.data.center_color;
+}
+
+/** Download a tiny bounded RGBA copy of a trusted Commons thumbnail. */
+export async function readPhotoPixels(image: ImageReference): Promise<import('./photoModel').TinyImage> {
+  const safe = imageReferenceSchema.parse(image);
+  const parsed = z.object({ width: z.number().int().min(2).max(24), height: z.number().int().min(2).max(24), rgba: z.string().max(3072) }).strict().safeParse(await postJSON('/api/image-pixels', { url: safe.thumbnail }));
+  if (!parsed.success) throw new Error('بيانات الصورة غير صالحة.');
+  try {
+    const bytes = Uint8Array.from(atob(parsed.data.rgba), (c) => c.charCodeAt(0));
+    if (bytes.length !== parsed.data.width * parsed.data.height * 4) throw new Error();
+    return { width: parsed.data.width, height: parsed.data.height, rgba: bytes };
+  } catch { throw new Error('بيانات الصورة غير صالحة.'); }
 }
 
 /** Search Commons without downloading originals or accepting arbitrary client URLs. */

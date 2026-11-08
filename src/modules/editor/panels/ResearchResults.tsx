@@ -6,7 +6,7 @@ export function ResearchResults({ report, busy }: { report: ResearchReport | nul
   if (!report || !report.topics.length) return null;
   return <section className="wiki-library" dir="rtl" aria-label="نتائج البحث التلقائي">
     <strong>بحث تلقائي عن كلمات قد لا أفهمها</strong>
-    <p>التعرف تقريبي وقد لا تكون النتائج مطابقة. يستطيع التطبيق في حالة محدودة تحليل لون مركز صورة؛ لا يفصل الجسم عن الخلفية ولا يستخرج شكلاً ثلاثي الأبعاد. راجع المصادر والتراخيص.</p>
+    <p>التعرف تقريبي وقد لا تكون النتائج مطابقة. في الحالات البسيطة يمكن محاولة فصل شكل الصورة وبناء حجم تقريبي متناظر؛ ليست استعادة حقيقية للجوانب المخفية. راجع المصادر والتراخيص.</p>
     {report.approximation && <div className="wiki-entry">
       <p>{report.approximation.sourceKind === 'dictionary' ? 'تعريف المعجم صنّف' : 'مقتطف المقالة صنّف'} «{report.approximation.term}» كبيت؛ {report.approximation.applied ? 'استُخدم' : 'اقتُرح'} نموذج بيت موجود كتقريب وليس نموذجاً مطابقاً.</p>
       {report.approximation.color && <p>متوسط لون مركز أول صورة: <strong>{report.approximation.color}</strong>. {report.approximation.colorApplied ? 'استُخدم كلون البيت.' : 'لم يُطبّق اللون.'} قد يمثل الخلفية، وليس لون الجسم.</p>}

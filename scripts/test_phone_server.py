@@ -60,6 +60,30 @@ class PhoneServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)['samples'], 2)
 
+    @unittest.skipIf(__import__('house_learner').Image is None, 'Pillow needed for image pixels')
+    @patch.object(phone_server, 'get_image')
+    def test_image_pixels_are_bounded_and_reject_untrusted_urls(self, upstream):
+        import io
+        import base64
+        from PIL import Image
+        image = Image.new('RGBA', (96, 48), (100, 25, 30, 255))
+        out = io.BytesIO(); image.save(out, format='PNG')
+        upstream.return_value = out.getvalue()
+        url = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Thing.png/240px-Thing.png'
+        status, body = self.request('/api/image-pixels', body=json.dumps({'url': url}).encode())
+        self.assertEqual(status, 200)
+        result = json.loads(body)
+        self.assertEqual((result['width'], result['height']), (24, 12))
+        self.assertEqual(len(base64.b64decode(result['rgba'])), 24 * 12 * 4)
+        self.assertEqual(upstream.call_args.args[0].full_url, url)
+        upstream.reset_mock()
+        for bad in ['https://evil.example/240px-Thing.png', 'http://127.0.0.1/a', 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Thing.png', url + '?bad=1']:
+            self.assertEqual(self.request('/api/image-pixels', body=json.dumps({'url': bad}).encode())[0], 400)
+        self.assertEqual(self.request('/api/image-pixels', origin='https://evil.example', body=json.dumps({'url': url}).encode())[0], 403)
+        upstream.assert_not_called()
+        upstream.return_value = b'not an image'
+        self.assertEqual(self.request('/api/image-pixels', body=json.dumps({'url': url}).encode())[0], 502)
+
     @patch.object(phone_server, 'get_json')
     def test_connectivity_and_search_are_fixed_to_wikipedia(self, upstream):
         upstream.return_value = {'query': {}}

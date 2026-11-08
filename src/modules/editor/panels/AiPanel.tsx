@@ -12,6 +12,10 @@ import { Icon } from '../../../ui/Icon';
 import { NumberField, SelectField } from '../../../ui/controls';
 import { TextEditPanel } from './TextEditPanel';
 import { ResearchResults } from './ResearchResults';
+import { PhotoStudio } from './PhotoStudio';
+import { addPhotoModel, isSinglePhotoRequest } from '../../ai/photoModel';
+import type { TopicResearch } from '../../ai/unknownResearch';
+import type { WorldPlan } from '../../../core/world-plan/schema';
 import { normalizeAssetText, parseAssetRequests } from '../../ai/assetRequests';
 import { analyzeApproximation, hasExplicitColor, matchHouseApproximation, type Approximation } from '../../ai/referenceUnderstanding';
 import { applyWikiArticleHint } from '../../ai/wikiReference';
@@ -43,6 +47,8 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   const [shapeModel, setShapeModel] = useState(() => {
     try { return readShapeModel(window.localStorage); } catch { return initialShapeModel(); }
   });
+  const [studioPending, setStudioPending] = useState(false);
+  const [studio, setStudio] = useState<{ topic: TopicResearch; plan: WorldPlan; text: string } | null>(null);
   const [research, setResearch] = useState<ResearchReport | null>(null);
   const [researchBusy, setResearchBusy] = useState(false);
   const researchSequence = useRef(0);
@@ -72,6 +78,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
     catch { setTrainingMessage('تعذّر حذف التدريب من المتصفح.'); }
   };
   const [prompt, setPrompt] = useState('');
+  const currentPrompt = useRef(prompt); currentPrompt.current = prompt;
   const [worldName, setWorldName] = useState('');
   const [seed, setSeed] = useState<number>(() => randomSeed());
   const [style, setStyle] = useState<WorldStyle | 'auto'>('auto');
@@ -89,7 +96,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
     const correctedText = correctBuildSpelling(text).text;
     setGenerationError('');
     researchSequence.current++;
-    setResearch(null); setResearchBusy(false);
+    setResearch(null); setStudio(null); setStudioPending(false); setResearchBusy(false);
     setResult(null);
     setNotes([]);
     setStats(null);
@@ -104,7 +111,9 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         ...(density !== 'auto' ? { density } : {}),
       }, false, unknownTopics(correctedText).terms.length > 0);
       const discovered = await researchFor(correctedText);
-      const match = !interpretation.intent.features?.farm ? matchHouseApproximation(correctedText, discovered) : null;
+      const singleTopic = discovered.topics.length === 1 && !discovered.truncated ? discovered.topics[0] : undefined;
+      const ambiguousPhoto = singleTopic && singleTopic.images.length > 1 && isSinglePhotoRequest(correctedText, singleTopic.term, 'generate');
+      const match = !interpretation.intent.features?.farm && !ambiguousPhoto ? matchHouseApproximation(correctedText, discovered) : null;
       let approximate: Approximation | null = match;
       if (match) {
         setResearchBusy(true);
@@ -119,7 +128,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       }
       if (discovered.topics.length) {
         const names = discovered.topics.map((topic) => `«${topic.term}»`).join('، ');
-        interpretation.notes = [`بحثت عن ${names}؛ ${match ? 'استُخدم تقريب من أصل موجود، وليس بناءً مطابقاً.' : 'البحث لا ينشئ العنصر غير المدعوم، والنتيجة تعتمد على الأصول المعروفة فقط.'}`, ...(interpretation.notes ?? [])];
+        interpretation.notes = [`بحثت عن ${names}؛ ${match ? 'استُخدم تقريب من أصل موجود، وليس بناءً مطابقاً.' : discovered.topics.length === 1 && discovered.topics[0]?.images.length && isSinglePhotoRequest(correctedText, discovered.topics[0].term, 'generate') ? 'سنحاول بناء مجسم تقريبي من صورة؛ قد تفشل المحاولة إذا كانت الخلفية غير مناسبة.' : 'البحث لا ينشئ العنصر غير المدعوم تلقائياً في الوصف المركب، والنتيجة تعتمد على الأصول المعروفة فقط.'}`, ...(interpretation.notes ?? [])];
         // Use only an exact article-title match, only for a single candidate, and only
         // the fixed terrain vocabulary. Search results are untrusted and not 3D data.
         const topic = discovered.topics.length === 1 && !discovered.truncated ? discovered.topics[0] : undefined;
@@ -141,6 +150,10 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       if (currentPlan.current !== originalPlan) throw new Error('تغيّر العالم أثناء البحث؛ لم نستبدله. أعد الإنشاء إذا أردت.');
       const plan = variant === 'forge' && worldName.trim() ? { ...report.plan, name: worldName.trim() } : report.plan;
       dispatch({ type: 'replacePlan', plan });
+      const photoTopic = !match && !discovered.truncated && discovered.topics.length === 1 ? discovered.topics[0] : undefined;
+      if (photoTopic?.images.length && isSinglePhotoRequest(correctedText, photoTopic.term, 'generate')) {
+        setStudio({ topic: photoTopic, plan, text }); setStudioPending(true);
+      }
       if (approximate) setResearch({ ...discovered, approximation: { ...approximate,
         applied: plan.objects.some((object) => object.kind === 'building' && object.variant === 'house'),
         colorApplied: Boolean(approximate.color && !hasExplicitColor(text) && plan.objects.some((object) => object.kind === 'building' && object.variant === 'house')) } });
@@ -171,6 +184,18 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   return (
     <div className={`panel-scroll ${variant === 'forge' ? 'forge-ai' : ''}`}>
       {variant === 'panel' && <TextEditPanel shapeModel={shapeModel} />}
+      {studio && <PhotoStudio topic={studio.topic} onCancel={() => { setStudio(null); setStudioPending(false); }} onComplete={(model) => {
+        setStudioPending(false);
+        if (currentPlan.current !== studio.plan || currentPrompt.current.trim() !== studio.text) {
+          setGenerationError('تغيّر العالم أو الوصف أثناء البناء؛ لم يُضف المجسم.'); return;
+        }
+        try {
+          const built = addPhotoModel(studio.plan, model, studio.topic.term);
+          dispatch({ type: 'addObject', object: built.object });
+          setStats({ objects: built.plan.objects.length, groups: built.plan.groups.length });
+          setNotes((old) => ['أُضيف مجسم الصورة التقريبي؛ العمق والخلف افتراضيان، وموقعه آلي وليس علاقة مكانية مفهومة.', ...old]);
+        } catch (error) { setGenerationError(error instanceof Error ? error.message : 'تعذّر إضافة المجسم.'); }
+      }} />}
       <ResearchResults report={research} busy={researchBusy} />
       {variant !== 'forge' && <div className="create-intro" dir="rtl">
         <div className="create-eyebrow"><span>✦</span> استوديو العوالم</div>
@@ -203,7 +228,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         <input className="input" aria-label="اسم العالم (اختياري)" value={worldName} onChange={(event) => setWorldName(event.target.value)} maxLength={80} placeholder="مثلاً: أرض الأحلام" />
       </label>}
 
-      <p className="generate-caption" dir="rtl">يبحث المساعد تلقائياً عن كلمات قد لا يعرفها في ويكيبيديا وWikimedia Commons؛ تُرسل هذه الكلمات إلى الموقعين. التعرّف تقريبي؛ يمكن استخدام لون وسط الصورة لحالات بيت محدودة فقط.</p>
+      <p className="generate-caption" dir="rtl">يبحث المساعد تلقائياً عن كلمات قد لا يعرفها في ويكيبيديا وWikimedia Commons؛ تُرسل هذه الكلمات إلى الموقعين. التعرّف تقريبي؛ قد نستخدم صورة ذات خلفية بسيطة لبناء حجم تقديري متناظر لعنصر واحد فقط.</p>
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
 
       <button
@@ -225,7 +250,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
             </span>
             <strong>World generated</strong>
           </div>
-          {onOpenStudio && <button type="button" className="btn btn-primary open-studio-btn" onClick={onOpenStudio}>فتح العالم في المحرر ←</button>}
+          {onOpenStudio && <button type="button" className="btn btn-primary open-studio-btn" onClick={onOpenStudio} disabled={studioPending} title={studioPending ? 'انتظر بناء المجسم أو أغلق الاستوديو' : undefined}>فتح العالم في المحرر ←</button>}
           <p className="ai-summary">{result.intent.summary}{result.sources?.map((source, index) => (
             <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" aria-label={`المصدر ${index + 1}: ${source.title}`}> [{index + 1}]</a>
           ))}</p>

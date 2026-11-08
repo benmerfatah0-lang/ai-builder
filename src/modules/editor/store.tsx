@@ -8,6 +8,7 @@ import {
 } from 'react';
 import {
   MAX_WORLD_OBJECTS,
+  MAX_PHOTO_CELLS,
   isGroup,
   type MaterialSettings,
   type SceneNode,
@@ -360,6 +361,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
 
     case 'addObject': {
       if (state.plan.objects.length >= MAX_WORLD_OBJECTS) return state;
+      if (state.plan.objects.reduce((sum, obj) => sum + (obj.meta.photoModel?.cells.length ?? 0), 0) + (action.object.meta.photoModel?.cells.length ?? 0) > MAX_PHOTO_CELLS) return state;
       if (getNode(state.plan, action.object.id)) return state;
       const plan = { ...state.plan, objects: [...state.plan.objects, action.object] };
       return commit(state, plan, action.select === false ? state.selection : [action.object.id]);
@@ -494,7 +496,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
 
     case 'duplicateSelection': {
       const result = duplicateNodes(state.plan, state.selection);
-      if (result.newIds.length === 0) return state;
+      if (result.newIds.length === 0 || result.plan.objects.reduce((sum, obj) => sum + (obj.meta.photoModel?.cells.length ?? 0), 0) > MAX_PHOTO_CELLS) return state;
       return commit(state, result.plan, result.newIds);
     }
 

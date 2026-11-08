@@ -17,6 +17,7 @@ import { createTerrainSampler } from '../../core/generation/terrain';
 import { isEffectivelyVisible } from '../../core/world-plan/hierarchy';
 import { addMesh, material, mergeStaticMeshes } from './kit';
 import { getSurfaceTexture } from './textures';
+import { buildPhotoModelGeometry } from './photoModel';
 import { buildMiningObject } from './miningObjects';
 import { buildBarn, buildBush, buildBridge, buildCoop, buildFence, buildField, buildPath, buildRiver } from './proceduralObjects';
 
@@ -37,6 +38,7 @@ const MAX_DEFAULT_POINT_LIGHTS = 12;
 function tagObject(group: THREE.Object3D, object: WorldObject): void {
   group.name = object.name;
   group.userData.worldObjectId = object.id;
+  if (object.meta.photoModel) group.userData.imageSource = object.meta.photoModel.source;
   group.traverse((child) => {
     child.userData.worldObjectId = object.id;
   });
@@ -172,6 +174,13 @@ export function createWaterMesh(plan: WorldPlan): THREE.Mesh | null {
 }
 
 function buildPrimitive(object: PrimitiveObject): THREE.Group {
+  if (object.primitive === 'photo-model' && object.meta.photoModel) {
+    const group = new THREE.Group();
+    const mesh = new THREE.Mesh(buildPhotoModelGeometry(object.meta.photoModel), new THREE.MeshStandardMaterial({ color: object.color, vertexColors: true, roughness: .85 }));
+    mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = 'photo-model-mesh';
+    group.add(mesh);
+    return group;
+  }
   if (['mine-entrance', 'mine-cart', 'pickaxe', 'excavator', 'chest'].includes(object.primitive)) {
     const mining = buildMiningObject(object);
     if (mining) return mining;

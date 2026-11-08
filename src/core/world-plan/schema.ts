@@ -15,6 +15,8 @@ export const WORLD_PLAN_SCHEMA_VERSION = 3 as const;
 /** Hard ceilings so a single project cannot freeze a mobile GPU. */
 export const MAX_WORLD_OBJECTS = 1500;
 export const MAX_WORLD_GROUPS = 200;
+/** Bound photo geometry across a project for mobile devices. */
+export const MAX_PHOTO_CELLS = 4608;
 export const MAX_GROUP_DEPTH = 8;
 
 const idSchema = z
@@ -133,6 +135,16 @@ export const objectCategorySchema = z.enum([
  * re-rollable: `geometry` selects the procedural builder, `seed` drives its
  * variation, and `dimensions`/`collision` feed placement and spatial checks.
  */
+const referenceUrl = z.string().max(1200).refine((url) => {
+  try { const u = new URL(url); return u.protocol === 'https:' && u.hostname === 'commons.wikimedia.org' && u.pathname.startsWith('/wiki/File:') && !u.username && !u.password && !u.port && !u.search && !u.hash; } catch { return false; }
+});
+export const photoModelSchema = z.object({
+  width: z.number().int().min(1).max(24), height: z.number().int().min(1).max(24),
+  cells: z.array(z.object({ x: z.number().int().min(0).max(23), y: z.number().int().min(0).max(23), depth: z.number().int().min(1).max(12), color: hexColorSchema }).strict()).min(1).max(576),
+  source: z.object({ title: z.string().min(1).max(120), url: referenceUrl, author: z.string().min(1).max(200), license_name: z.string().min(1).max(200), license_url: z.string().regex(/^https:\/\/creativecommons\.org\/(?:licenses\/(?:by|by-sa)\/[1-4]\.0\/|publicdomain\/zero\/1\.0\/)$/) }).strict(),
+}).strict().refine((value) => value.cells.every((cell) => cell.x < value.width && cell.y < value.height) && new Set(value.cells.map((c) => `${c.x}:${c.y}`)).size === value.cells.length);
+export type PhotoModel = z.infer<typeof photoModelSchema>;
+
 export const objectMetaSchema = z.object({
   category: objectCategorySchema,
   /** Procedural geometry identifier, e.g. `building.barn` or `field.wheat`. */
@@ -147,6 +159,8 @@ export const objectMetaSchema = z.object({
   role: z.string().min(1).max(40).optional(),
   /** Seed for this object's own variation, independent of the world seed. */
   seed: z.number().int().min(0).max(4294967295).optional(),
+  /** Low-resolution photo-based silhouette with a guessed symmetrical depth. */
+  photoModel: photoModelSchema.optional(),
   /** A flat-roof desert house variation used by the mining town. */
   desertHouse: z.boolean().optional(),
   /** Parameters of an app-generated trainable procedural design. */
@@ -174,6 +188,7 @@ export const primitiveKindSchema = z.enum([
   'cone',
   'torus',
   'plane',
+  'photo-model',
   'mine-entrance', 'mine-cart', 'pickaxe', 'excavator', 'chest',
 ]);
 
@@ -306,6 +321,15 @@ export const worldPlanSchema = z.object({
   /** Optional transform-only groups; objects may be parented to them. */
   groups: z.array(groupSchema).max(MAX_WORLD_GROUPS),
   objects: z.array(worldObjectSchema).max(MAX_WORLD_OBJECTS),
+}).superRefine((plan, ctx) => {
+  let cells = 0;
+  for (const object of plan.objects) {
+    const photo = object.meta.photoModel;
+    const isPhoto = object.kind === 'primitive' && object.primitive === 'photo-model';
+    if (isPhoto !== Boolean(photo)) ctx.addIssue({ code: 'custom', path: ['objects'], message: 'Photo models must have matching photo geometry and metadata.' });
+    if (photo) cells += photo.cells.length;
+  }
+  if (cells > MAX_PHOTO_CELLS) ctx.addIssue({ code: 'custom', path: ['objects'], message: 'Too many photo model cells for a mobile project.' });
 });
 
 export type WorldPlan = z.infer<typeof worldPlanSchema>;

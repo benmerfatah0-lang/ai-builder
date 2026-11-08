@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { researchUnknown, unknownTopics, type ResearchReport } from '../../ai/unknownResearch';
 import { ResearchResults } from './ResearchResults';
+import { PhotoStudio } from './PhotoStudio';
+import { addPhotoModel, isSinglePhotoRequest } from '../../ai/photoModel';
+import type { TopicResearch } from '../../ai/unknownResearch';
+import type { WorldPlan } from '../../../core/world-plan/schema';
 import { analyzeApproximation, hasExplicitColor, matchHouseApproximation } from '../../ai/referenceUnderstanding';
 import { editWorldByText } from '../../ai/worldEdit';
 import type { ShapeModel } from '../../ai/shapeLearner';
@@ -13,6 +17,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
   const [feedback, setFeedback] = useState<{ text: string; error: boolean } | null>(null);
   const [research, setResearch] = useState<ResearchReport | null>(null);
   const [busy, setBusy] = useState(false);
+  const [studio, setStudio] = useState<{ topic: TopicResearch; plan: WorldPlan; selection: string; command: string; seq: number } | null>(null);
   const sequence = useRef(0);
   const currentEditor = useRef(state); currentEditor.current = state;
   const currentCommand = useRef(command); currentCommand.current = command;
@@ -20,15 +25,25 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
   const lookup = async (text: string) => {
     const current = ++sequence.current;
     const original = currentEditor.current;
-    setResearch(null);
+    setResearch(null); setStudio(null);
     if (!unknownTopics(text).terms.length) { setBusy(false); return; }
     setBusy(true);
     const report = await researchUnknown(text);
     if (current !== sequence.current) return;
     // Only additions can be approximated: never reinterpret delete/move commands.
     const isAdd = /^(?:اضف|اضيف|ضع|اصنع|انشئ|ابني|اعمل|صمم|add|ajoute|ajouter)\s/iu.test(text.trim().replace(/[أإآ]/g, 'ا'));
-    const match = isAdd ? matchHouseApproximation(text, report) : null;
-    if (!match) { setResearch(report); setBusy(false); return; }
+    const singleTopic = report.topics.length === 1 && !report.truncated ? report.topics[0] : undefined;
+    // If the images are ambiguous, ask before using one instead of coloring a house from the first hit.
+    const match = isAdd && !(singleTopic && singleTopic.images.length > 1 && isSinglePhotoRequest(text, singleTopic.term, 'edit')) ? matchHouseApproximation(text, report) : null;
+    if (!match) {
+      setResearch(report); setBusy(false);
+      const topic = report.topics.length === 1 && !report.truncated ? report.topics[0] : undefined;
+      if (isAdd && topic?.images.length && isSinglePhotoRequest(text, topic.term, 'edit')) {
+        setStudio({ topic, plan: original.plan, selection: original.selection.join('\0'), command: text, seq: current });
+        setFeedback({ text: 'وجدت صوراً؛ سأحاول بناء شكل تقريبي منها، إذا كانت الخلفية مناسبة.', error: false });
+      }
+      return;
+    }
     const approximation = await analyzeApproximation(match);
     if (current !== sequence.current) return;
     setResearch({ ...report, approximation }); setBusy(false);
@@ -47,7 +62,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
     try {
       const result = editWorldByText(state.plan, state.selection, command, shapeModel);
       dispatch({ type: 'replacePlan', plan: result.plan });
-      sequence.current++; setResearch(null); setBusy(false);
+      sequence.current++; setResearch(null); setStudio(null); setBusy(false);
       setFeedback({ text: `${result.message} يمكنك التراجع من زر Undo.`, error: false });
       setCommand('');
     } catch (error) {
@@ -66,6 +81,17 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
         <Icon name="sparkles" size={16} /> تطبيق التعديل
       </button>
       {feedback && <p className={feedback.error ? 'online-error' : 'text-edit-success'} role={feedback.error ? 'alert' : 'status'}>{feedback.text}</p>}
+      {studio && <PhotoStudio topic={studio.topic} onCancel={() => { sequence.current++; setStudio(null); }} onComplete={(model) => {
+        if (studio.seq !== sequence.current || currentEditor.current.plan !== studio.plan || currentEditor.current.selection.join('\0') !== studio.selection || currentCommand.current !== studio.command) {
+          setFeedback({ text: 'تغيّر العالم أو التحديد أو الأمر أثناء البناء؛ لم يُضف المجسم. أعد المحاولة.', error: true }); return;
+        }
+        try {
+          const built = addPhotoModel(studio.plan, model, studio.topic.term);
+          dispatch({ type: 'addObject', object: built.object });
+          setFeedback({ text: 'أُضيف مجسم الصورة التقريبي في مكان متاح؛ الخلف والعمق تقديريان. يمكن التراجع بـ Undo.', error: false });
+          setCommand('');
+        } catch (error) { setFeedback({ text: error instanceof Error ? error.message : 'تعذّر إضافة المجسم.', error: true }); }
+      }} />}
       <ResearchResults report={research} busy={busy} />
       <details className="text-edit-help"><summary>الأوامر المتاحة</summary><p>مثال: «اصنع لي نهراً يمر وسط القرية»، «أضف شجرتين على يمين البيت»، «لوّن البيت أحمر»، «كبّر البيت»، «احذف البيت»، أو «حرّك البيت إلى يسار الشجرة». إذا وُجد أكثر من عنصر مطابق، اختر واحداً في المشهد أولاً. يمكن كتابة «العنصر المحدد». النهر عنصر مرئي زخرفي لا يحفر التضاريس؛ يقدّر القرية من تجمع البيوت ويحاول تجنب العناصر، ويمكن التراجع عنه. يصحح التطبيق أخطاء إملائية محدودة ويعرض التصحيح، ولا يصحح أوامر الحذف والتحريك تلقائياً. الأوامر المحدودة تعمل محلياً؛ اليمين واليسار حسب محاور العالم، وليس اتجاه الكاميرا.</p></details>
     </section>
