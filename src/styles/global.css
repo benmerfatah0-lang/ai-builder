@@ -3081,3 +3081,43 @@ button.image-ref-card[aria-pressed="true"] { border-color: var(--accent, #a66af1
 .walk-buttons button:nth-child(2) { grid-column: 1; grid-row: 2; }
 .walk-buttons button:nth-child(3) { grid-column: 2; grid-row: 2; }
 .walk-buttons button:nth-child(4) { grid-column: 3; grid-row: 2; }
+
+/* The main building path is deliberately short and usable on a phone. */
+.create-actions { display: grid; gap: 9px; margin-top: 16px; }
+.create-actions .image-build-btn, .auto-build-btn, .workflow-next { width: 100%; min-height: 48px; font-size: 15px; font-weight: 700; }
+.create-actions .text-build-btn, .image-edit-btn { margin: 0; min-height: 44px; color: #f0e5fa; background: #241832; border: 1px solid #70538b; }
+.create-actions .text-build-btn:hover, .image-edit-btn:hover { background: #352344; }
+.create-actions-hint { margin: 9px 0 4px; color: #c9b7d8; font-size: 12px; line-height: 1.6; }
+.edit-actions { display: grid; gap: 8px; margin-top: 10px; }
+.edit-actions .text-edit-button { margin: 0; }
+.workflow-title { display: block; color: #f4eaff; font-size: 16px; }
+.workflow-next { margin: 10px 0; }
+.auto-build-card { border: 1px solid #7050a0; border-radius: 12px; padding: 14px; margin: 12px 0; background: rgba(166,106,241,.08); }
+.auto-build-card p { font-size: 13px; line-height: 1.65; }
+.workflow-details { margin: 12px 0; padding: 10px; border: 1px solid #3b2c4d; border-radius: 9px; }
+.workflow-details > summary { color: #d4b5f0; cursor: pointer; font-weight: 650; }
+.workflow-details code { display: block; padding: 8px; margin-top: 6px; direction: ltr; overflow-wrap: anywhere; background: #0d0a16; border-radius: 6px; }
+.manual-scene { background: rgba(255,255,255,.02); }
+section[aria-label="إنشاء أو تعديل باستخدام صورة مرجعية"] .wiki-list { grid-template-columns: repeat(2,minmax(0,1fr)); }
+section[aria-label="إنشاء أو تعديل باستخدام صورة مرجعية"] .image-ref-card { display: flex; flex-direction: column; align-items: stretch; text-align: right; gap: 6px; }
+section[aria-label="إنشاء أو تعديل باستخدام صورة مرجعية"] .image-ref-card img { height: 110px; object-fit: cover; }
+section[aria-label="إنشاء أو تعديل باستخدام صورة مرجعية"] .image-ref-card span { font-size: 11px; overflow-wrap: anywhere; }
+section[aria-label="إنشاء أو تعديل باستخدام صورة مرجعية"] .wiki-list > div { min-width: 0; font-size: 11px; }
+@media (max-width: 980px) {
+  .forge-hero { padding: 18px 0 24px; }
+  .forge-hero h1 { font-size: 27px; line-height: 1.4; }
+  .forge-hero-copy { margin: 6px auto 14px; line-height: 1.5; }
+  .forge-card { padding: 16px; }
+  .forge-card-heading { margin-bottom: 12px; }
+  .forge-ai .prompt-input { min-height: 100px; }
+  .forge-navigation button { font-size: 13px; }
+}
+.forge-navigation .mobile-undo { display: none; }
+@media (max-width: 980px) {
+  .forge-navigation .mobile-undo { display: inline-flex; }
+  .forge-navigation .mobile-undo:disabled { opacity: .42; }
+  .dock-item span { white-space: nowrap; font-size: 11px; }
+}
+.image-scene-embedded { margin-top: 10px; }
+.selected-photo { display: flex; align-items: center; gap: 10px; min-width: 0; margin: 12px 0; color: #dacbe7; font-size: 12px; overflow-wrap: anywhere; }
+.selected-photo img { flex: none; width: 64px; height: 52px; object-fit: cover; border-radius: 7px; background: #1b1626; }

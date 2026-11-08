@@ -45,23 +45,23 @@ type DesktopTab = 'world' | 'scene' | 'assets' | 'ai';
 type MobilePanel = DesktopTab | 'inspector';
 
 const DESKTOP_TABS: { id: DesktopTab; label: string; icon: IconName }[] = [
-  { id: 'world', label: 'World', icon: 'sliders' },
-  { id: 'scene', label: 'Scene', icon: 'layers' },
-  { id: 'assets', label: 'Assets', icon: 'cube' },
-  { id: 'ai', label: 'AI', icon: 'sparkles' },
+  { id: 'world', label: 'العالم', icon: 'sliders' },
+  { id: 'scene', label: 'العناصر', icon: 'layers' },
+  { id: 'assets', label: 'أشكال', icon: 'cube' },
+  { id: 'ai', label: 'بناء وتعديل', icon: 'sparkles' },
 ];
 
 const MOBILE_TABS: { id: MobilePanel; label: string; icon: IconName }[] = [
   ...DESKTOP_TABS,
-  { id: 'inspector', label: 'Inspect', icon: 'info' },
+  { id: 'inspector', label: 'الخصائص', icon: 'info' },
 ];
 
 const PANEL_TITLES: Record<MobilePanel, string> = {
-  world: 'World',
-  scene: 'Scene',
-  assets: 'Assets',
-  ai: 'AI world',
-  inspector: 'Inspector',
+  world: 'العالم',
+  scene: 'العناصر',
+  assets: 'أشكال',
+  ai: 'بناء وتعديل',
+  inspector: 'الخصائص',
 };
 
 export function Workspace() {
@@ -467,9 +467,10 @@ export function Workspace() {
       />
 
       <nav className="forge-navigation" aria-label="WorldForge navigation">
-        <button type="button" className={view === 'forge' ? 'is-active' : ''} onClick={() => setView('forge')} aria-current={view === 'forge' ? 'page' : undefined}><Icon name="sparkles" size={16} /><span>Forge</span><small>الإنشاء</small></button>
-        <button type="button" onClick={openLibrary}><Icon name="folder" size={16} /><span>Grimoire</span><small>المكتبة</small></button>
-        <button type="button" className={view === 'studio' ? 'is-active' : ''} onClick={() => setView('studio')} aria-current={view === 'studio' ? 'page' : undefined}><Icon name="cube" size={16} /><span>Builder</span><small>المحرر</small></button>
+        <button type="button" className={view === 'forge' ? 'is-active' : ''} onClick={() => setView('forge')} aria-current={view === 'forge' ? 'page' : undefined}><Icon name="sparkles" size={16} /><span>إنشاء</span></button>
+        <button type="button" onClick={openLibrary}><Icon name="folder" size={16} /><span>المكتبة</span></button>
+        <button type="button" className={view === 'studio' ? 'is-active' : ''} onClick={() => setView('studio')} aria-current={view === 'studio' ? 'page' : undefined}><Icon name="cube" size={16} /><span>المحرر</span></button>
+        {view === 'studio' && <button type="button" className="mobile-undo" disabled={!state.past.length} onClick={() => dispatch({type:'undo'})}><Icon name="undo" size={16} /><span>تراجع</span></button>}
       </nav>
 
       <KeepAlive active={view === 'forge'}><ForgeHome active={view === 'forge'} worlds={worlds} mapTrainer={mapTrainer} storageKind={storageKind} notify={notify} onOpenStudio={() => { setView('studio'); setMobilePanel(null); }} onOpenLibrary={openLibrary} onOpenWorld={(id) => void openWorld(id)} /></KeepAlive>
@@ -547,7 +548,7 @@ export function Workspace() {
               <Icon name="close" size={17} />
             </button>
           </div>
-          <div className="sheet-body"><KeepAlive active={view === 'studio' && mobilePanel === 'ai'}><AiPanel notify={notify} mapTrainer={mapTrainer} /></KeepAlive>{mobilePanel && mobilePanel !== 'ai' && renderPanel(mobilePanel)}</div>
+          <div className="sheet-body"><KeepAlive active={view === 'studio' && mobilePanel === 'ai'}><AiPanel notify={notify} mapTrainer={mapTrainer} onOpenStudio={() => setMobilePanel(null)} /></KeepAlive>{mobilePanel && mobilePanel !== 'ai' && renderPanel(mobilePanel)}</div>
         </div>
       )}
 

@@ -91,7 +91,6 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
   const [prompt, setPrompt] = useState('');
   const currentPrompt = useRef(prompt); currentPrompt.current = prompt;
   const [worldName, setWorldName] = useState('');
-  const [useReference,setUseReference]=useState(false);
   const [referenceFlow,setReferenceFlow]=useState<{prompt:string;plan:WorldPlan;id:number}|null>(null);
   const referenceSequence=useRef(0);
   const [seed, setSeed] = useState<number>(() => randomSeed());
@@ -103,10 +102,11 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
   const [notes, setNotes] = useState<string[]>([]);
   const [stats, setStats] = useState<{ objects: number; groups: number } | null>(null);
   const [generationError, setGenerationError] = useState('');
-  const generate = async () => {
+  const generate = async (useReference = false) => {
     const text = prompt.trim();
     if (!text || generating) return;
     if(useReference) { researchSequence.current++;researchAbort.current?.abort();setResearch(null);setStudio(null);setStudioPending(false);setResearchBusy(false);setResult(null);setNotes([]);setStats(null);setReferenceFlow({prompt:text,plan:state.plan,id:++referenceSequence.current});setGenerationError('');return; }
+    setReferenceFlow(null);
     const originalPlan = state.plan;
     const correctedText = correctBuildSpelling(text).text;
     setGenerationError('');
@@ -214,7 +214,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
 
   return (
     <div className={`panel-scroll ${variant === 'forge' ? 'forge-ai' : ''}`}>
-      {variant === 'panel' && <TextEditPanel shapeModel={shapeModel} />}
+      {variant === 'panel' && <TextEditPanel shapeModel={shapeModel} onOpenStudio={onOpenStudio} />}
       {studio && <div dir="rtl">
         <p role="status">العنصر {studio.index + 1} من {studio.requests.length} · العدد المطلوب: {studio.requests[studio.index]!.count}</p>
         <PhotoStudio key={`${studio.index}:${studio.requests[studio.index]!.topic.term}`} topic={studio.requests[studio.index]!.topic} initialMeshStyle={studio.requests[studio.index]!.meshStyle}
@@ -256,7 +256,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
         <span className="field-label prompt-label">وصف العالم <span>01</span></span>
         <textarea
           className="prompt-input"
-          aria-label="Description"
+          aria-label="وصف العالم"
           dir="auto"
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
@@ -272,26 +272,16 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
         />
       </label>
 
-      {variant === 'forge' && <label className="field forge-name" dir="rtl">
-        <span className="field-label">اسم العالم (اختياري)</span>
-        <input className="input" aria-label="اسم العالم (اختياري)" value={worldName} onChange={(event) => setWorldName(event.target.value)} maxLength={80} placeholder="مثلاً: أرض الأحلام" />
-      </label>}
-
-      <label dir="rtl"><input type="checkbox" checked={useReference} onChange={(event)=>{setUseReference(event.target.checked);setReferenceFlow(null);}} /> استخدم صورة مرجعية ووصف ويكيبيديا ضمن إنشاء العالم</label>
-      <p className="generate-caption" dir="rtl">يبحث المساعد تلقائياً عن كلمات قد لا يعرفها في ويكيبيديا وWikimedia Commons؛ تُرسل هذه الكلمات إلى الموقعين. التعرّف تقريبي؛ قد نستخدم صوراً ذات خلفية بسيطة لبناء أحجام تقديرية متناظرة لعناصر متعددة.</p>
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
-
-      <button
-        type="button"
-        className="btn btn-primary generate-btn"
-        onClick={() => void generate()}
-        disabled={!prompt.trim() || generating}
-        aria-label="Generate world"
-      >
-        {generating ? <span className="spinner small" /> : <Icon name="sparkles" size={17} />}
-        {generating ? 'جاري تحليل الوصف وبناء العالم…' : 'أنشئ العالم'} <span className="generate-arrow">←</span>
-      </button>
-      <p className="generate-caption" dir="rtl">✦ يتطلب الإنترنت وخادم الهاتف؛ تحليل الصورة التلقائي يحتاج نموذجاً اختيارياً</p>
+      <div className="create-actions" dir="rtl">
+        <button type="button" className="btn btn-primary image-build-btn" onClick={() => void generate(true)} disabled={!prompt.trim() || generating}>
+          <Icon name="sparkles" size={17} /> إنشاء عالم من صورة
+        </button>
+        <button type="button" className="btn generate-btn text-build-btn" onClick={() => void generate(false)} disabled={!prompt.trim() || generating} aria-label="إنشاء بالوصف فقط">
+          {generating ? 'جاري إنشاء العالم…' : 'إنشاء بالوصف فقط'}
+        </button>
+      </div>
+      <p className="create-actions-hint" dir="rtl">للصورة: اكتب وصفك، ثم اختر صورة وحلّلها لبناء المشهد.</p>
       {referenceFlow && <ReferenceSceneWorkflow key={referenceFlow.id} prompt={referenceFlow.prompt} basePlan={referenceFlow.plan} mode="create" canApply={()=>currentPrompt.current.trim()===referenceFlow.prompt} onCancel={()=>setReferenceFlow(null)} onApplied={()=>{setReferenceFlow(null);notify('أُنشئ المشهد؛ يمكن التراجع بـ Undo.','success');}} onOpenStudio={onOpenStudio}/>}
       {result && (
         <div className="ai-result">
@@ -341,6 +331,9 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
         </div>
       )}
 
+      <details className="forge-disclosure extra-tools" dir="rtl">
+        <summary>إعدادات وأدوات إضافية</summary>
+      {variant === 'forge' && <label className="field forge-name"><span>اسم العالم (اختياري)</span><input className="input" aria-label="اسم العالم (اختياري)" value={worldName} onChange={(event) => setWorldName(event.target.value)} maxLength={80} placeholder="مثلاً: أرض الأحلام" /></label>}
       <details className="forge-disclosure" dir="rtl">
         <summary>أمثلة جاهزة للإلهام</summary>
       <div className="example-list">
@@ -463,6 +456,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
         <Icon name="info" size={16} />
         <span>الأشكال تُبنى محلياً بقواعد بسيطة وفق الأبعاد المتعلَّمة؛ لا تُستورد نماذج من المواقع، ولا تتعلم أوزان الأشكال من نص ويكيبيديا. قد لا تكون النتيجة نسخة دقيقة من مكان حقيقي.</span>
       </div>
+      </details>
     </div>
   );
 }

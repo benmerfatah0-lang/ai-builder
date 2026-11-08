@@ -20,14 +20,12 @@ export function ForgeHome({ active = true, worlds, mapTrainer, storageKind, noti
     <main className="forge-home" hidden={!active}>
       <div className="forge-home-inner">
         <section className="forge-hero" dir="rtl" aria-labelledby="forge-title">
-          <div className="forge-hero-symbol" aria-hidden="true"><Icon name="sparkles" size={21} /></div>
-          <p className="forge-kicker">WORLD FORGE · استوديو العوالم</p>
           <h1 id="forge-title">اصنع عالمك من الخيال</h1>
-          <p className="forge-hero-copy">ابدأ بفكرة، واكتب تفاصيل عالمك. أنشئ مشهداً ثلاثي الأبعاد ثم عدّله بطريقتك.</p>
+          <p className="forge-hero-copy">اكتب وصفاً، ثم اختر صورة أو أنشئ العالم بالوصف فقط.</p>
           <div className="forge-card">
             <div className="forge-card-heading">
               <span className="forge-card-icon"><Icon name="sparkles" size={18} /></span>
-              <div><span>THE INCANTATION</span><h2>صف عالمك</h2></div>
+              <div><h2>صف عالمك</h2></div>
             </div>
             <AiPanel variant="forge" active={active} mapTrainer={mapTrainer} notify={notify} onOpenStudio={onOpenStudio} />
           </div>
@@ -38,7 +36,7 @@ export function ForgeHome({ active = true, worlds, mapTrainer, storageKind, noti
 
         <section className="forge-recent" dir="rtl" aria-labelledby="recent-worlds-heading">
           <div className="forge-recent-heading">
-            <div><p>YOUR WORLDS</p><h2 id="recent-worlds-heading">عوالمك الأخيرة</h2></div>
+            <div><h2 id="recent-worlds-heading">عوالمك الأخيرة</h2></div>
             <button type="button" onClick={onOpenLibrary}>عرض المكتبة ←</button>
           </div>
           {worlds.length ? (

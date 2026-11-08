@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ReferenceSceneWorkflow, referenceSearchQuery } from './ReferenceSceneWorkflow';
 import { EditorProvider, useEditor } from '../store';
 import { createEmptyWorldPlan } from '../../../core/world-plan/factory';
@@ -35,12 +35,11 @@ afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();});
 async function findArticle(){
   const choice=await screen.findByRole('button',{name:/اختر File:Amazon.jpg/});
   expect(requests).toEqual(['/api/image-search']);fireEvent.click(choice);
-  expect(await screen.findByRole('button',{name:'اقرأ غابات الأمازون'})).toBeTruthy();
-  expect(requests[1]).toMatch(/^\/api\/image-thumbnail\?/);expect(requests[2]).toBe('/api/search');
-  fireEvent.click(screen.getByRole('button',{name:'اقرأ غابات الأمازون'}));
   expect(await screen.findByText('المقالة المختارة:',{exact:false})).toBeTruthy();
-  expect(requests[3]).toBe('/api/wiki-article');
-  fireEvent.click(screen.getByRole('button',{name:'متابعة إلى تحليل الصورة'}));
+  expect(requests[1]).toMatch(/^\/api\/image-thumbnail\?/);expect(requests[2]).toBe('/api/search');expect(requests[3]).toBe('/api/wiki-article');
+  fireEvent.click(screen.getByRole('button',{name:'٢. متابعة لتحليل الصورة'}));
+  await screen.findByRole('button',{name:'حلّل وابحث وابنِ تلقائياً'});
+  fireEvent.click(screen.getByText('تحديد العناصر يدوياً (اختياري)'));
   return screen.findByLabelText('صورة المشهد لتحديد مواقع العناصر');
 }
 describe('integrated reference workflow',()=>{
@@ -83,23 +82,21 @@ describe('integrated reference workflow',()=>{
     vi.stubGlobal('fetch',vi.fn(async(url:string)=>{requests.push(url);if(url==='/api/image-search')return new Response('{"results":[]}');if(url==='/api/search')return new Response('',{status:500});throw new Error('unexpected');}));
     setup();await screen.findByText(/لم تظهر صور مقبولة/);
     fireEvent.change(screen.getByLabelText('صورة مرجعية من الجهاز'),{target:{files:[new File(['x'],'local.png',{type:'image/png'})]}});
-    expect(await screen.findByRole('button',{name:'متابعة دون مقالة'})).toBeTruthy();expect(screen.getByRole('alert')).toBeTruthy();
-    expect(requests).toEqual(['/api/image-search','/api/search']);fireEvent.click(screen.getByRole('button',{name:'متابعة دون مقالة'}));
+    expect(await screen.findByRole('alert')).toBeTruthy();expect(screen.getByRole('button',{name:'٢. متابعة لتحليل الصورة'})).toBeTruthy();
+    expect(requests).toEqual(['/api/image-search','/api/search']);fireEvent.click(screen.getByRole('button',{name:'٢. متابعة لتحليل الصورة'}));
     expect(await screen.findByLabelText('صورة المشهد لتحديد مواقع العناصر')).toBeTruthy();
   });
   it('does not use a picture to reinterpret a destructive text-edit command',()=>{
     const initial=plan();render(<EditorProvider initialPlan={initial}><TextEditPanel shapeModel={initialShapeModel()}/><Observer/></EditorProvider>);
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'),{target:{value:'احذف البيت'}});
-    fireEvent.click(screen.getByLabelText('استخدم صورة مرجعية ووصف ويكيبيديا للإضافة'));
-    fireEvent.click(screen.getByRole('button',{name:'تطبيق التعديل'}));expect(screen.getByRole('alert').textContent).toMatch(/أمر إضافة فقط/);
+    fireEvent.click(screen.getByRole('button',{name:'إضافة من صورة'}));expect(screen.getByRole('alert').textContent).toMatch(/أمر إضافة فقط/);
     expect(JSON.parse(screen.getByTestId('plan').textContent!).objects).toHaveLength(1);expect(requests).toEqual([]);
   });
   it('starts the image-first path from the existing generation prompt and primary button',async()=>{
     const initial=plan();const trainer={model:initialMapTraining(),setEnabled:()=>{},reset:()=>{},error:''};
     render(<EditorProvider initialPlan={initial}><AiPanel variant="forge" mapTrainer={trainer} notify={()=>{}}/><Observer/></EditorProvider>);
-    fireEvent.change(screen.getByLabelText('Description'),{target:{value:'ابني غابات الأمازون'}});
-    fireEvent.click(screen.getByLabelText('استخدم صورة مرجعية ووصف ويكيبيديا ضمن إنشاء العالم'));
-    fireEvent.click(screen.getByRole('button',{name:'Generate world'}));
+    fireEvent.change(screen.getByLabelText('وصف العالم'),{target:{value:'ابني غابات الأمازون'}});
+    fireEvent.click(screen.getByRole('button',{name:'إنشاء عالم من صورة'}));
     expect(await screen.findByRole('button',{name:/اختر File:Amazon.jpg/})).toBeTruthy();
     expect((screen.getByLabelText('موضوع البحث عن صور المشهد') as HTMLInputElement).value).toBe('غابات الأمازون');
     expect(requests).toEqual(['/api/image-search']);expect(JSON.parse(screen.getByTestId('plan').textContent!).id).toBe(initial.id);
@@ -107,11 +104,31 @@ describe('integrated reference workflow',()=>{
   it('starts the same path from the existing edit command without applying a preliminary edit',async()=>{
     const initial=plan();render(<EditorProvider initialPlan={initial}><TextEditPanel shapeModel={initialShapeModel()}/><Observer/></EditorProvider>);
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'),{target:{value:'أضف غابات الأمازون'}});
-    fireEvent.click(screen.getByLabelText('استخدم صورة مرجعية ووصف ويكيبيديا للإضافة'));
-    fireEvent.click(screen.getByRole('button',{name:'تطبيق التعديل'}));
+    fireEvent.click(screen.getByRole('button',{name:'إضافة من صورة'}));
     expect(await screen.findByRole('button',{name:/اختر File:Amazon.jpg/})).toBeTruthy();
     expect((screen.getByLabelText('موضوع البحث عن صور المشهد') as HTMLInputElement).value).toBe('غابات الأمازون');
     expect(JSON.parse(screen.getByTestId('plan').textContent!).objects).toHaveLength(1);expect(requests).toEqual(['/api/image-search']);
+  });
+  it('shows the next action immediately while Wikipedia is slow and ignores a late response',async()=>{
+    let finish!:(value:Response)=>void;
+    vi.stubGlobal('fetch',vi.fn(async(url:string)=>{requests.push(url);if(url==='/api/image-search')return new Response('{"results":[]}');if(url==='/api/search')return new Promise<Response>(resolve=>{finish=resolve;});throw new Error('unexpected');}));
+    setup();await screen.findByText(/لم تظهر صور مقبولة/);
+    fireEvent.change(screen.getByLabelText('صورة مرجعية من الجهاز'),{target:{files:[new File(['x'],'local.png',{type:'image/png'})]}});
+    const next=await screen.findByRole('button',{name:'٢. متابعة لتحليل الصورة'});expect((next as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText(/يمكنك المتابعة دون انتظار/)).toBeTruthy();
+    fireEvent.click(next);expect(await screen.findByRole('button',{name:'حلّل وابحث وابنِ تلقائياً'})).toBeTruthy();
+    const manual=screen.getByText('تحديد العناصر يدوياً (اختياري)').parentElement as HTMLDetailsElement;
+    expect(manual.open).toBe(false);
+    finish(new Response(JSON.stringify({results:[article],next:null})));
+    await waitFor(()=>expect(screen.queryByText('المقالة المختارة:',{exact:false})).toBeNull());
+    expect(requests).toEqual(['/api/image-search','/api/search']);
+  });
+  it('shows two direct creation actions before choosing a picture',()=>{
+    const trainer={model:initialMapTraining(),setEnabled:()=>{},reset:()=>{},error:''};
+    render(<EditorProvider initialPlan={plan()}><AiPanel variant="forge" mapTrainer={trainer} notify={()=>{}}/></EditorProvider>);
+    expect(screen.getByRole('button',{name:'إنشاء عالم من صورة'})).toBeTruthy();
+    expect(screen.getByRole('button',{name:'إنشاء بالوصف فقط'}).textContent).toContain('إنشاء بالوصف فقط');
+    expect(screen.queryByRole('checkbox',{name:/صورة مرجعية/})).toBeNull();
   });
   it('makes a small editable query from the command',()=>{expect(referenceSearchQuery('ابني غابات الأمازون')).toBe('غابات الأمازون');expect(referenceSearchQuery('أضف بيت')).toBe('بيت');});
 });

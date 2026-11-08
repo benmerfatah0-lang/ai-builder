@@ -29,7 +29,8 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
   const [showPreview,setShowPreview]=useState(false);
   const [autoBusy,setAutoBusy]=useState(false), [autoStatus,setAutoStatus]=useState('');
   const [autoReport,setAutoReport]=useState<{count:number;ignored:string[];truncated:number;failed:string[];research:SemanticResearchResult[]}|null>(null);
-  const autoController=useRef<AbortController|null>(null), planRef=useRef(state.plan), descriptionRef=useRef(description);planRef.current=state.plan;descriptionRef.current=description;
+  const autoController=useRef<AbortController|null>(null), planRef=useRef(state.plan), descriptionRef=useRef(description), autoButtonRef=useRef<HTMLButtonElement|null>(null);planRef.current=state.plan;descriptionRef.current=description;
+  useEffect(()=>{if(embedded && picture){autoButtonRef.current?.focus({preventScroll:true});autoButtonRef.current?.scrollIntoView?.({behavior:'smooth',block:'center'});}},[embedded,picture]);
   const pending=useRef(new Set<string>()), currentUrl=useRef(''), generation=useRef(0);
   const release=(url:string) => { if(pending.current.delete(url)) URL.revokeObjectURL(url); };
   useEffect(()=>()=>{ const pendingAuto=autoController.current;autoController.current=null;pendingAuto?.abort();generation.current++; for(const url of pending.current) URL.revokeObjectURL(url); pending.current.clear(); },[]);
@@ -119,28 +120,32 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
   ])];
   const regions=picture ? colorRegions(picture.pixels) : [];
   const Wrapper=embedded?'div':'details';
-  return <Wrapper className="wiki-library" dir="rtl">
+  return <Wrapper className={embedded?'image-scene-embedded':'wiki-library'} dir="rtl">
     {!embedded && <summary>إنشاء مشهد تقريبي من صورة ووصف</summary>}
-    <p>الصورة تبقى على الجهاز. قسّمها إلى عناصر تختارها وتحدد قربها أو بعدها؛ سيتم إنشاء أجسام منفصلة، وليس تحويل الصورة كلها إلى لوح. التعرف على الكائنات والعمق غير تلقائيين في النسخة الخفيفة.</p>
+    {!embedded && <p>حلّل الصورة تلقائياً أو حدّد العناصر يدوياً لبناء أشكال تقريبية مستقلة.</p>}
     {!embedded && <label className="field"><span>اختر صورة من الجهاز (JPEG أو PNG أو WebP)</span><input aria-label="صورة المشهد" type="file" accept="image/jpeg,image/png,image/webp" onChange={load}/></label>}
     {loading && <p role="status">أقرأ الصورة محلياً…</p>}
     {!embedded && <label className="field"><span>صف العناصر الموجودة في الصورة (اختياري)</span><textarea aria-label="وصف عناصر الصورة" maxLength={400} value={description} onChange={(event)=>setDescription(event.target.value)} rows={2}/></label>}
+    {picture && <>
+      <div className="auto-build-card">
+        <strong className="workflow-title">٣. حلّل الصورة وابنِ العالم</strong>
+        <div className="selected-photo"><img src={picture.url} alt="الصورة المختارة للتحليل"/><span>{picture.title}</span></div>
+        <p>يتعرّف محلياً على مناطق الصورة، ويبحث عن فئاتها، ثم يبني أشكالاً تقريبية. لا تُرسل الصورة، لكن أسماء الفئات تُرسل للبحث.</p>
+        <button ref={autoButtonRef} type="button" className="btn btn-primary auto-build-btn" disabled={autoBusy || loading || !!autoReport} onClick={()=>void buildAutomatically()}>حلّل وابحث وابنِ تلقائياً</button>
+        <details className="workflow-details"><summary>ما يلزم وحدود التحليل</summary><p>يحتاج تثبيت نموذج الرؤية مرة واحدة على الهاتف. التحليل تقريبي وقد يدمج عناصر أو يفوّت الصغيرة؛ لا يستنتج العمق الحقيقي. يبني حتى 30 منطقة، ويعامل الأرض والخلفية كخلفية.</p><p>إذا كانت ملفات التحديث مثبتة، ثبّت النموذج في Termux بالأمر: <code>cd ~/world-builder &amp;&amp; python vision-setup.py</code> ثم أعد تشغيل الخادم وحدّث الصفحة.</p></details>
+        {autoBusy && <><p role="status">{autoStatus}</p><button type="button" className="btn btn-small" onClick={()=>{autoController.current?.abort();setMessage('أُلغي التحليل؛ لم يتغيّر العالم.');}}>إلغاء التحليل</button></>}
+        {autoReport && <div><p>أُنشئت {autoReport.count} منطقة مستقلة. {autoReport.truncated>0?`تُركت ${autoReport.truncated} منطقة بسبب الحد الأقصى. `:''}{autoReport.failed.length?`تعذّر بناء: ${autoReport.failed.join('، ')}. `:''}{autoReport.ignored.length?`فئات عوملت كخلفية أو أرض: ${autoReport.ignored.join('، ')}.`:''}</p>
+          <button type="button" className="btn btn-primary workflow-next" onClick={()=>{onApplied?.();onOpenStudio?.();}}>عرض العالم في المحرر</button>
+          <details className="workflow-details"><summary>تفاصيل نتائج البحث والمصادر</summary><p>نتائج البحث معلومات عامة وليست إثباتاً أن المنطقة تطابق المقالة أو الصورة؛ البناء يستخدم الأشكال الجاهزة أو قصاصة من الصورة المختارة، وليس أشكالاً ثلاثية الأبعاد من الويب.</p>
+          {autoReport.research.map(item=><div key={item.label}><strong>{item.label}</strong> · {item.article?<a href={item.article.url} target="_blank" rel="noopener noreferrer">{item.article.title} ↗</a>:'لم تُعثر مقالة مطابقة'} · {item.images[0]?<><a href={item.images[0].url} target="_blank" rel="noopener noreferrer">صورة مرجعية ↗</a> ({item.images[0].author}، <a href={item.images[0].license_url} target="_blank" rel="noopener noreferrer">{item.images[0].license_name}</a>)</>:'لم تُعثر صور مرخصة'}{item.errors.length?` · ${item.errors.join('، ')}`:''}{item.article?.content && <p>{item.article.content}</p>}</div>)}
+          </details>
+        </div>}
+      </div>
+      <details className="workflow-details manual-scene" open={!embedded}>
+        <summary>تحديد العناصر يدوياً (اختياري)</summary>
     {!!articleSuggestions.length && <div><p>كلمات مدعومة وردت في المقالة؛ لا يعني ذلك أنها موجودة في الصورة. اختر ما تراه فقط:</p>{articleSuggestions.map((id)=><button type="button" key={id} className="btn btn-small" onClick={()=>selectType(id)}>{SCENE_TYPES.find((entry)=>entry.id===id)!.label}</button>)}</div>}
     {!!unique.length && <div><p>عناصر تعرّف عليها الوصف؛ اختر نوعاً ثم حدّد مكانه:</p>{unique.map((id)=><button type="button" key={id} className="btn btn-small" onClick={()=>selectType(id)}>{SCENE_TYPES.find((entry)=>entry.id===id)!.label}</button>)}</div>}
     {!!unknown.length && <div><p>كلمات غير مفهومة تلقائياً؛ يمكنك تحديد شكلها من الصورة إذا كانت ظاهرة:</p>{unknown.slice(0,10).map((term)=><button type="button" key={term} className="btn btn-small" onClick={()=>selectType('photo',term)}>{term}</button>)}</div>}
-    {picture && <>
-      <div className="wiki-library">
-        <strong>تحليل وبناء تلقائي محلي</strong>
-        <p>يقسم النموذج الصورة إلى فئات ومناطق ثم يبحث عن اسم كل فئة مكتشفة ويضع أشكالاً تقريبية قابلة للتعديل. قد يخطئ أو يدمج عناصر متلاصقة ويفوّت الصغيرة، ولا يعرف كل الأنواع أو العمق الحقيقي. الحد الأقصى 30 منطقة؛ الخلفية والأرض لا تتحول إلى عناصر مستقلة.</p>
-        <p>التحليل محلي ولا تُرسل الصورة؛ أسماء الفئات ترسل للبحث في ويكيبيديا وCommons. يتطلب تثبيت نموذج الرؤية مرة واحدة.</p>
-        <button type="button" className="btn btn-primary" disabled={autoBusy || loading || !!autoReport} onClick={()=>void buildAutomatically()}>حلّل وابحث وابنِ تلقائياً</button>
-        {autoBusy && <><p role="status">{autoStatus}</p><button type="button" className="btn btn-small" onClick={()=>{autoController.current?.abort();setMessage('أُلغي التحليل؛ لم يتغيّر العالم.');}}>إلغاء التحليل</button></>}
-        {autoReport && <div><p>أُنشئت {autoReport.count} منطقة مستقلة. {autoReport.truncated>0?`تُركت ${autoReport.truncated} منطقة بسبب الحد الأقصى. `:''}{autoReport.failed.length?`تعذّر بناء: ${autoReport.failed.join('، ')}. `:''}{autoReport.ignored.length?`فئات عوملت كخلفية أو أرض: ${autoReport.ignored.join('، ')}.`:''}</p>
-          <p>نتائج البحث معلومات عامة وليست إثباتاً أن المنطقة تطابق المقالة أو الصورة؛ البناء يستخدم الأشكال الجاهزة أو قصاصة من الصورة المختارة، وليس أشكالاً ثلاثية الأبعاد من الويب.</p>
-          {autoReport.research.map(item=><div key={item.label}><strong>{item.label}</strong> · {item.article?<a href={item.article.url} target="_blank" rel="noopener noreferrer">{item.article.title} ↗</a>:'لم تُعثر مقالة مطابقة'} · {item.images[0]?<><a href={item.images[0].url} target="_blank" rel="noopener noreferrer">صورة مرجعية ↗</a> ({item.images[0].author}، <a href={item.images[0].license_url} target="_blank" rel="noopener noreferrer">{item.images[0].license_name}</a>)</>:'لم تُعثر صور مرخصة'}{item.errors.length?` · ${item.errors.join('، ')}`:''}{item.article?.content && <p>{item.article.content}</p>}</div>)}
-          <button type="button" className="btn btn-small" onClick={()=>{onApplied?.();onOpenStudio?.();}}>عرض العالم في المحرر</button>
-        </div>}
-      </div>
       <p>للتحديد اليدوي فقط — الصورة: {picture.title}. اضغط موقع العنصر على الصورة. اليمين واليسار من الصورة، والعمق والارتفاع تختارهما أنت، لا يُستنتج الارتفاع من موضع الضغط؛ لا يمكن التحقق من المواضع المخفية.</p>
       <svg role="img" aria-label="صورة المشهد لتحديد مواقع العناصر" viewBox={`0 0 ${picture.pixels.width} ${picture.pixels.height}`} onClick={tap} style={{width:'100%',maxWidth:420,height:'auto',display:'block',margin:'auto',touchAction:'manipulation',cursor:'crosshair'}}>
         <image href={picture.url} x="0" y="0" width={picture.pixels.width} height={picture.pixels.height} preserveAspectRatio="none" />
@@ -174,6 +179,7 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
       <p>{mode==='create'?'ينشئ أرضاً مستوية':'يحافظ على الأرض الحالية ويضع العناصر قرب مركزها'} وماءً زخرفياً إن اخترته؛ لا يحفر وادياً ولا يستنتج الجدران والأجزاء المخفية. قد تتداخل العناصر أو تظهر تحت الماء. راجعها في المحرر بعد التطبيق.</p>
       <button type="button" className="btn btn-primary" disabled={!marks.length || autoBusy || !!autoReport} onClick={build}>{mode==='edit'?'إضافة العناصر المحددة إلى العالم':'إنشاء عالم جديد من العناصر المحددة'}</button>
       <p>{mode==='edit'?'تُضاف العناصر إلى العالم الحالي':'هذا يستبدل العالم المعروض'} ويمكن التراجع عنه بـ Undo. الألوان والشكل المشتقان من القصاصة واسم الملف يحفظان في المشروع، ومع صورة Commons تحفظ بيانات مصدرها وترخيصها للمجسم المشتق؛ لا تحفظ الصورة الأصلية. تحقق من حقك في استخدام الصورة قبل مشاركة الناتج.</p>
+      </details>
     </>}
     {error && <p className="online-error" role="alert">{error}</p>}{message && <p role="status">{message}</p>}
   </Wrapper>;

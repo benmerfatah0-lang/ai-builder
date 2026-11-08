@@ -13,8 +13,8 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', fetchMock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'ابحث عن بيت في الصحراء' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'ابحث عن بيت في الصحراء' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     expect(await screen.findByText('تم البحث في ويكيبيديا في هذا الطلب.')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'مصدر ↗' }).getAttribute('href')).toContain('ar.wikipedia.org/wiki/');
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/online', '/api/knowledge', '/api/house-learning', '/api/search']);
@@ -32,8 +32,8 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', fetchMock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'بيت وفيل' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت وفيل' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     const results = await screen.findByRole('region', { name: 'نتائج البحث التلقائي' });
     expect(within(results).getByText('البحث عن: فيل')).toBeTruthy();
     expect(within(results).getByRole('link', { name: 'فيل ↗' }).getAttribute('href')).toBe('https://ar.wikipedia.org/wiki/فيل');
@@ -57,14 +57,14 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', mock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'كوخ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'كوخ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     expect(await screen.findByText(/استُخدم كلون البيت/)).toBeTruthy();
     expect(screen.getByText('#a04020')).toBeTruthy();
     expect(screen.getByText(/ممثّل ببيت تقريبي|ممثل ببيت تقريبي/)).toBeTruthy();
     expect(mock.mock.calls.some(([url]) => url === '/api/image-analyze')).toBe(true);
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
   }, 20000);
   it('adds an inferred house by text and keeps the addition undoable', async () => {
@@ -79,13 +79,13 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', mock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف كوخ' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
     expect(await screen.findByText(/أُضيف «كوخ» كنموذج بيت تقريبي/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: /Undo \(Ctrl\/Cmd\+Z\)/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
@@ -99,11 +99,11 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'cabane' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'cabane' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     expect(await screen.findByText(/وفق تعريف معجمي محدود/)).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
   }, 20000);
   it('uses a single dictionary sense for a limited, undoable addition', async () => {
@@ -119,8 +119,8 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', mock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'ajoute une cabane' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -128,7 +128,7 @@ describe('lightweight local planning interface', () => {
     const results = screen.getByRole('region', { name: 'نتائج البحث التلقائي' });
     expect(within(results).getByRole('link', { name: /ويكاموس: cabane/ }).getAttribute('href')).toBe('https://en.wiktionary.org/wiki/cabane');
     expect(within(results).getByText(/فرنسية/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: /Undo \(Ctrl\/Cmd\+Z\)/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
@@ -147,8 +147,8 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', mock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'كوخ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'كوخ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     await waitFor(() => expect(mock.mock.calls.some(([url]) => url === '/api/image-analyze')).toBe(true));
     fireEvent.change(screen.getByLabelText('World name'), { target: { value: 'Preserve my edit' } });
     fireEvent.blur(screen.getByLabelText('World name'));
@@ -171,8 +171,8 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', mock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف كوخ' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -180,7 +180,7 @@ describe('lightweight local planning interface', () => {
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف صخرة' } });
     finish!(new Response('{"center_color":"#a04020"}'));
     expect(await screen.findByText(/تغيّر العالم أو الأمر أثناء البحث/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
   }, 20000);
   it('shows failures from both lookup services instead of claiming success', async () => {
@@ -192,8 +192,8 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', fetchMock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'قلعة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'قلعة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     expect(await screen.findByText(/تعذّر البحث عن الصور في Wikimedia Commons/)).toBeTruthy();
     expect(screen.getByText(/تعذّر البحث في ويكيبيديا؛ لم تُستخدم نتائج منها/)).toBeTruthy();
     expect(await screen.findByText('World generated')).toBeTruthy();
@@ -207,14 +207,14 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', fetchMock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'بيت' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف فيل' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
     expect(await screen.findByText('البحث عن: فيل')).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toContain('لم أجد صوراً مناسبة');
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
   }, 20000);
   it('creates a named world from the Forge home and opens the existing 3D editor', async () => {
@@ -223,13 +223,13 @@ describe('lightweight local planning interface', () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     expect(screen.getByRole('heading', { name: 'اصنع عالمك من الخيال' })).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'بيت وشجرة' } });
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت وشجرة' } });
     fireEvent.change(screen.getByLabelText('اسم العالم (اختياري)'), { target: { value: 'عالمي الجديد' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     expect((screen.getByLabelText('World name') as HTMLInputElement).value).toBe('عالمي الجديد');
     expect(screen.getByRole('region', { name: '3D viewport' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /Grimoire/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'المكتبة' }));
     expect(await screen.findByRole('dialog', { name: 'World library' })).toBeTruthy();
   }, 20000);
   it('opens the library and editor from the Forge navigation at phone width', async () => {
@@ -239,15 +239,15 @@ describe('lightweight local planning interface', () => {
       render(<App />);
       await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
       expect(screen.getByRole('heading', { name: 'اصنع عالمك من الخيال' })).toBeTruthy();
-      fireEvent.click(screen.getByRole('button', { name: /Grimoire/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'المكتبة' }));
       expect(await screen.findByRole('dialog', { name: 'World library' })).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Close library' }));
-      fireEvent.click(screen.getByRole('button', { name: /Builder/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'المحرر' }));
       expect(await screen.findByRole('navigation', { name: 'Editor panels' })).toBeTruthy();
-      const mobileAI = within(screen.getByRole('dialog', { name: 'AI world' }));
+      const mobileAI = within(screen.getByRole('dialog', { name: 'بناء وتعديل' }));
       expect(mobileAI.getByLabelText('تعديل العالم بالكتابة')).toBeTruthy();
-      fireEvent.click(screen.getByRole('button', { name: /Forge/ }));
-      expect(screen.getByLabelText('Description')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'إنشاء' }));
+      expect(screen.getByLabelText('وصف العالم')).toBeTruthy();
     } finally { browser.happyDOM.setViewport({ width: 1024, height: 768 }); }
   }, 20000);
   it('adds a misspelled river through an existing village and undoes the actual map change', async () => {
@@ -260,17 +260,17 @@ describe('lightweight local planning interface', () => {
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('Seed'), { target: { value: '7' } });
     fireEvent.blur(screen.getByLabelText('Seed'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'قرية' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'قرية' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     const tree = screen.getByRole('tree', { name: 'Scene hierarchy' });
     const before = within(tree).getAllByRole('treeitem').length;
-    fireEvent.click(screen.getByRole('tab', { name: /^AI$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^بناء وتعديل$/ }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'اصنع لي نهرر يمر وسط القريية' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
     expect(await screen.findByText(/تصحيح إملائي محدود/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     const updatedTree = screen.getByRole('tree', { name: 'Scene hierarchy' });
     expect(within(updatedTree).getAllByRole('treeitem')).toHaveLength(before + 1);
     expect(within(updatedTree).getByText('Village river')).toBeTruthy();
@@ -283,13 +283,13 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(data[0]).mockResolvedValueOnce(data[1]).mockResolvedValueOnce(data[2]));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'بيت' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف شجرتين على يمين البيت' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
     expect(await screen.findByText(/أُضيف 2/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     const tree = screen.getByRole('tree', { name: 'Scene hierarchy' });
     expect(within(tree).getAllByRole('treeitem')).toHaveLength(3);
     fireEvent.click(screen.getByRole('button', { name: /Undo \(Ctrl\/Cmd\+Z\)/ }));
@@ -301,25 +301,25 @@ describe('lightweight local planning interface', () => {
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.click(screen.getByText('أمثلة جاهزة للإلهام'));
     fireEvent.click(screen.getByRole('button', { name: /مدينة صحراوية قديمة فيها منجم/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     expect(await screen.findByText(/المنجم مدخل زخرفي يوحي بالعمق فقط/)).toBeTruthy();
   }, 20000);
   it('shows an internet error without silently generating offline', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 502 })); vi.stubGlobal('fetch', fetchMock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'بيت' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     expect((await screen.findByRole('alert')).textContent).toContain('ويكيبيديا');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   }, 20000);
   it('learns an explicitly selected house and can delete personal training', async () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.click(screen.getByRole('button', { name: /Builder/ }));
-    fireEvent.click(screen.getByRole('tab', { name: /^Assets$/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'المحرر' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^أشكال$/ }));
     fireEvent.click(screen.getByRole('button', { name: /^House/i }));
-    fireEvent.click(screen.getByRole('tab', { name: /^AI$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^بناء وتعديل$/ }));
     fireEvent.click(screen.getByText('التعلّم والتدريب وحالة المصادر'));
     fireEvent.click(screen.getByRole('button', { name: 'تعلّم من العنصر المحدد' }));
     expect(screen.getByText(/تم التدريب على أبعاد العنصر المحدد/)).toBeTruthy();
@@ -341,8 +341,8 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', mock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف فيل' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -353,7 +353,7 @@ describe('lightweight local planning interface', () => {
     await waitFor(() => expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy());
     expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(1);
     // Switching panels must not cancel the running edit or put the draft in history.
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     const tree = screen.getByRole('tree', { name: 'Scene hierarchy' });
     expect(within(tree).getAllByRole('treeitem')).toHaveLength(1);
     await waitFor(() => expect(within(tree).getAllByRole('treeitem')).toHaveLength(2), { timeout: 5000 });
@@ -373,8 +373,8 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف فيل' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -382,7 +382,7 @@ describe('lightweight local planning interface', () => {
     await screen.findByText(/بناء طبقات الشكل/);
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف صخرة' } });
     expect(await screen.findByText(/تغيّر العالم أو التحديد أو الأمر أثناء البناء/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
   }, 20000);
 
@@ -400,8 +400,8 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', mock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'عالم فيه فيل' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'عالم فيه فيل' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     const candidate = await screen.findByRole('button', { name:/File:Elephant.png/ });
     expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(0);
     const thumb = within(candidate).getByRole('img', { name:'File:Elephant.png' }) as HTMLImageElement;
@@ -410,7 +410,7 @@ describe('lightweight local planning interface', () => {
     expect(await screen.findByText(/أُضيف مجسم الصورة التقريبي؛/)).toBeTruthy();
     expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'فتح العالم في المحرر ←' }));
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getByText('فيل')).toBeTruthy();
   }, 20000);
 
@@ -425,8 +425,8 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', mock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'عالم فيه فيل' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'عالم فيه فيل' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name: 'إيقاف البحث' }));
     expect((await screen.findByRole('alert')).textContent).toContain('أُوقف البحث؛ لم يُنشأ العالم');
     expect(screen.queryByText('World generated')).toBeNull();
@@ -447,15 +447,15 @@ describe('lightweight local planning interface', () => {
     vi.stubGlobal('fetch', mock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'بيت و2 فيل وزرافة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت و2 فيل وزرافة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
     expect(await screen.findByText(/أُضيف 2 من «فيل»/)).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name:/File:Giraffe.png/ }));
     expect(await screen.findByText(/أُضيف مجسم الصورة التقريبي؛ «زرافة»/)).toBeTruthy();
     expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: 'فتح العالم في المحرر ←' }));
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     const tree=screen.getByRole('tree', {name:'Scene hierarchy'});
     expect(within(tree).getAllByRole('treeitem')).toHaveLength(4);
     expect(within(tree).getByText('فيل 1')).toBeTruthy();
@@ -480,15 +480,15 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف 2 فيل وزرافة' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
     fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
     fireEvent.click(await screen.findByRole('button', { name:/File:Giraffe.png/ }, {timeout:5000}));
     expect(await screen.findByText(/أُضيفت مجسمات الصور التقريبية معاً/, {}, { timeout: 5000 })).toBeTruthy();
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     const tree = screen.getByRole('tree', {name:'Scene hierarchy'});
     expect(within(tree).getAllByRole('treeitem')).toHaveLength(4);
     fireEvent.click(screen.getByRole('button', { name: /Undo \(Ctrl\/Cmd\+Z\)/ }));
@@ -509,8 +509,8 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف فيل وزرافة' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -519,7 +519,7 @@ describe('lightweight local planning interface', () => {
     expect(await screen.findByText(/بيانات الصورة غير صالحة.*لم يُضف مجسم/, {}, { timeout:5000 })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'إلغاء التعديل' }));
     expect(screen.getByText(/أُلغي التعديل؛ لم يتغير العالم/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).getAllByRole('treeitem')).toHaveLength(1);
   }, 20000);
 
@@ -537,14 +537,14 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'بيت' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف فيل يمين البيت' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
     fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
     expect(await screen.findByText(/أُضيف مجسم الصورة التقريبي في مكان متاح/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).getAllByRole('treeitem')).toHaveLength(2);
   }, 20000);
 
@@ -561,16 +561,16 @@ describe('lightweight local planning interface', () => {
     });
     vi.stubGlobal('fetch', mock); render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value:'عالم فيه فيل' } });
-    fireEvent.click(screen.getByRole('button', { name:'Generate world' }));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value:'عالم فيه فيل' } });
+    fireEvent.click(screen.getByRole('button', { name:'إنشاء بالوصف فقط' }));
     const studio = await screen.findByRole('region', { name:'استوديو تقريب الصورة' });
     expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(0);
     fireEvent.click(within(studio).getByRole('button', { name:/File:Elephant.png/ }));
     await screen.findByText(/بناء طبقات الشكل/);
     expect(screen.getByLabelText('معاينة البناء داخل الماب')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name:/Builder/ }));
+    fireEvent.click(screen.getByRole('button', { name:'المحرر' }));
     await waitFor(() => expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy());
-    fireEvent.click(screen.getByRole('tab', { name:/^Scene$/ }));
+    fireEvent.click(screen.getByRole('tab', { name:/^العناصر$/ }));
     const tree = screen.getByRole('tree', { name:'Scene hierarchy' });
     expect(within(tree).queryByText('فيل')).toBeNull();
     await waitFor(() => expect(within(tree).getByText('فيل')).toBeTruthy(), {timeout:5000});
@@ -591,8 +591,8 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), {target:{value:'عالم فيه فيل'}});
-    fireEvent.click(screen.getByRole('button', {name:'Generate world'}));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), {target:{value:'عالم فيه فيل'}});
+    fireEvent.click(screen.getByRole('button', {name:'إنشاء بالوصف فقط'}));
     fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
     expect((await screen.findByRole('alert')).textContent).toContain('لم يُضف مجسم');
     expect(screen.getByText(/بما فيها الخلفية/)).toBeTruthy();
@@ -600,7 +600,7 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(screen.getByRole('button', {name:'استخدم الصورة كاملة كلوح تقريبي'}));
     expect(await screen.findByText(/أُضيف 1 من «فيل»: لوح الصورة كاملة بما فيها الخلفية/, {}, {timeout:5000})).toBeTruthy();
     fireEvent.click(screen.getByRole('button', {name:'فتح العالم في المحرر ←'}));
-    fireEvent.click(screen.getByRole('tab', {name:/^Scene$/}));
+    fireEvent.click(screen.getByRole('tab', {name:/^العناصر$/}));
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).getByText('فيل')).toBeTruthy();
   }, 20000);
 
@@ -620,16 +620,16 @@ describe('lightweight local planning interface', () => {
       }));
       render(<App />);
       await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-      fireEvent.click(screen.getByRole('button', {name:/Builder/}));
-      const sheet = screen.getByRole('dialog', {name:'AI world'});
+      fireEvent.click(screen.getByRole('button', {name:'المحرر'}));
+      const sheet = screen.getByRole('dialog', {name:'بناء وتعديل'});
       fireEvent.change(within(sheet).getByLabelText('تعديل العالم بالكتابة'), {target:{value:'أضف فيل'}});
       fireEvent.click(within(sheet).getByRole('button', {name:'تطبيق التعديل'}));
       fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
       await screen.findByText(/بناء طبقات الشكل/);
       fireEvent.click(within(sheet).getByRole('button', {name:'Close panel'}));
       await waitFor(() => expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy());
-      fireEvent.click(within(screen.getByRole('navigation', {name:'Editor panels'})).getByRole('button', {name:'Scene'}));
-      const tree = within(screen.getByRole('dialog', {name:'Scene'})).getByRole('tree', {name:'Scene hierarchy'});
+      fireEvent.click(within(screen.getByRole('navigation', {name:'Editor panels'})).getByRole('button', {name:'العناصر'}));
+      const tree = within(screen.getByRole('dialog', {name:'العناصر'})).getByRole('tree', {name:'Scene hierarchy'});
       expect(within(tree).queryByText('فيل')).toBeNull();
       await waitFor(() => expect(within(tree).getByText('فيل')).toBeTruthy(), {timeout:5000});
     } finally { browser.happyDOM.setViewport({width:1024,height:768}); }
@@ -648,7 +648,7 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.click(screen.getByRole('button', {name:/Builder/}));
+    fireEvent.click(screen.getByRole('button', {name:'المحرر'}));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), {target:{value:'أضف فيل'}});
     fireEvent.click(screen.getByRole('button', {name:'تطبيق التعديل'}));
     fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
@@ -657,7 +657,7 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(screen.getByRole('button', {name:'إلغاء التعديل'}));
     expect(screen.getByText(/أُلغي التعديل؛ لم يتغير العالم/)).toBeTruthy();
     expect(within(screen.getByLabelText('3D viewport')).queryByText(/بناء «فيل».*معاينة مؤقتة/)).toBeNull();
-    fireEvent.click(screen.getByRole('tab', {name:/^Scene$/}));
+    fireEvent.click(screen.getByRole('tab', {name:/^العناصر$/}));
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).queryByText('فيل')).toBeNull();
     await new Promise((resolve) => setTimeout(resolve, 1000));
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).queryByText('فيل')).toBeNull();
@@ -676,13 +676,13 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), {target:{value:'عالم فيه باوباب'}});
-    fireEvent.click(screen.getByRole('button', {name:'Generate world'}));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), {target:{value:'عالم فيه باوباب'}});
+    fireEvent.click(screen.getByRole('button', {name:'إنشاء بالوصف فقط'}));
     expect(await screen.findByText(/مقتطف المقالة صنّف «باوباب» كشجرة/)).toBeTruthy();
     expect(screen.getByText(/لم تُستخدم صورة؛ الشكل من مكتبة التطبيق/)).toBeTruthy();
     expect(screen.queryByRole('region', {name:'استوديو تقريب الصورة'})).toBeNull();
     fireEvent.click(await screen.findByRole('button', {name:'فتح العالم في المحرر ←'}));
-    fireEvent.click(screen.getByRole('tab', {name:/^Scene$/}));
+    fireEvent.click(screen.getByRole('tab', {name:/^العناصر$/}));
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).getAllByRole('treeitem')).toHaveLength(1);
   }, 20000);
 
@@ -698,14 +698,14 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), {target:{value:'بيت'}});
-    fireEvent.click(screen.getByRole('button', {name:'Generate world'}));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), {target:{value:'بيت'}});
+    fireEvent.click(screen.getByRole('button', {name:'إنشاء بالوصف فقط'}));
     fireEvent.click(await screen.findByRole('button', {name:'فتح العالم في المحرر ←'}));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), {target:{value:'أضف باوباب يمين البيت'}});
     fireEvent.click(screen.getByRole('button', {name:'تطبيق التعديل'}));
     expect(await screen.findByText(/أُضيف «باوباب» كنموذج شجرة تقريبي من المقالة/)).toBeTruthy();
     expect(screen.getByText(/تعذّر البحث عن الصور في Wikimedia Commons/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('tab', {name:/^Scene$/}));
+    fireEvent.click(screen.getByRole('tab', {name:/^العناصر$/}));
     const tree = screen.getByRole('tree', {name:'Scene hierarchy'});
     expect(within(tree).getAllByRole('treeitem')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', {name:/Undo \(Ctrl\/Cmd\+Z\)/}));
@@ -727,8 +727,8 @@ describe('lightweight local planning interface', () => {
     });
     vi.stubGlobal('fetch', mock); render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'), {target:{value:'عالم فيه فيل'}});
-    fireEvent.click(screen.getByRole('button', {name:'Generate world'}));
+    fireEvent.change(screen.getByLabelText('وصف العالم'), {target:{value:'عالم فيه فيل'}});
+    fireEvent.click(screen.getByRole('button', {name:'إنشاء بالوصف فقط'}));
     const candidate = await screen.findByRole('button', {name:/File:Elephant running.jpg/});
     const thumbnail = within(candidate).getByRole('img', {name:image.title});
     expect(thumbnail.getAttribute('src')).toBe('/api/image-thumbnail?url=' + encodeURIComponent(image.thumbnail));
@@ -736,7 +736,7 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(candidate);
     expect(await screen.findByText(/أُضيف مجسم الصورة التقريبي/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', {name:'فتح العالم في المحرر ←'}));
-    fireEvent.click(screen.getByRole('tab', {name:/^Scene$/}));
+    fireEvent.click(screen.getByRole('tab', {name:/^العناصر$/}));
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).getByText('فيل')).toBeTruthy();
   }, 20000);
 
@@ -752,12 +752,12 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.click(screen.getByRole('button', {name:/Builder/}));
+    fireEvent.click(screen.getByRole('button', {name:'المحرر'}));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), {target:{value:'أضف فيل'}});
     fireEvent.click(screen.getByRole('button', {name:'تطبيق التعديل'}));
     expect(await screen.findByText(/لم أجد صوراً مناسبة لـ «فيل»؛ لم يُنشأ/)).toBeTruthy();
     expect(screen.getByText('الفيل حيوان يعيش في الغابات.')).toBeTruthy();
-    fireEvent.click(screen.getByRole('tab', {name:/^Scene$/}));
+    fireEvent.click(screen.getByRole('tab', {name:/^العناصر$/}));
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).queryByText('فيل')).toBeNull();
   }, 20000);
 
@@ -774,8 +774,8 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'),{target:{value:'عالم فيه بركان'}});
-    fireEvent.click(screen.getByRole('button',{name:'Generate world'}));
+    fireEvent.change(screen.getByLabelText('وصف العالم'),{target:{value:'عالم فيه بركان'}});
+    fireEvent.click(screen.getByRole('button',{name:'إنشاء بالوصف فقط'}));
     expect(await screen.findByText(/صُنّف تضاريس، وليس جسماً منفرداً/)).toBeTruthy();
     expect(screen.getByText('biome: mountains')).toBeTruthy();
     expect(screen.queryByRole('region',{name:'استوديو تقريب الصورة'})).toBeNull();
@@ -791,7 +791,7 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.click(screen.getByRole('button',{name:/Builder/}));
+    fireEvent.click(screen.getByRole('button',{name:'المحرر'}));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'),{target:{value:'أضف تضاريس فوهة بركانية'}});
     fireEvent.click(screen.getByRole('button',{name:'تطبيق التعديل'}));
     expect(await screen.findByText(/صُنّف تضاريس، وليس جسماً منفرداً/)).toBeTruthy();
@@ -812,8 +812,8 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'),{target:{value:'عالم فيه تانا'}});
-    fireEvent.click(screen.getByRole('button',{name:'Generate world'}));
+    fireEvent.change(screen.getByLabelText('وصف العالم'),{target:{value:'عالم فيه تانا'}});
+    fireEvent.click(screen.getByRole('button',{name:'إنشاء بالوصف فقط'}));
     expect(await screen.findByText(/أُضيف ماء عام تقريبي/)).toBeTruthy();
     expect(screen.queryByRole('region',{name:'استوديو تقريب الصورة'})).toBeNull();
     expect(screen.getByText('Wikipedia approximate standing water')).toBeTruthy();
@@ -832,8 +832,8 @@ describe('lightweight local planning interface', () => {
     }));
     render(<App />);
     await waitFor(()=>expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('Description'),{target:{value:'عالم فيه فيل بكسلي'}});
-    fireEvent.click(screen.getByRole('button',{name:'Generate world'}));
+    fireEvent.change(screen.getByLabelText('وصف العالم'),{target:{value:'عالم فيه فيل بكسلي'}});
+    fireEvent.click(screen.getByRole('button',{name:'إنشاء بالوصف فقط'}));
     const studio=await screen.findByRole('region',{name:'استوديو تقريب الصورة'});
     expect((within(studio).getByLabelText('أسلوب المجسم') as HTMLSelectElement).value).toBe('blocky');
     fireEvent.click(within(studio).getByRole('button',{name:/File:Elephant.jpg/}));
