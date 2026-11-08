@@ -8,7 +8,7 @@ import App from './App';
 vi.mock('../modules/ai/onlineInterpreter', async () => {
   const { interpretPromptLocally } = await import('../modules/ai/promptInterpreter');
   return { interpretOnline: async (prompt: string, options: Parameters<typeof interpretPromptLocally>[1]) =>
-    interpretPromptLocally(prompt, options) };
+    interpretPromptLocally(prompt, options), searchWikiArticles: async () => [], searchImageReferences: async () => [] };
 });
 
 afterEach(cleanup);

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { imageReferenceSchema, type ImageReference } from './imageReferences';
 import { parseHouseKnowledge } from './houseKnowledge';
-import { safeWikiUrl, type WikiArticle } from './wikiLibrary';
+import { safeWikiUrl, type WikiArticle } from './wikiReference';
 import { applyWikiKnowledge, summarizeKnowledge } from './wikiKnowledge';
 import { interpretPromptLocally } from './promptInterpreter';
 import type { InterpretOptions, PromptInterpretation } from './types';
@@ -47,7 +47,7 @@ export async function searchImageReferences(query: string): Promise<ImageReferen
   return parsed.data.results.map((result) => ({ ...result, query: clean })).filter((image, index, all) => all.findIndex((item) => item.url === image.url) === index);
 }
 
-export async function interpretOnline(prompt: string, options: InterpretOptions = {}, forceSearch = false): Promise<PromptInterpretation> {
+export async function interpretOnline(prompt: string, options: InterpretOptions = {}, forceSearch = false, suppressImplicitSearch = false): Promise<PromptInterpretation> {
   const online = z.object({ online: z.literal(true) }).safeParse(await postJSON('/api/online', {}));
   if (!online.success) throw new Error('تعذّر التحقق من اتصال ويكيبيديا.');
   const result = interpretPromptLocally(prompt, options);
@@ -61,7 +61,7 @@ export async function interpretOnline(prompt: string, options: InterpretOptions 
     result.intent = adjusted.intent;
     usedKnowledge = adjusted.used;
   }
-  const searched = forceSearch || /ابحث|بحث|ويكيبيديا|معلم حقيقي|مكان حقيقي|landmark|wikipedia|search/i.test(prompt);
+  const searched = forceSearch || (!suppressImplicitSearch && /ابحث|بحث|ويكيبيديا|معلم حقيقي|مكان حقيقي|landmark|wikipedia|search/i.test(prompt));
   const notes = ['المساعد يفهم كلمات محدودة فقط، وليس نموذج لغة عاماً. قد يتجاهل تفاصيل غير معروفة؛ راجع العناصر والتحذيرات. الأشكال إجرائية وليست نموذجاً عاماً لتحويل الصور إلى 3D.'];
   if (result.intent.assets?.some((asset) => asset.relation)) notes.push('الاتجاهات حسب محاور العالم، وليس اتجاه الكاميرا.');
   if (!houseLearning) notes.push('تعذّر قراءة حالة التدريب التجريبي لصور البيوت.');

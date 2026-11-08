@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { applyHouseKnowledge } from '../../ai/houseKnowledge';
 import { applyMapTraining } from '../../ai/mapTrainer';
 import type { MapTrainer } from '../useMapTrainer';
@@ -10,10 +10,10 @@ import { useEditor } from '../store';
 import { Icon } from '../../../ui/Icon';
 import { NumberField, SelectField } from '../../../ui/controls';
 import { TextEditPanel } from './TextEditPanel';
-import { WikiLibraryPanel } from './WikiLibraryPanel';
-import { ImageReferencePanel } from './ImageReferencePanel';
-import { findAssetMentions, normalizeAssetText } from '../../ai/assetRequests';
-import { applySavedWikiArticle, type WikiArticle } from '../../ai/wikiLibrary';
+import { ResearchResults } from './ResearchResults';
+import { normalizeAssetText } from '../../ai/assetRequests';
+import { applyWikiArticleHint } from '../../ai/wikiReference';
+import { researchUnknown, unknownTopics, type ResearchReport } from '../../ai/unknownResearch';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
 
 const EXAMPLES = [
@@ -40,10 +40,18 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   const [shapeModel, setShapeModel] = useState(() => {
     try { return readShapeModel(window.localStorage); } catch { return initialShapeModel(); }
   });
-  const [searchWikipedia, setSearchWikipedia] = useState(false);
-  const [selectedWiki, setSelectedWiki] = useState<WikiArticle | null>(null);
-  const [autoImageSearch, setAutoImageSearch] = useState(false);
-  const [imageRequest, setImageRequest] = useState<{ id: number; query: string } | null>(null);
+  const [research, setResearch] = useState<ResearchReport | null>(null);
+  const [researchBusy, setResearchBusy] = useState(false);
+  const researchSequence = useRef(0);
+  const researchFor = async (text: string) => {
+    const id = ++researchSequence.current;
+    setResearch(null);
+    if (!unknownTopics(text).terms.length) { setResearchBusy(false); return { topics: [], truncated: false }; }
+    setResearchBusy(true);
+    const report = await researchUnknown(text);
+    if (id === researchSequence.current) { setResearch(report); setResearchBusy(false); }
+    return report;
+  };
   const [trainingMessage, setTrainingMessage] = useState('');
   const learnSelected = () => {
     try {
@@ -75,6 +83,8 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
     const text = prompt.trim();
     if (!text || generating) return;
     setGenerationError('');
+    researchSequence.current++;
+    setResearch(null); setResearchBusy(false);
     setResult(null);
     setNotes([]);
     setStats(null);
@@ -87,12 +97,21 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         ...(style !== 'auto' ? { style } : {}),
         ...(scale !== 'auto' ? { scale } : {}),
         ...(density !== 'auto' ? { density } : {}),
-      }, searchWikipedia);
-      if (selectedWiki) {
-        const applied = applySavedWikiArticle(interpretation.intent, selectedWiki);
-        interpretation.intent = applied.intent;
-        interpretation.notes = [`المرجع المختار «${selectedWiki.title}»: ${applied.hint}`, ...(interpretation.notes ?? [])];
-        interpretation.sources = [{ title: selectedWiki.title, url: selectedWiki.url }, ...(interpretation.sources ?? []).filter((item) => item.url !== selectedWiki.url)];
+      }, false, unknownTopics(text).terms.length > 0);
+      const discovered = await researchFor(text);
+      if (discovered.topics.length) {
+        const names = discovered.topics.map((topic) => `«${topic.term}»`).join('، ');
+        interpretation.notes = [`بحثت عن ${names}؛ البحث لا ينشئ العنصر غير المدعوم، والنتيجة تعتمد على الأصول المعروفة فقط.`, ...(interpretation.notes ?? [])];
+        // Use only an exact article-title match, only for a single candidate, and only
+        // the fixed terrain vocabulary. Search results are untrusted and not 3D data.
+        const topic = discovered.topics.length === 1 && !discovered.truncated ? discovered.topics[0] : undefined;
+        const clean = (value: string) => normalizeAssetText(value).trim().replace(/^ال/u, '').replace(/\s+/g, ' ');
+        const article = topic?.articles.find((item) => clean(item.title) === clean(topic.term));
+        if (article) {
+          const applied = applyWikiArticleHint(interpretation.intent, article);
+          interpretation.intent = applied.intent;
+          interpretation.notes = [applied.hint, ...interpretation.notes];
+        }
       }
       interpretation.intent = applyMapTraining(interpretation.intent, mapTrainer.model);
       interpretation.intent.shapeModel = interpretation.houseLearning ? applyHouseKnowledge(shapeModel, interpretation.houseLearning, text) : shapeModel;
@@ -112,9 +131,6 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
           'لم يُستخدم تدريب الأشكال لهذا الوصف؛ جرّب وصفاً مثل: بيت وشجرة وصخرة. المزارع تحتفظ بقالبها الخاص.',
         ].slice(0, 12));
       setStats({ objects: report.plan.objects.length, groups: report.plan.groups.length });
-      if (autoImageSearch && findAssetMentions(normalizeAssetText(text)).length === 0) {
-        setImageRequest((previous) => ({ id: (previous?.id ?? 0) + 1, query: text }));
-      }
       notify(
         report.warnings.length > 0
           ? `World generated with ${report.warnings.length} warning(s). Undo restores the previous world.`
@@ -133,6 +149,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   return (
     <div className={`panel-scroll ${variant === 'forge' ? 'forge-ai' : ''}`}>
       {variant === 'panel' && <TextEditPanel shapeModel={shapeModel} />}
+      <ResearchResults report={research} busy={researchBusy} />
       {variant !== 'forge' && <div className="create-intro" dir="rtl">
         <div className="create-eyebrow"><span>✦</span> استوديو العوالم</div>
         <h2>خيالك، أصبح عالماً.</h2>
@@ -164,12 +181,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         <input className="input" aria-label="اسم العالم (اختياري)" value={worldName} onChange={(event) => setWorldName(event.target.value)} maxLength={80} placeholder="مثلاً: أرض الأحلام" />
       </label>}
 
-      <div className="forge-search" dir="rtl">
-        <label><input type="checkbox" checked={searchWikipedia} onChange={(event) => setSearchWikipedia(event.target.checked)} /> ابحث في ويكيبيديا عن هذا الوصف</label>
-      </div>
-      <WikiLibraryPanel selected={selectedWiki} onSelect={setSelectedWiki} />
-      <div className="forge-search" dir="rtl"><label><input type="checkbox" checked={autoImageSearch} onChange={(event) => setAutoImageSearch(event.target.checked)} /> بعد الإنشاء، اعرض صوراً تلقائياً إذا لم أتعرف على أي اسم عنصر (يُرسل الوصف إلى Commons؛ لا تُحلَّل الصور)</label></div>
-      <ImageReferencePanel autoRequest={imageRequest} />
+      <p className="generate-caption" dir="rtl">يبحث المساعد تلقائياً عن كلمات قد لا يعرفها في ويكيبيديا وWikimedia Commons؛ تُرسل هذه الكلمات إلى الموقعين. التعرّف تقريبي والصور لا تُحلّل.</p>
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
 
       <button
@@ -195,7 +207,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
           <p className="ai-summary">{result.intent.summary}{result.sources?.map((source, index) => (
             <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" aria-label={`المصدر ${index + 1}: ${source.title}`}> [{index + 1}]</a>
           ))}</p>
-          <p className="hint-text" dir="rtl">{result.searched ? 'تم البحث في ويكيبيديا في هذا الطلب.' : 'لم يُجرَ بحث في ويكيبيديا في هذا الطلب.'}</p>
+          {result.searched && <p className="hint-text" dir="rtl">تم البحث في ويكيبيديا في هذا الطلب.</p>}
           {result.searched && !result.sources?.length && <p className="hint-text" dir="rtl">لم يُعثر على روابط مصادر من ويكيبيديا لهذا الطلب.</p>}
           {result.sources && result.sources.length > 0 && (
             <div className="online-sources" dir="rtl">
@@ -310,7 +322,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       <div className="online-settings" dir="rtl">
         <div className="online-heading"><span className="online-dot" /> المساعد الخفيف + ويكيبيديا</div>
         <p>يفهم كلمات محدودة ويصنع أشكالاً إجرائية للبيوت والأشجار عريضة الأوراق والصخور المستديرة. ليس نموذج لغة أو مولّد نماذج عام. يحتاج اتصالاً بالإنترنت قبل كل إنشاء.</p>
-        <p>يمكنه البحث أيضاً عند ذكر «ابحث» أو «ويكيبيديا». يقرأ كلمات محدودة من النتائج لتقدير البيئة فقط؛ بحث المقالات يقتصر على ويكيبيديا؛ مكتبة الصور وتدريب صور البيوت يستخدمان Wikimedia Commons.</p>
+        <p>يمكنه البحث أيضاً عند ذكر «ابحث» أو «ويكيبيديا». يقرأ كلمات محدودة من النتائج لتقدير البيئة فقط؛ بحث المقالات يقتصر على ويكيبيديا؛ البحث التلقائي عن الصور وتدريب صور البيوت يستخدمان Wikimedia Commons.</p>
       </div>
       <div className="online-settings" dir="rtl">
         <div className="online-heading">التعلّم التلقائي من ويكيبيديا</div>
