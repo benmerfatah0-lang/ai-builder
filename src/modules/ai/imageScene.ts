@@ -14,7 +14,7 @@ export const SCENE_TYPES = [
   { id:'photo', label:'عنصر محدد من الصورة' },
 ] as const;
 export type SceneType = typeof SCENE_TYPES[number]['id'];
-export interface SceneMark { id:string; name:string; type:SceneType; x:number; y:number; depth:number; size:number; height?:number; model?:PhotoModel }
+export interface SceneMark { id:string; name:string; type:SceneType; x:number; y:number; depth:number; size:number; height?:number; thickness?:number; model?:PhotoModel }
 export interface ColorRegion { x:number; y:number; area:number; color:string }
 /** Local connected colour regions, NOT semantic object detection. */
 export function colorRegions(image:TinyImage): ColorRegion[] {
@@ -48,7 +48,7 @@ export function createImageScene(name:string, marks:SceneMark[], seed:number):Wo
   const objects:WorldObject[]=[];
   for(let i=0;i<marks.length;i++) {
     const mark=marks[i]!;
-    if (!SCENE_TYPES.some((entry)=>entry.id===mark.type) || !mark.name.trim() || ![mark.x,mark.y,mark.depth,mark.size,mark.height ?? 0].every(Number.isFinite) || (mark.height ?? 0)<0 || (mark.height ?? 0)>20 || mark.x<0||mark.x>1||mark.y<0||mark.y>1||mark.depth<0||mark.depth>1||mark.size<.25||mark.size>3) throw new Error('بيانات عنصر غير صالحة؛ لم يُنشأ المشهد.');
+    if (!SCENE_TYPES.some((entry)=>entry.id===mark.type) || !mark.name.trim() || ![mark.x,mark.y,mark.depth,mark.size,mark.height ?? 0,mark.thickness ?? 1].every(Number.isFinite) || (mark.thickness ?? 1)<.25 || (mark.thickness ?? 1)>4 || (mark.height ?? 0)<0 || (mark.height ?? 0)>20 || mark.x<0||mark.x>1||mark.y<0||mark.y>1||mark.depth<0||mark.depth>1||mark.size<.25||mark.size>3) throw new Error('بيانات عنصر غير صالحة؛ لم يُنشأ المشهد.');
     const position:[number,number,number]=[(mark.x-.5)*28,mark.height ?? 0,14-mark.depth*28];
     let object:WorldObject;
     if(mark.type==='photo') {
@@ -66,7 +66,7 @@ export function createImageScene(name:string, marks:SceneMark[], seed:number):Wo
     }
     // Water is an explicitly labelled decorative slab, not a simulated lake.
     const spread=mark.type==='water'?3:1;
-    object={...object,transform:{...object.transform,scale:[mark.size*spread,mark.type==='water'?1:mark.size,mark.size*spread]}};
+    object={...object,transform:{...object.transform,scale:[mark.size*spread,mark.type==='water'?1:mark.size,mark.size*spread*(mark.type==='photo'?(mark.thickness ?? 1):1)]}};
     objects.push(object);
   }
   const result={...plan,objects};

@@ -13,7 +13,7 @@ import { ReferenceThumbnail } from './ReferenceThumbnail';
 import { readPhotoPixels, searchImageReferencePage } from '../../ai/onlineInterpreter';
 import type { TopicResearch } from '../../ai/unknownResearch';
 
-function Preview({ model, rows }: { model: PhotoModel; rows: number }) {
+export function PhotoModelPreview({ model, rows, depthScale = 1 }: { model: PhotoModel; rows: number; depthScale?: number }) {
   const host = useRef<HTMLDivElement>(null);
   const mesh = useRef<THREE.Mesh | null>(null);
   const [unavailable, setUnavailable] = useState(false);
@@ -43,6 +43,7 @@ function Preview({ model, rows }: { model: PhotoModel; rows: number }) {
     mesh.current.geometry = buildPhotoModelGeometry(model, model.cells.filter((cell) => cell.y >= model.height - rows));
     old.dispose();
   }, [model, rows]);
+  useEffect(() => { if (mesh.current) mesh.current.scale.z = depthScale; }, [depthScale]);
   return <><div ref={host} aria-label="معاينة المجسم ثلاثية الأبعاد" style={{ width: '100%', minHeight: unavailable ? 0 : 240, overflow: 'hidden', touchAction: 'none' }} />
     {unavailable && <p>معاينة WebGL غير متاحة على هذا الجهاز؛ يمكن متابعة البناء دون معاينة.</p>}</>;
 }
@@ -162,7 +163,7 @@ export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغل
     {canUseSlab && pixels && selected && <div><p>تعذّر فصل الجسم. يمكن بدلاً من ذلك إنشاء لوح مجسّم من الصورة كاملة، <strong>بما فيها الخلفية</strong>؛ ليس نموذجاً مفصولاً للجسم.</p>
       <button type="button" className="btn btn-small" onClick={() => build(pixels, selected, true)}>استخدم الصورة كاملة كلوح تقريبي</button></div>}
     {model && <div ref={progressRoot}>
-      {showMapPreview && stage ? <div className="construction-map-preview" aria-label="معاينة البناء داخل الماب"><Viewport plan={stage.base} constructionPreview={stage} selection={[]} tool="translate" space="world" snap={false} showGrid={false} onSelect={() => {}} onTransformCommit={() => {}} /></div> : !onPreview && <Preview model={model} rows={rows} />}
+      {showMapPreview && stage ? <div className="construction-map-preview" aria-label="معاينة البناء داخل الماب"><Viewport plan={stage.base} constructionPreview={stage} selection={[]} tool="translate" space="world" snap={false} showGrid={false} onSelect={() => {}} onTransformCommit={() => {}} /></div> : !onPreview && <PhotoModelPreview model={model} rows={rows} />}
       <p role="status">بناء طبقات الشكل في موضعه على الماب: {Math.min(rows, model.height)} / {model.height}. المعاينة مؤقتة حتى اكتمال الإدراج.</p>
     </div>}
     <button type="button" className="btn btn-small" onClick={onCancel}>{cancelLabel}</button>

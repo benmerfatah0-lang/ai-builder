@@ -15,21 +15,24 @@ describe('guided scene assembly from a local image',()=>{
   it('creates only marked independent objects at separate depths and retains a user photo silhouette',async()=>{
     const pixels=image(), mask=new Uint8Array(144);for(let y=2;y<10;y++)for(let x=2;x<8;x++) mask[y*12+x]=1;
     const model=photoToModel(pixels,{kind:'local',title:'photo.jpg',author:'صورة من الجهاز',license_name:'غير محدد'},false,mask,'smooth');
-    const plan=createImageScene('منظر',[mark('broadleaf',.2,.2),mark('water',.5,.5),{...mark('photo',.8,.9),name:'شكل',model}],17);
+    const plan=createImageScene('منظر',[mark('broadleaf',.2,.2),mark('water',.5,.5),{...mark('photo',.8,.9),name:'شكل',thickness:2,model}],17);
     expect(plan.objects).toHaveLength(3); expect(plan.terrain.waterLevel).toBeNull();
     expect(plan.objects.map(o=>o.transform.position)).toEqual([[-8.4,0,8.399999999999999],[0,0,0],[8.400000000000002,0,-11.2]]);
     expect(plan.objects.map(o=>o.kind)).toEqual(['tree','primitive','primitive']);
+    expect(plan.objects[2]!.transform.scale).toEqual([1,1,2]);
     expect(deserializeWorldPlan(serializeWorldPlan(plan)).objects[2]!.meta.photoModel?.source).toMatchObject({kind:'local',title:'photo.jpg'});
     const scene=buildWorldScene(plan,{includeLights:false,terrainResolutionCap:16});
     for(const o of plan.objects) expect(findNodeObject(scene,o.id)).toBeTruthy();
     disposeObject3D(scene);
     const output=await exportWorldToGlb(plan); const view=new DataView(output.buffer);
     const gltf=JSON.parse(new TextDecoder().decode(new Uint8Array(output.buffer,20,view.getUint32(12,true))).trim());
-    expect(gltf.nodes.some((n:{extras?:{imageSource?:{kind?:string;title?:string}}})=>n.extras?.imageSource?.kind==='local'&&n.extras?.imageSource?.title==='photo.jpg')).toBe(true);
+    const exported=gltf.nodes.find((n:{extras?:{imageSource?:{kind?:string;title?:string}}})=>n.extras?.imageSource?.kind==='local'&&n.extras?.imageSource?.title==='photo.jpg');
+    expect(exported).toBeTruthy(); expect(exported.scale).toEqual([1,1,2]);
   },20000);
   it('rejects malformed coordinates, whole-image slabs, zero annotations and excessive photo cells',()=>{
     expect(()=>createImageScene('',[],1)).toThrow();
     expect(()=>createImageScene('',[{...mark('box',.5,.5),depth:2}],1)).toThrow();
+    expect(()=>createImageScene('',[{...mark('photo',.5,.5),thickness:Infinity}],1)).toThrow();
     const pixels=image(); const slab=photoToModel(pixels,{kind:'local',title:'photo.png',author:'a',license_name:'unknown'},true);
     expect(()=>createImageScene('',[{...mark('photo',.5,.5),model:slab}],1)).toThrow(/عنصراً واحداً/);
     const full=photoToModel(pixels,{kind:'local',title:'photo.png',author:'a',license_name:'unknown'},false,new Uint8Array(144).fill(1),'smooth');

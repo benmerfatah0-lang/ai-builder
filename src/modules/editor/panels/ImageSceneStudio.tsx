@@ -6,20 +6,23 @@ import { unknownTopics } from '../../ai/unknownResearch';
 import { colorRegions, createImageScene, SCENE_TYPES, type SceneMark, type SceneType } from '../../ai/imageScene';
 import { photoToModel, type TinyImage } from '../../ai/photoModel';
 import { photoStyleForTopic, type PhotoMeshStyle } from '../../ai/photoStyle';
+import { scenePhotoCrop } from '../../ai/scenePhotoCrop';
 import type { PhotoModel } from '../../../core/world-plan/schema';
 import { PhotoOutline } from './PhotoOutline';
+import { PhotoModelPreview } from './PhotoStudio';
 
-interface LocalImage { url:string; title:string; pixels:TinyImage }
+interface LocalImage { url:string; title:string; pixels:TinyImage; source:HTMLImageElement }
 
 /** On-device guided scene assembly. Image colours are not object recognition. */
 export function ImageSceneStudio({ onOpenStudio }: { onOpenStudio?: () => void }) {
   const { state, dispatch }=useEditor();
   const [picture,setPicture]=useState<LocalImage|null>(null), [description,setDescription]=useState('');
   const [marks,setMarks]=useState<SceneMark[]>([]), [type,setType]=useState<SceneType>('broadleaf');
-  const [name,setName]=useState('شجرة'), [depth,setDepth]=useState(.5), [size,setSize]=useState(1), [height,setHeight]=useState(0);
+  const [name,setName]=useState('شجرة'), [depth,setDepth]=useState(.5), [size,setSize]=useState(1), [height,setHeight]=useState(0), [thickness,setThickness]=useState(1);
   const [point,setPoint]=useState<{x:number;y:number}|null>(null), [model,setModel]=useState<PhotoModel|null>(null);
   const [message,setMessage]=useState(''), [error,setError]=useState(''), [loading,setLoading]=useState(false);
   const [meshStyle,setMeshStyle]=useState<PhotoMeshStyle>('smooth');
+  const [showPreview,setShowPreview]=useState(false);
   const pending=useRef(new Set<string>()), currentUrl=useRef(''), generation=useRef(0);
   const release=(url:string) => { if(pending.current.delete(url)) URL.revokeObjectURL(url); };
   useEffect(()=>()=>{ generation.current++; for(const url of pending.current) URL.revokeObjectURL(url); pending.current.clear(); },[]);
@@ -40,15 +43,15 @@ export function ImageSceneStudio({ onOpenStudio }: { onOpenStudio?: () => void }
         context.drawImage(image,0,0,width,height);
         const rgba=new Uint8Array(context.getImageData(0,0,width,height).data);
         if(currentUrl.current) release(currentUrl.current); currentUrl.current=url;
-        setPicture({url,title:(file.name||'صورة محلية').slice(0,120),pixels:{width,height,rgba}});
-        setMarks([]);setPoint(null);setModel(null);setMessage('');
+        setPicture({url,title:(file.name||'صورة محلية').slice(0,120),pixels:{width,height,rgba},source:image});
+        setMarks([]);setPoint(null);setModel(null);setShowPreview(false);setMessage('');
       } catch(reason) { release(url);setError(reason instanceof Error ? reason.message : 'تعذّر قراءة الصورة.'); }
       setLoading(false);
     };
     image.onerror=()=>{ release(url); if(id===generation.current){setLoading(false);setError('تعذّر فتح الصورة.');} };
     image.src=url;
   };
-  const selectType=(id:SceneType,label?:string)=>{setType(id);setName(label??SCENE_TYPES.find((entry)=>entry.id===id)!.label);setPoint(null);setModel(null);setError(''); if(id==='photo') { const style=photoStyleForTopic(description,label??'',unknownTopics(description).terms.length || 1); setMeshStyle(style==='conflict'?'smooth':style); }};
+  const selectType=(id:SceneType,label?:string)=>{setType(id);setName(label??SCENE_TYPES.find((entry)=>entry.id===id)!.label);setPoint(null);setModel(null);setShowPreview(false);setError(''); if(id==='photo') { const style=photoStyleForTopic(description,label??'',unknownTopics(description).terms.length || 1); setMeshStyle(style==='conflict'?'smooth':style); }};
   const tap = (event:MouseEvent<SVGSVGElement>) => {
     const rect=event.currentTarget.getBoundingClientRect(); if(!rect.width||!rect.height) return;
     setPoint({x:Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),y:Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))}); setError('');
@@ -56,8 +59,8 @@ export function ImageSceneStudio({ onOpenStudio }: { onOpenStudio?: () => void }
   const add=()=>{
     if(!point || !name.trim() || (type==='photo'&&!model)) {setError('حدد العنصر وموقعه أولاً، وارسم حدوده إذا اخترت شكلاً من الصورة.');return;}
     if(marks.length>=30){setError('الحد الأقصى 30 عنصراً في المشهد.');return;}
-    setMarks((old)=>[...old,{id:createId('mark'),name:name.trim().slice(0,80),type,x:point.x,y:point.y,depth,size,height,...(model?{model}: {})}]);
-    setPoint(null);setModel(null);setError('');setMessage('أُضيف إلى قائمة المراجعة فقط؛ لم يتغير العالم بعد.');
+    setMarks((old)=>[...old,{id:createId('mark'),name:name.trim().slice(0,80),type,x:point.x,y:point.y,depth,size,height,thickness,...(model?{model}: {})}]);
+    setPoint(null);setModel(null);setShowPreview(false);setError('');setMessage('أُضيف إلى قائمة المراجعة فقط؛ لم يتغير العالم بعد.');
   };
   const build=()=>{
     try {
@@ -96,16 +99,24 @@ export function ImageSceneStudio({ onOpenStudio }: { onOpenStudio?: () => void }
       <label className="field"><span>العمق: {depth<.34?'قريب':depth>.66?'بعيد':'وسط'}</span><input aria-label="عمق العنصر" type="range" min="0" max="1" step="0.05" value={depth} onChange={(event)=>setDepth(Number(event.target.value))}/></label>
       <label className="field"><span>الارتفاع عن الأرض: {height.toFixed(1)}</span><input aria-label="ارتفاع العنصر" type="range" min="0" max="20" step="0.5" value={height} onChange={(event)=>setHeight(Number(event.target.value))}/></label>
       <label className="field"><span>الحجم التقريبي: {size.toFixed(2)}</span><input aria-label="حجم العنصر" type="range" min="0.25" max="3" step="0.25" value={size} onChange={(event)=>setSize(Number(event.target.value))}/></label>
-      {type==='photo' && <><label className="field"><span>أسلوب مجسم الصورة (يمكن تغييره قبل رسم الحدود)</span><select aria-label="أسلوب مجسم الصورة" value={meshStyle} onChange={(event)=>{setMeshStyle(event.target.value as PhotoMeshStyle);setModel(null);}}><option value="smooth">ناعم تقريبي</option><option value="blocky">بكسلي</option></select></label><p>حدد حدود عنصر واحد فقط. سينتج مجسم من واجهته، بعمق وخلف مفترضين؛ ليس استعادة حقيقية لشكله الكامل.</p><PhotoOutline key={`${picture.url}:${marks.length}`} image={picture.pixels} onApply={(mask)=>{
+      {type==='photo' && <><label className="field"><span>سمك تقريبي للشكل: {thickness.toFixed(2)}</span><input aria-label="سمك مجسم الصورة" type="range" min="0.25" max="4" step="0.25" value={thickness} onChange={(event)=>setThickness(Number(event.target.value))}/></label><label className="field"><span>أسلوب مجسم الصورة (يمكن تغييره قبل رسم الحدود)</span><select aria-label="أسلوب مجسم الصورة" value={meshStyle} onChange={(event)=>{setMeshStyle(event.target.value as PhotoMeshStyle);setModel(null);setShowPreview(false);}}><option value="smooth">ناعم تقريبي</option><option value="blocky">بكسلي</option></select></label><p>حدد حدود عنصر واحد فقط. تُقص الواجهة من الصورة الأصلية محلياً قبل تصغيرها لإظهار تفاصيل أكثر. ينتج مجسم بعمق وخلف مفترضين؛ ليس استعادة حقيقية لشكله الكامل.</p><PhotoOutline key={`${picture.url}:${marks.length}`} image={picture.pixels} imageUrl={picture.url} cropFirst onChange={()=>{setModel(null);setPoint(null);setShowPreview(false);setError('');}} onApply={(_mask,points)=>{
         try {
-          const built=photoToModel(picture.pixels,{kind:'local',title:picture.title,author:'صورة من الجهاز',license_name:'غير محدد'},false,mask,meshStyle);
-          const indexes=Array.from(mask, (v,i)=>v?i:-1).filter((i)=>i>=0);
-          setPoint({x:indexes.reduce((sum,i)=>sum+(i%picture.pixels.width)+.5,0)/indexes.length/picture.pixels.width,y:indexes.reduce((sum,i)=>sum+Math.floor(i/picture.pixels.width)+.5,0)/indexes.length/picture.pixels.height});
+          const crop=scenePhotoCrop(points,picture.pixels.width,picture.pixels.height,picture.source.naturalWidth,picture.source.naturalHeight);
+          const canvas=document.createElement('canvas');canvas.width=crop.pixelWidth;canvas.height=crop.pixelHeight;
+          const context=canvas.getContext('2d',{willReadFrequently:true});
+          if(!context) throw new Error('تعذّر قراءة القصاصة على هذا المتصفح.');
+          context.drawImage(picture.source,crop.x,crop.y,crop.width,crop.height,0,0,crop.pixelWidth,crop.pixelHeight);
+          const pixels={width:crop.pixelWidth,height:crop.pixelHeight,rgba:new Uint8Array(context.getImageData(0,0,crop.pixelWidth,crop.pixelHeight).data)};
+          const built=photoToModel(pixels,{kind:'local',title:picture.title,author:'صورة من الجهاز',license_name:'غير محدد'},false,crop.mask,meshStyle);
+          const indexes=Array.from(crop.mask, (v,i)=>v && pixels.rgba[i*4+3]!>=128?i:-1).filter((i)=>i>=0);
+          const cx=indexes.reduce((sum,i)=>sum+(i%crop.pixelWidth)+.5,0)/indexes.length/crop.pixelWidth;
+          const cy=indexes.reduce((sum,i)=>sum+Math.floor(i/crop.pixelWidth)+.5,0)/indexes.length/crop.pixelHeight;
+          setPoint({x:(crop.x+cx*crop.width)/picture.source.naturalWidth,y:(crop.y+cy*crop.height)/picture.source.naturalHeight});
           setModel(built);setError('');
         } catch(reason) {setError(reason instanceof Error?reason.message:'تعذّر تحديد العنصر.');}
-      }}/>{model && <p>تم تحديد الشكل؛ راجع العمق والحجم ثم أضفه للقائمة.</p>}</>}
+      }}/>{model && <><p>تم تحديد الشكل؛ راجع العمق والحجم ثم أضفه للقائمة.</p><button type="button" className="btn btn-small" onClick={()=>setShowPreview((old)=>!old)}>{showPreview?'إغلاق معاينة الشكل':'معاينة الشكل ثلاثي الأبعاد'}</button>{showPreview && <PhotoModelPreview model={model} rows={model.height} depthScale={thickness}/>}</>}</>}
       <button type="button" className="btn btn-small" onClick={add} disabled={!point || (type==='photo'&&!model)}>أضف العنصر إلى المراجعة</button>
-      <div><strong>العناصر التي ستُنشأ: {marks.length}</strong>{marks.map((item,i)=><p key={item.id}>{i+1}. {item.name} · {SCENE_TYPES.find((entry)=>entry.id===item.type)?.label} · عمق {item.depth.toFixed(2)} · ارتفاع {item.height?.toFixed(1) ?? "0.0"} <button type="button" className="btn btn-small" onClick={()=>setMarks((old)=>old.filter((entry)=>entry.id!==item.id))}>إزالة {item.name}</button></p>)}</div>
+      <div><strong>العناصر التي ستُنشأ: {marks.length}</strong>{marks.map((item,i)=><p key={item.id}>{i+1}. {item.name} · {SCENE_TYPES.find((entry)=>entry.id===item.type)?.label} · عمق {item.depth.toFixed(2)} · ارتفاع {item.height?.toFixed(1) ?? "0.0"} <button type="button" className="btn btn-small" onClick={()=>{setMarks((old)=>old.filter((entry)=>entry.id!==item.id));setPoint(null);setModel(null);setShowPreview(false);}}>إزالة {item.name}</button></p>)}</div>
       <p>ينشئ أرضاً مستوية وماءً زخرفياً إن اخترته؛ لا يحفر وادياً ولا يستنتج الجدران والأجزاء المخفية. قد تتداخل العناصر. راجعها في المحرر بعد الإنشاء.</p>
       <button type="button" className="btn btn-primary" disabled={!marks.length} onClick={build}>إنشاء عالم جديد من العناصر المحددة</button>
       <p>هذا يستبدل العالم المعروض ويمكن التراجع عنه بـ Undo. الألوان والشكل المشتقان من القصاصة واسم الملف يحفظان في المشروع؛ لا تحفظ الصورة الأصلية. تحقق من حقك في استخدام الصورة قبل مشاركة الناتج.</p>
