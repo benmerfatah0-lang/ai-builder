@@ -33,11 +33,12 @@ class PhoneServerTests(unittest.TestCase):
         cls.thread.join()
         cls.server.server_close()
 
-    def request(self, path, origin=None, host=None, content_type='application/json', body=None, method='POST'):
+    def request(self, path, origin=None, host=None, content_type='application/json', body=None, method='POST', extra_headers=None):
         port = self.server.server_address[1]
         host = host or f'127.0.0.1:{port}'
         conn = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
         headers = {'Host': host, 'Origin': origin or f'http://{host}', 'Content-Type': content_type}
+        if extra_headers: headers.update(extra_headers)
         conn.request(method, path, body=body if body is not None else b'{"query":"test"}', headers=headers)
         result = conn.getresponse()
         status, contents = result.status, result.read()
@@ -51,6 +52,33 @@ class PhoneServerTests(unittest.TestCase):
         self.assertEqual(self.request('/', method='GET')[0], 404)
         self.assertEqual(self.request('/model.gguf', method='GET')[0], 404)
         self.assertEqual(self.request('/world-builder-mobile.html', host='evil.example', method='GET')[0], 404)
+
+    @patch.object(phone_server, 'get_image')
+    def test_thumbnail_proxy_validates_origin_url_format_size_and_does_not_redirect(self, upstream):
+        from urllib.parse import urlencode
+        url = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Thing.png/240px-Thing.png'
+        path = '/api/image-thumbnail?' + urlencode({'url': url})
+        png = b'\x89PNG\r\n\x1a\nexample'
+        upstream.return_value = png
+        status, body = self.request(path, method='GET')
+        self.assertEqual((status, body), (200, png))
+        self.assertEqual(upstream.call_args.args[0].full_url, url)
+        upstream.reset_mock()
+        self.assertEqual(self.request(path, method='GET', origin='https://evil.example')[0], 403)
+        self.assertEqual(self.request(path, method='GET', extra_headers={'Sec-Fetch-Site':'cross-site'})[0], 403)
+        self.assertEqual(self.request(path, method='GET', host='evil.example')[0], 404)
+        for bad in ('http://127.0.0.1/x', 'https://evil.example/wikipedia/commons/thumb/240px-a.png',
+                    'https://upload.wikimedia.org/wikipedia/commons/a/original.png', url + '?secret=1'):
+            self.assertEqual(self.request('/api/image-thumbnail?' + urlencode({'url': bad}), method='GET')[0], 400)
+        self.assertEqual(self.request(path + '&url=' + urlencode({'x':url})[2:], method='GET')[0], 400)
+        self.assertEqual(self.request('/api/image-thumbnail?x=1', method='GET')[0], 400)
+        upstream.assert_not_called()
+        upstream.return_value = b'not an image'
+        self.assertEqual(self.request(path, method='GET')[0], 400)
+        upstream.return_value = b'\x89PNG\r\n\x1a\n' + b'x' * 1_000_000
+        self.assertEqual(self.request(path, method='GET')[0], 400)
+        upstream.side_effect = HTTPError(url, 302, 'redirect', {}, None)
+        self.assertEqual(self.request(path, method='GET')[0], 502)
 
     def test_knowledge_endpoint(self):
         status, body = self.request('/api/knowledge')
@@ -191,6 +219,12 @@ class PhoneServerTests(unittest.TestCase):
         self.assertEqual(result[0]['license_url'], 'https://creativecommons.org/licenses/by-sa/4.0/')
         self.assertEqual(result[1]['license_name'], 'CC0')
         self.assertEqual(json.loads(body)['next'], 15)
+        # Commons may omit the trailing slash; canonicalize only known free licenses.
+        no_slash = copy.deepcopy(good); no_slash['imageinfo'][0]['extmetadata']['LicenseUrl']['value'] = 'https://creativecommons.org/licenses/by-sa/4.0'
+        upstream.return_value = {'query': {'pages': [no_slash]}}
+        no_slash_result = json.loads(self.request('/api/image-search', body=b'{"query":"castle"}')[1])['results']
+        self.assertEqual(no_slash_result[0]['license_url'], 'https://creativecommons.org/licenses/by-sa/4.0/')
+        upstream.return_value = {'query': {'pages': [good, bad_license, bad_thumb, no_author, wrong_mime, original, cc0]}, 'continue': {'gsroffset': 15, 'continue': 'gsroffset||'}}
         status, body = self.request('/api/image-search', body=b'{"query":"castle","offset":15}')
         self.assertEqual(status, 200)
         self.assertIn('gsroffset=15', upstream.call_args.args[0].full_url)

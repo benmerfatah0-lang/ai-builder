@@ -106,14 +106,18 @@ export async function researchUnknown(prompt: string, options: { signal?: AbortS
       }
       let imagePage = images.status === 'fulfilled' ? images.value : null;
       let imageQuery = term, imageNotice: string | undefined;
-      // Commons titles are often English. If Arabic gave no results at all, use
-      // the English language link of an exact Wikipedia title, never a guess.
-      if (imagePage && !imagePage.results.length && imagePage.next === null && wiki.status === 'fulfilled' && /[\u0600-\u06ff]/u.test(term)) {
+      // Commons titles are often English. Even if the Arabic search has more pages,
+      // try the exact article’s English link when this page contains no usable images.
+      if (imagePage && !imagePage.results.length && wiki.status === 'fulfilled' && /[\u0600-\u06ff]/u.test(term)) {
         const article = exact;
         if (article) {
           try {
             const english = await englishWikiTitle(article.title, options.signal);
-            if (english) { imagePage = await searchImageReferencePage(english, 0, options.signal); imageQuery = english; imageNotice = `بُحث في Commons أيضاً بالعنوان الإنجليزي المرتبط: ${english}`; }
+            if (english) {
+              const translated = await searchImageReferencePage(english, 0, options.signal);
+              if (translated.results.length || imagePage.next === null) { imagePage = translated; imageQuery = english; }
+              imageNotice = translated.results.length ? `بُحث في Commons أيضاً بالعنوان الإنجليزي المرتبط: ${english}` : `لم تظهر صور مقبولة بالعنوان الإنجليزي ${english}؛ يمكن متابعة الصفحات المتاحة.`;
+            }
           } catch (error) {
             if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
             imageNotice = `تعذّر البحث بالعنوان الإنجليزي المرتبط: ${message(error)}`;

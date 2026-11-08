@@ -378,6 +378,7 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف فيل' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
+    fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
     await screen.findByText(/بناء طبقات الشكل/);
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف صخرة' } });
     expect(await screen.findByText(/تغيّر العالم أو التحديد أو الأمر أثناء البناء/)).toBeTruthy();
@@ -385,7 +386,7 @@ describe('lightweight local planning interface', () => {
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
   }, 20000);
 
-  it('automatically builds a single-image model during simple world creation', async () => {
+  it('builds a single-image model after the user selects it', async () => {
     const image = { title: 'File:Elephant.png', url: 'https://commons.wikimedia.org/wiki/File:Elephant.png', thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Elephant.png/240px-Elephant.png', author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' };
     const bytes = new Uint8Array(12*12*4);
     for (let y=0;y<12;y++) for (let x=0;x<12;x++) bytes.set(x>=3&&x<=8&&y>=2&&y<=9 ? [120,40,30,255] : [255,255,255,255], (y*12+x)*4);
@@ -401,6 +402,11 @@ describe('lightweight local planning interface', () => {
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'عالم فيه فيل' } });
     fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    const candidate = await screen.findByRole('button', { name:/File:Elephant.png/ });
+    expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(0);
+    const thumb = within(candidate).getByRole('img', { name:'File:Elephant.png' }) as HTMLImageElement;
+    expect(thumb.getAttribute('src')).toContain('/api/image-thumbnail?url=');
+    fireEvent.click(candidate);
     expect(await screen.findByText(/أُضيف مجسم الصورة التقريبي؛/)).toBeTruthy();
     expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'فتح العالم في المحرر ←' }));
@@ -443,7 +449,9 @@ describe('lightweight local planning interface', () => {
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'بيت و2 فيل وزرافة' } });
     fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
     expect(await screen.findByText(/أُضيف 2 من «فيل»/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name:/File:Giraffe.png/ }));
     expect(await screen.findByText(/أُضيف مجسم الصورة التقريبي؛ «زرافة»/)).toBeTruthy();
     expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: 'فتح العالم في المحرر ←' }));
@@ -477,6 +485,8 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف 2 فيل وزرافة' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
+    fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
+    fireEvent.click(await screen.findByRole('button', { name:/File:Giraffe.png/ }, {timeout:5000}));
     expect(await screen.findByText(/أُضيفت مجسمات الصور التقريبية معاً/, {}, { timeout: 5000 })).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
     const tree = screen.getByRole('tree', {name:'Scene hierarchy'});
@@ -504,6 +514,8 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف فيل وزرافة' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
+    fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
+    fireEvent.click(await screen.findByRole('button', { name:/File:Giraffe.png/ }, {timeout:5000}));
     expect(await screen.findByText(/بيانات الصورة غير صالحة.*لم يُضف مجسم/, {}, { timeout:5000 })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'إلغاء التعديل' }));
     expect(screen.getByText(/أُلغي التعديل؛ لم يتغير العالم/)).toBeTruthy();
@@ -530,6 +542,7 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف فيل يمين البيت' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
+    fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
     expect(await screen.findByText(/أُضيف مجسم الصورة التقريبي في مكان متاح/)).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).getAllByRole('treeitem')).toHaveLength(2);
@@ -580,6 +593,7 @@ describe('lightweight local planning interface', () => {
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('Description'), {target:{value:'عالم فيه فيل'}});
     fireEvent.click(screen.getByRole('button', {name:'Generate world'}));
+    fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
     expect((await screen.findByRole('alert')).textContent).toContain('لم يُضف مجسم');
     expect(screen.getByText(/بما فيها الخلفية/)).toBeTruthy();
     expect(screen.queryByText(/أُضيف مجسم الصورة/)).toBeNull();
@@ -610,6 +624,7 @@ describe('lightweight local planning interface', () => {
       const sheet = screen.getByRole('dialog', {name:'AI world'});
       fireEvent.change(within(sheet).getByLabelText('تعديل العالم بالكتابة'), {target:{value:'أضف فيل'}});
       fireEvent.click(within(sheet).getByRole('button', {name:'تطبيق التعديل'}));
+      fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
       await screen.findByText(/بناء طبقات الشكل/);
       fireEvent.click(within(sheet).getByRole('button', {name:'Close panel'}));
       expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy();
@@ -636,6 +651,7 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(screen.getByRole('button', {name:/Builder/}));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), {target:{value:'أضف فيل'}});
     fireEvent.click(screen.getByRole('button', {name:'تطبيق التعديل'}));
+    fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
     await screen.findByText(/بناء طبقات الشكل/);
     expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', {name:'إلغاء التعديل'}));

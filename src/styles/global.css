@@ -3051,3 +3051,6 @@ kbd {
   border-radius: 10px;
 }
 .forge-home[hidden], .workspace[hidden], .mobile-sheet[hidden], .mobile-dock[hidden] { display: none !important; }
+.image-thumbnail-error { display: grid; place-items: center; min-height: 100px; padding: 6px; border-radius: 6px; background: #1b1626; color: #f1b8b8; font-size: .8rem; }
+button.image-ref-card { width: 100%; text-align: start; align-items: center; cursor: pointer; background: rgba(255, 255, 255, .03); color: inherit; }
+button.image-ref-card[aria-pressed="true"] { border-color: var(--accent, #a66af1); }

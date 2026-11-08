@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ResearchResults } from './ResearchResults';
@@ -45,4 +46,47 @@ describe('paged search UI', () => {
     await waitFor(() => expect(complete).toHaveBeenCalledOnce(),{timeout:4000});
     expect(complete.mock.calls[0]![0].source.title).toBe('File:Two.png');
   });
+  it('loads each image through the local proxy, falls back visibly, and allows retry and selection', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"width":12,"height":12,"rgba":""}')));
+    render(<PhotoStudio topic={topic} onComplete={() => {}} onCancel={() => {}} />);
+    const studio = screen.getByRole('region', {name:'استوديو تقريب الصورة'});
+    const img = within(studio).getByRole('img', {name:'File:One.png'}) as HTMLImageElement;
+    expect(img.getAttribute('src')).toBe('/api/image-thumbnail?url=' + encodeURIComponent(topic.images[0]!.thumbnail));
+    fireEvent.error(img);
+    expect(img.getAttribute('src')).toBe(topic.images[0]!.thumbnail);
+    fireEvent.error(img);
+    expect(within(studio).getByText(/تعذّر عرض الصورة/)).toBeTruthy();
+    expect(within(studio).getByRole('link', {name:'افتح صفحة الصورة في Wikimedia ↗'}).getAttribute('href')).toBe(topic.images[0]!.url);
+    fireEvent.click(within(studio).getByRole('button', {name:'إعادة تحميل الصور'}));
+    expect((within(studio).getByRole('img', {name:'File:One.png'}) as HTMLImageElement).getAttribute('src')).toContain('/api/image-thumbnail?url=');
+    expect(within(studio).getByRole('button', {name:/File:One.png/})).toBeTruthy();
+  });
+  it('tries a second page automatically when the first has no usable images', async () => {
+    const mock = vi.fn(async (_url: string, opts: RequestInit) => {
+      expect(JSON.parse(opts.body as string)).toEqual({query:'Elephant',offset:15});
+      return new Response(JSON.stringify({results:[image('Two')],next:null}));
+    });
+    vi.stubGlobal('fetch', mock);
+    render(<PhotoStudio topic={{...topic,images:[]}} onComplete={() => {}} onCancel={() => {}} />);
+    expect(await screen.findByRole('button', {name:/File:Two.png/})).toBeTruthy();
+    expect(mock).toHaveBeenCalledTimes(1);
+  });
+  it('offers a retry when a follow-up image page fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', {status:502})));
+    render(<PhotoStudio topic={{...topic,images:[]}} onComplete={() => {}} onCancel={() => {}} />);
+    expect(await screen.findByText(/يمكنك إعادة المحاولة/)).toBeTruthy();
+    expect(screen.getByRole('button', {name:'المزيد من الصور'})).toBeTruthy();
+  });
+
+  it('still loads the empty first page follow-up under React StrictMode', async () => {
+    const mock = vi.fn((_url: string, opts: RequestInit) => new Promise<Response>((resolve, reject) => {
+      const timer = setTimeout(() => resolve(new Response(JSON.stringify({results:[image('Two')],next:null}))), 20);
+      opts.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Cancelled', 'AbortError')); }, {once:true});
+    }));
+    vi.stubGlobal('fetch', mock);
+    render(<StrictMode><PhotoStudio topic={{...topic,images:[]}} onComplete={() => {}} onCancel={() => {}} /></StrictMode>);
+    expect(await screen.findByRole('button', {name:/File:Two.png/})).toBeTruthy();
+    expect(screen.queryByText(/يمكنك إعادة المحاولة/)).toBeNull();
+  });
+
 });

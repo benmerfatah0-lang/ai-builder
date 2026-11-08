@@ -7,6 +7,7 @@ import type { ImageReference } from '../../ai/imageReferences';
 import { photoToModel, type TinyImage } from '../../ai/photoModel';
 import { constructionStage, type PreparedConstruction, type ConstructionPreview } from '../constructionPreview';
 import { Viewport } from '../Viewport';
+import { ReferenceThumbnail } from './ReferenceThumbnail';
 import { readPhotoPixels, searchImageReferencePage } from '../../ai/onlineInterpreter';
 import type { TopicResearch } from '../../ai/unknownResearch';
 
@@ -53,22 +54,28 @@ export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغل
   const progressRoot = useRef<HTMLDivElement>(null);
   useEffect(() => { root.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' }); }, []);
   const [images, setImages] = useState(topic.images);
+  const [thumbnailRetry, setThumbnailRetry] = useState(0);
   const [next, setNext] = useState(topic.imageNext ?? null);
   const [pageBusy, setPageBusy] = useState(false), [pageError, setPageError] = useState('');
   const pageRequest = useRef<AbortController | null>(null);
-  const ambiguous = useRef(topic.images.length > 1 || topic.imageNext != null || topic.images.length === 0);
-  const [selected, setSelected] = useState<ImageReference | null>(() => !ambiguous.current && topic.images.length === 1 ? topic.images[0]! : null);
-  useEffect(() => () => pageRequest.current?.abort(), []);
+  const [selected, setSelected] = useState<ImageReference | null>(null);
+  useEffect(() => () => { pageRequest.current?.abort(); pageRequest.current = null; }, []);
   const loadMore = async () => {
     if (next === null || pageRequest.current) return;
     const request = new AbortController(); pageRequest.current = request; setPageBusy(true); setPageError('');
     try {
       const page = await searchImageReferencePage(topic.imageQuery ?? topic.term, next, request.signal);
+      if (request.signal.aborted) return;
       setImages((old) => [...old, ...page.results.filter((item) => !old.some((entry) => entry.url === item.url))]); setNext(page.next);
     } catch (error) { if (!request.signal.aborted) setPageError(error instanceof Error ? error.message : 'تعذّر تحميل المزيد.'); }
     finally { if (pageRequest.current === request) pageRequest.current = null; if (!request.signal.aborted) setPageBusy(false); }
   };
   const [attempt, setAttempt] = useState(0);
+  const autoPageTried = useRef(false);
+  useEffect(() => {
+    if (!autoPageTried.current && images.length === 0 && next !== null) { autoPageTried.current = true; void loadMore(); }
+    return () => { autoPageTried.current = false; };
+  }, []);
   const [model, setModel] = useState<PhotoModel | null>(null);
   const [prepared, setPrepared] = useState<PreparedConstruction | undefined>();
   const [pixels, setPixels] = useState<TinyImage | null>(null);
@@ -127,13 +134,17 @@ export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغل
     <strong>استوديو بناء «{topic.term}»</strong>
     {topic.imageNotice && <p>{topic.imageNotice}</p>}
     <p>تقريب منخفض الدقة؛ الخلف والعمق مفترضان، وليسا استعادة حقيقية. يحتاج الفصل صورة جسم واحد بخلفية شفافة أو موحدة.</p>
-    {ambiguous.current && <div className="wiki-list"><span>لبدء البناء اضغط على الصورة الأقرب، ويفضّل أن تكون بخلفية بسيطة:</span>{images.map((image) => <button className="image-ref-card" type="button" key={image.url} onClick={() => { if (selected?.url === image.url) setAttempt((old) => old + 1); else setSelected(image); }} disabled={finished} aria-pressed={selected?.url === image.url}>
-      <img src={image.thumbnail} alt={image.title} loading="lazy" width="120" referrerPolicy="no-referrer"/><span>{image.title} · {image.author} · {image.license_name}</span>
-    </button>)}
+    <div className="wiki-list"><span>لبدء البناء اضغط على الصورة الأقرب، ويفضّل أن تكون بخلفية بسيطة:</span>{images.map((image, index) => <div key={image.url}>
+      <button className="image-ref-card" type="button" onClick={() => { if (selected?.url === image.url) setAttempt((old) => old + 1); else setSelected(image); }} disabled={finished} aria-pressed={selected?.url === image.url}>
+        <ReferenceThumbnail key={thumbnailRetry} image={image} alt={image.title} eager={index < 4}/><span>{image.title} · {image.author} · {image.license_name}</span>
+      </button>
+      <a href={image.url} target="_blank" rel="noopener noreferrer">افتح صفحة الصورة في Wikimedia ↗</a>
+    </div>)}
+      {!!images.length && <button type="button" className="btn btn-small" onClick={() => setThumbnailRetry((old) => old + 1)}>إعادة تحميل الصور</button>}
       {next !== null && <button type="button" className="btn btn-small" disabled={finished || pageBusy} onClick={() => void loadMore()}>{pageBusy ? 'جارٍ تحميل الصور…' : 'المزيد من الصور'}</button>}
       {pageError && <p role="alert" className="online-error">{pageError} يمكنك إعادة المحاولة.</p>}
-      {!images.length && next === null && <p>لم تظهر صور بالتراخيص المدعومة.</p>}
-    </div>}
+      {!images.length && <p>{next === null ? 'لم تظهر صور بالتراخيص المدعومة.' : 'لم تظهر صور مناسبة بعد؛ اضغط المزيد من الصور للبحث في الصفحة التالية.'}</p>}
+    </div>
     {selected && <p>الصورة: <a href={selected.url} target="_blank" rel="noopener noreferrer">{selected.title}</a> · {selected.author} · <a href={selected.license_url} target="_blank" rel="noopener noreferrer">{selected.license_name}</a></p>}
     {loading && <p role="status">أقرأ مصغّرة الصورة وأحاول فصل الجسم…</p>}
     {error && <p role="alert" className="online-error">{error} لم يُضف مجسم. اختر نتيجة أخرى أو ألغِ البناء.</p>}

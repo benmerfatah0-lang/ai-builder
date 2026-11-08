@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { searchImageReferencePage, searchWikiArticlePage } from '../../ai/onlineInterpreter';
 import type { TopicResearch } from '../../ai/unknownResearch';
 import { dictionaryPage } from '../../ai/dictionary';
+import { ReferenceThumbnail } from './ReferenceThumbnail';
 import type { ResearchReport } from '../../ai/unknownResearch';
 
 export function ResearchResults({ report, busy, progress }: { report: ResearchReport | null; busy: boolean; progress?: { done: number; total: number } | null }) {
@@ -24,6 +25,7 @@ export function ResearchResults({ report, busy, progress }: { report: ResearchRe
 function ResearchTopic({ topic }: { topic: TopicResearch }) {
   const [articles, setArticles] = useState(topic.articles);
   const [images, setImages] = useState(topic.images);
+  const [thumbnailRetry, setThumbnailRetry] = useState(0);
   const [articleNext, setArticleNext] = useState(topic.articleNext ?? null);
   const [imageNext, setImageNext] = useState(topic.imageNext ?? null);
   const [articleBusy, setArticleBusy] = useState(false), [imageBusy, setImageBusy] = useState(false);
@@ -64,10 +66,11 @@ function ResearchTopic({ topic }: { topic: TopicResearch }) {
       {!topic.dictionary.complete && <p>نتائج المعجم مختصرة؛ افتح المصدر لباقي المعاني.</p>}
     </div>}
     {topic.imageNotice && <p>{topic.imageNotice}</p>}
-    {topic.imageError ? <p className="online-error">تعذّر البحث عن الصور في Wikimedia Commons. {topic.imageError}</p> : <div className="wiki-list"><span>صور من Wikimedia Commons</span>
+    {topic.imageError ? <p className="online-error">تعذّر البحث عن الصور في Wikimedia Commons. {topic.imageError}</p> : <div className="wiki-list"><span>صور من Wikimedia Commons للمراجعة؛ اختر الصورة من استوديو البناء إذا ظهر.</span>
       {!images.length && <p>لم تظهر صور بالتراخيص والبيانات المدعومة في هذه الصفحات.</p>}
-      {images.map((image) => <div className="image-ref-card" key={image.url}><img src={image.thumbnail} alt={`صورة مرجعية: ${image.title}`} loading="lazy" referrerPolicy="no-referrer" width="240" />
+      {images.map((image, index) => <div className="image-ref-card" key={image.url}><ReferenceThumbnail key={thumbnailRetry} image={image} alt={`صورة مرجعية: ${image.title}`} eager={index < 4} />
         <div><a href={image.url} target="_blank" rel="noopener noreferrer">{image.title} ↗</a><p>المؤلف: {image.author} · <a href={image.license_url} target="_blank" rel="noopener noreferrer">{image.license_name}</a></p></div></div>)}
+      {!!images.length && <button type="button" className="btn btn-small" onClick={() => setThumbnailRetry((old) => old + 1)}>إعادة تحميل الصور</button>}
       {imageNext !== null && <button type="button" className="btn btn-small" disabled={imageBusy} onClick={() => void more('image')}>{imageBusy ? 'جارٍ تحميل الصور…' : 'المزيد من الصور'}</button>}
     </div>}
     {pageError && <p className="online-error" role="alert">{pageError} يمكنك إعادة المحاولة.</p>}

@@ -103,4 +103,24 @@ describe('automatic research for unfamiliar terms', () => {
     expect(fallback.topics[0]?.articleNotice).toContain('تعذّر قراءة مقدمة');
   });
 
+  it('tries the linked English title when the first Arabic page has no usable images but has a continuation', async () => {
+    const image = { title:'File:Elephant.png', url:'https://commons.wikimedia.org/wiki/File:Elephant.png', thumbnail:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Elephant.png/240px-Elephant.png', author:'Alice', license_url:'https://creativecommons.org/licenses/by/4.0/', license_name:'CC BY 4.0' };
+    let englishHasResults = true;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, opts: RequestInit) => {
+      const query = JSON.parse(opts.body as string).query;
+      if (url === '/api/search') return new Response(JSON.stringify({results:[{title:'فيل', url:'https://ar.wikipedia.org/wiki/فيل', content:'حيوان'}]}));
+      if (url === '/api/translate-en') return new Response('{"title":"Elephant"}');
+      if (url === '/api/image-search') return new Response(JSON.stringify(query === 'Elephant' ? {results:englishHasResults ? [image] : [], next:30} : {results:[], next:15}));
+      return new Response('{"entries":[],"complete":true}');
+    }));
+    const found = await researchUnknown('فيل');
+    expect(found.topics[0]?.imageQuery).toBe('Elephant');
+    expect(found.topics[0]?.images).toHaveLength(1);
+    englishHasResults = false;
+    const empty = await researchUnknown('فيل');
+    expect(empty.topics[0]?.imageQuery).toBe('فيل');
+    expect(empty.topics[0]?.imageNext).toBe(15);
+    expect(empty.topics[0]?.imageNotice).toContain('لم تظهر صور');
+  });
+
 });

@@ -13,7 +13,7 @@ from house_learner import HouseLearner, good_thumb, good_source, plain, LICENSE_
 from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit, parse_qs
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 MAX_REQUEST = 64 * 1024
@@ -51,6 +51,11 @@ def search_image_references(query, offset=0):
             entry = metadata.get(key)
             return entry.get('value', '') if isinstance(entry, dict) else ''
         license_url = meta('LicenseUrl')
+        # Commons metadata commonly omits the canonical URL's trailing slash.
+        if isinstance(license_url, str):
+            license_url = license_url.strip()
+            if not license_url.endswith('/'):
+                license_url += '/'
         author = plain(meta('Artist'))
         thumb = info.get('thumburl')
         source = 'https://commons.wikimedia.org/wiki/' + quote(title.replace(' ', '_'), safe='/:_()-')
@@ -105,9 +110,16 @@ def dictionary_definitions(word):
     return {'entries': entries, 'complete': complete}
 
 
+def valid_thumbnail(url):
+    """Allow only bounded Wikimedia-generated Commons thumbnails, never arbitrary URLs."""
+    return (isinstance(url, str) and len(url) <= 1200 and good_thumb(url)
+            and url.startswith('https://upload.wikimedia.org/wikipedia/commons/thumb/')
+            and '/240px-' in url)
+
+
 def analyze_reference_image(url):
     # Only bounded thumbnail URLs on Wikimedia's fixed upload host are accepted.
-    if not isinstance(url, str) or len(url) > 1200 or not good_thumb(url) or not url.startswith('https://upload.wikimedia.org/wikipedia/commons/thumb/') or '/240px-' not in url:
+    if not valid_thumbnail(url):
         raise ValueError('invalid thumbnail')
     try:
         from PIL import Image, ImageStat
@@ -131,7 +143,7 @@ def analyze_reference_image(url):
 
 def reference_image_pixels(url):
     """Return only a tiny image for a lossy silhouette approximation; no original saved."""
-    if not isinstance(url, str) or len(url) > 1200 or not good_thumb(url) or not url.startswith('https://upload.wikimedia.org/wikipedia/commons/thumb/') or '/240px-' not in url:
+    if not valid_thumbnail(url):
         raise ValueError('invalid thumbnail')
     try:
         from PIL import Image
@@ -207,7 +219,49 @@ class Handler(SimpleHTTPRequestHandler):
         return self.headers.get('Host', '') in {f'127.0.0.1:{port}', f'localhost:{port}'}
 
     def do_GET(self):
-        if not self.valid_host() or self.path != '/world-builder-mobile.html':
+        if not self.valid_host():
+            self.send_error(404)
+            return
+        try:
+            parsed = urlsplit(self.path)
+        except ValueError:
+            self.send_error(400)
+            return
+        if parsed.path == '/api/image-thumbnail':
+            # Images are same-origin in the browser. Reject explicit cross-site use;
+            # older browsers may omit these headers for ordinary image requests.
+            origin = self.headers.get('Origin')
+            if (origin and origin != f"http://{self.headers.get('Host', '')}") or self.headers.get('Sec-Fetch-Site') == 'cross-site':
+                self.api_result(403, {'error': 'invalid origin'})
+                return
+            try:
+                if len(parsed.query) > 4096: raise ValueError('query too long')
+                params = parse_qs(parsed.query, strict_parsing=True, max_num_fields=1)
+                urls = params.get('url', [])
+                if set(params) != {'url'} or len(urls) != 1 or not valid_thumbnail(urls[0]): raise ValueError('invalid thumbnail')
+                raw = get_image(Request(urls[0], headers={'User-Agent': USER_AGENT}), timeout=25)
+                if len(raw) > 1_000_000: raise ValueError('image too large')
+                if raw.startswith(b'\x89PNG\r\n\x1a\n'):
+                    mime = 'image/png'
+                elif raw.startswith(b'\xff\xd8\xff'):
+                    mime = 'image/jpeg'
+                else:
+                    raise ValueError('invalid image format')
+            except ValueError:
+                self.api_result(400, {'error': 'invalid thumbnail'})
+                return
+            except (HTTPError, URLError, TimeoutError, OSError):
+                self.api_result(502, {'error': 'thumbnail unavailable'})
+                return
+            self.send_response(200)
+            self.send_header('Content-Type', mime)
+            self.send_header('Content-Length', str(len(raw)))
+            self.send_header('Cache-Control', 'private, max-age=3600')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+        if self.path != '/world-builder-mobile.html':
             self.send_error(404)
             return
         super().do_GET()
@@ -253,7 +307,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self.api_result(200, {'online': True})
                 return
             if self.path in ('/api/image-analyze', '/api/image-pixels'):
-                if not isinstance(payload.get('url'), str) or not good_thumb(payload['url']) or not payload['url'].startswith('https://upload.wikimedia.org/wikipedia/commons/thumb/') or '/240px-' not in payload['url'] or len(payload['url']) > 1200:
+                if not valid_thumbnail(payload.get('url')):
                     self.api_result(400, {'error': 'invalid thumbnail'})
                     return
                 try:
