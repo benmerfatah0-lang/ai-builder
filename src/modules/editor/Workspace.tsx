@@ -82,6 +82,9 @@ export function Workspace() {
   const [space, setSpace] = useState<TransformSpace>('world');
   const [snap, setSnap] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
+  const [walkMode, setWalkMode] = useState(false);
+  useEffect(() => { if (view !== 'studio') setWalkMode(false); }, [view]);
+  useEffect(() => { setWalkMode(false); }, [state.plan.id]);
   const [axes, setAxes] = useState<AxisFilter>(ALL_AXES);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isMobile = useIsMobile();
@@ -307,6 +310,7 @@ export function Workspace() {
         (Boolean(target.closest('input, textarea, select')) || target.isContentEditable);
 
       if (event.key === 'Escape') {
+        if (walkMode) { setWalkMode(false); return; }
         if (libraryOpen) {
           setLibraryOpen(false);
         } else if (mobilePanel) {
@@ -321,6 +325,7 @@ export function Workspace() {
 
       const modifier = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
+      if (walkMode && !modifier) return;
 
       if (modifier && key === 's') {
         event.preventDefault();
@@ -401,6 +406,7 @@ export function Workspace() {
   }, [
     dispatch,
     libraryOpen,
+    walkMode,
     mobilePanel,
     saveNow,
     state.plan.groups,
@@ -499,13 +505,15 @@ export function Workspace() {
             space={space}
             snap={snap}
             showGrid={showGrid}
+            walkMode={walkMode}
+            onWalkModeChange={(enabled) => { setWalkMode(enabled); if (enabled) setMobilePanel(null); }}
             axes={axes}
             onSelect={handleSelect}
             onTransformCommit={(id, transform) =>
               dispatch({ type: 'setTransform', id, transform })
             }
           />}
-          <ViewportToolbar
+          {!walkMode && <ViewportToolbar
             tool={tool}
             space={space}
             snap={snap}
@@ -517,7 +525,7 @@ export function Workspace() {
             onSnapChange={setSnap}
             onGridChange={setShowGrid}
             onAxesChange={setAxes}
-          />
+          />}
         </section>
 
         <aside className="inspector-panel desktop-only" aria-label="Inspector">
