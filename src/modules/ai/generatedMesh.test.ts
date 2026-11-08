@@ -40,6 +40,13 @@ describe('generated geometry',()=>{
     expect(()=>checkGeneratedGlb(replaceJson(fixture(),doc=>{doc.extensionsUsed=['KHR_draco_mesh_compression']}))).toThrow();
     expect(()=>checkGeneratedGlb(new ArrayBuffer(20))).toThrow();
   });
+  it('allows bounded quantized and unlit assets but rejects other required extensions',async()=>{
+    const accepted=replaceJson(fixture(),doc=>{doc.extensionsUsed=['KHR_mesh_quantization','KHR_materials_unlit'];doc.extensionsRequired=['KHR_mesh_quantization'];});
+    checkGeneratedGlb(accepted);
+    const plan=await generatedGlbToWorld(accepted,'Tree',undefined,'3DAssets.dev');
+    expect(plan.objects[0]?.meta.generatedMesh).toBeDefined();expect(plan.description).toContain('3DAssets.dev');
+    expect(()=>checkGeneratedGlb(replaceJson(fixture(),doc=>{doc.extensionsRequired=['EXT_meshopt_compression'];}))).toThrow();
+  });
   it('rejects corrupted indices and inconsistent generated metadata',async()=>{
     const plan=await generatedGlbToWorld(fixture(),'sculpture');const data=plan.objects[0]!.meta.generatedMesh!;
     const bytes=base64ToBytes(data.data);new DataView(bytes.buffer).setUint32(data.vertices*12,0xffffffff,true);data.data=bytesToBase64(bytes);

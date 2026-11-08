@@ -54,6 +54,16 @@ describe('multi-object cloud workflows',()=>{
     expect(plan.objects[0].transform.position).not.toEqual(plan.objects[1].transform.position);
     fireEvent.click(screen.getByRole('button',{name:'undo-test'}));expect(JSON.parse(screen.getByTestId('plan').textContent!).id).toBe(before.id);
   },20000);
+  it('offers ready models based on local image analysis, and sends search text rather than image',async()=>{
+    const before=initial();const calls:string[]=[];
+    vi.stubGlobal('fetch',vi.fn(async(url:string,options:RequestInit)=>{calls.push(url);expect(JSON.parse(options.body as string)).toEqual({query:'car'});return Response.json({results:[{id:'12',version:'1',slug:'tree',title:'Tree',triangles:12}]});}));
+    render(<EditorProvider initialPlan={before}><ImageSceneStudio embedded initialDescription="scene" initialFile={new File(['x'],'scene.png',{type:'image/png'})} mode="create" basePlan={before} canApply={()=>true}/><Observer/></EditorProvider>);
+    fireEvent.click(await screen.findByRole('button',{name:'حلّل الصورة واختر مجسمات جاهزة'}));
+    const region=await screen.findByRole('region',{name:'خطة المجسمات الجاهزة'});
+    expect((within(region).getByLabelText('بحث العنصر 1') as HTMLInputElement).value).toBe('car');
+    expect(calls).toHaveLength(0);fireEvent.click(within(region).getByRole('button',{name:'بحث عن العنصر 1'}));
+    await within(region).findByText(/Tree · 12 مثلث/);expect(calls).toEqual(['/api/asset-library/search']);
+  },20000);
   it('cancels a pending batch without modifying the world',async()=>{
     const before=initial();
     vi.stubGlobal('fetch',vi.fn((_url:string, init:RequestInit)=>new Promise<Response>((_resolve,reject)=>{

@@ -403,6 +403,20 @@ class PhoneServerTests(unittest.TestCase):
         with phone_server.CLOUD_3D_LOCK:
             self.assertEqual(self.request('/api/text-to-3d', body=prompt)[0], 429)
 
+    def test_asset_library_endpoints_reject_cross_origin_and_invalid_input(self):
+        search=json.dumps({'query':'tree'}).encode()
+        self.assertEqual(self.request('/api/asset-library/search', origin='https://evil.example',body=search)[0],403)
+        self.assertEqual(self.request('/api/asset-library/search',body=b'{"query":"tree","url":"http://bad"}')[0],400)
+        self.assertEqual(self.request('/api/asset-library/search',body=json.dumps({'query':'x'*201}).encode())[0],400)
+        with patch.object(phone_server,'search_free_models',return_value={'results': []}) as searcher:
+            self.assertEqual(self.request('/api/asset-library/search',body=search)[0],200)
+            searcher.assert_called_once_with('tree')
+        self.assertEqual(self.request('/api/asset-library/model',body=b'{"id":"../x","version":"1"}')[0],400)
+        self.assertEqual(self.request('/api/asset-library/model',body=b'{"id":"1","version":"1","url":"x"}')[0],400)
+        with patch.object(phone_server,'download_free_model',return_value=b'glTF'+bytes(24)) as loader:
+            self.assertEqual(self.request('/api/asset-library/model',body=b'{"id":"1","version":"2"}')[1],b'glTF'+bytes(24))
+            loader.assert_called_once_with('1','2')
+
     def test_redirects_are_not_followed(self):
         self.assertIsNone(phone_server.NoRedirects().redirect_request(None, None, 302, '', {}, 'https://example.com'))
 
@@ -445,6 +459,35 @@ class Cloud3DTests(unittest.TestCase):
             def open(self, req, timeout): return io.BytesIO(b'{"event_id":"../../other"}')
         with patch.object(phone_server, 'build_opener', return_value=FakeOpener()):
             with self.assertRaises(ValueError): phone_server.fetch_cloud_3d('robot')
+
+
+class FreeModelTests(unittest.TestCase):
+    def test_search_filters_untrusted_or_incompatible_assets(self):
+        from copy import deepcopy
+        good={'id':'123','slug':'red-tree','title':'Red tree','status':'published','cdnUrl':'https://cdn.3dassets.dev/assets/123/v1/model.glb','license':{'slug':'cc0-1.0'},'stats':{'fileSize':1000,'triangles':200,'vertices':250,'meshes':2,'textures':0,'animations':[],'extensionsUsed':['KHR_mesh_quantization']}}
+        def bad(key,value):
+            x=deepcopy(good);x[key]=value;return x
+        textured=deepcopy(good);textured['stats']['textures']=1
+        heavy=deepcopy(good);heavy['stats']['triangles']=10001
+        compressed=deepcopy(good);compressed['stats']['extensionsUsed']=['KHR_draco_mesh_compression']
+        with patch.object(phone_server,'get_json',return_value={'data':[good,bad('cdnUrl','https://evil.example/assets/123/v1/model.glb'),bad('license',{'slug':'cc-by'}),textured,heavy,compressed]}) as get:
+            results=phone_server.search_free_models('tree & rock')
+        self.assertEqual(results['results'],[{'id':'123','version':'1','slug':'red-tree','title':'Red tree','triangles':200}])
+        self.assertTrue(get.call_args.args[0].full_url.startswith(phone_server.ASSET_SEARCH_URL+'?'))
+        self.assertIn('tree+%26+rock',get.call_args.args[0].full_url)
+
+    def test_download_constructs_fixed_url_and_limits_response(self):
+        import io
+        class Opener:
+            def __init__(self,data): self.data=data;self.url=None
+            def open(self,req,timeout): self.url=req.full_url;return io.BytesIO(self.data)
+        opener=Opener(b'glTF'+bytes(24))
+        with patch.object(phone_server,'build_opener',return_value=opener):
+            self.assertEqual(phone_server.download_free_model('123','2'),b'glTF'+bytes(24))
+            self.assertEqual(opener.url,'https://cdn.3dassets.dev/assets/123/v2/model.glb')
+            with self.assertRaises(ValueError):phone_server.download_free_model('../x','2')
+        with patch.object(phone_server,'build_opener',return_value=Opener(b'glTF'+bytes(phone_server.MAX_LIBRARY_MODEL))):
+            with self.assertRaises(ValueError):phone_server.download_free_model('1','1')
 
 
 if __name__ == '__main__':

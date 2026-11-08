@@ -19,7 +19,7 @@ export function checkGeneratedGlb(buffer: ArrayBuffer): void {
   if(v.getUint32(binOffset+4,true)!==0x004e4942 || binOffset+8+v.getUint32(binOffset,true)!==buffer.byteLength) throw new Error('بيانات المجسم غير مكتملة.');
   let doc: any;
   try { doc=JSON.parse(new TextDecoder().decode(new Uint8Array(buffer,20,jsonLength))); } catch { throw new Error('بيانات المجسم غير صالحة.'); }
-  if (!doc || typeof doc!=='object' || doc.asset?.version!=='2.0' || !Array.isArray(doc.meshes) || doc.meshes.length<1 || doc.meshes.length>100 || !Array.isArray(doc.accessors) || doc.accessors.length>1000 || !Array.isArray(doc.buffers) || doc.buffers.length!==1 || doc.buffers[0]?.uri !== undefined || !Number.isInteger(doc.buffers[0]?.byteLength) || doc.buffers[0].byteLength > v.getUint32(binOffset,true) || doc.images?.length || doc.extensionsUsed?.length || doc.extensionsRequired?.length) throw new Error('المجسم يحتوي موارد أو ميزات غير مدعومة.');
+  if (!doc || typeof doc!=='object' || doc.asset?.version!=='2.0' || !Array.isArray(doc.meshes) || doc.meshes.length<1 || doc.meshes.length>100 || !Array.isArray(doc.accessors) || doc.accessors.length>1000 || !Array.isArray(doc.buffers) || doc.buffers.length!==1 || doc.buffers[0]?.uri !== undefined || !Number.isInteger(doc.buffers[0]?.byteLength) || doc.buffers[0].byteLength > v.getUint32(binOffset,true) || doc.images?.length || (doc.extensionsUsed ?? []).some((ext:unknown)=>ext!=='KHR_mesh_quantization' && ext!=='KHR_materials_unlit') || (doc.extensionsRequired ?? []).some((ext:unknown)=>ext!=='KHR_mesh_quantization' && ext!=='KHR_materials_unlit')) throw new Error('المجسم يحتوي موارد أو ميزات غير مدعومة.');
   let total=0;
   for (const accessor of doc.accessors) {
     if (!accessor || !Number.isInteger(accessor.count) || accessor.count<0 || accessor.count>MAX_GENERATED_INDICES || accessor.sparse || !['SCALAR','VEC2','VEC3','VEC4'].includes(accessor.type)) throw new Error('المجسم معقد جداً أو غير صالح.');
@@ -43,7 +43,7 @@ export function checkGeneratedGlb(buffer: ArrayBuffer): void {
 }
 
 /** Flatten mesh node transforms and vertex colours into a portable, bounded project object. */
-export async function generatedGlbToWorld(buffer: ArrayBuffer, prompt: string, worldName?: string): Promise<WorldPlan> {
+export async function generatedGlbToWorld(buffer: ArrayBuffer, prompt: string, worldName?: string, sourceLabel='Shap-E'): Promise<WorldPlan> {
   checkGeneratedGlb(buffer);
   const gltf = await new GLTFLoader().parseAsync(buffer, '');
   try {
@@ -96,7 +96,7 @@ export async function generatedGlbToWorld(buffer: ArrayBuffer, prompt: string, w
     offset+=count; indexOffset+=part.indices.length;
   }
   const data:GeneratedMeshData={vertices,indices,data:bytesToBase64(raw)};
-  const plan=createEmptyWorldPlan({name:worldName?.trim().slice(0,80)||'مجسّم مولّد',description:`Shap-E: ${prompt}`.slice(0,500)});
+  const plan=createEmptyWorldPlan({name:worldName?.trim().slice(0,80)||'مجسّم مولّد',description:`${sourceLabel}: ${prompt}`.slice(0,500)});
   plan.terrain={...plan.terrain,style:'flat',size:32,heightScale:0,waterLevel:null};
   plan.objects=[{id:createId('obj'),name:prompt.trim().slice(0,80)||'مجسّم مولّد',parentId:null,transform:createTransform(),visible:true,locked:false,kind:'primitive',primitive:'generated-mesh',color:'#ffffff',meta:{...createMeta({category:'prop',geometry:'primitive.generated-mesh',dimensions:[Math.max(.01,dimensions.x*scale),Math.max(.01,dimensions.y*scale),Math.max(.01,dimensions.z*scale)],status:'generated'}),generatedMesh:data}}];
   if (!validateWorldPlan(plan).success) throw new Error('تعذّر التحقق من المجسم الناتج.');

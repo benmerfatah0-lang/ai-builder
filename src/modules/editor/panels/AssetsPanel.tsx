@@ -11,6 +11,9 @@ import { createTerrainSampler } from '../../../core/generation/terrain';
 import { MAX_WORLD_OBJECTS } from '../../../core/world-plan/schema';
 import { nextAvailableName, useEditor } from '../store';
 import { Icon, type IconName } from '../../../ui/Icon';
+import { LibraryWorldComposer } from './LibraryWorldComposer';
+import { createId } from '../../../core/utils/id';
+import type { WorldPlan } from '../../../core/world-plan/schema';
 import { EmptyState } from '../../../ui/controls';
 
 type Filter = 'all' | AssetCategory;
@@ -50,6 +53,7 @@ export function AssetsPanel({
   const { state, dispatch } = useEditor();
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
+  const [onlinePlan,setOnlinePlan]=useState<WorldPlan|null>(null);
   const atLimit = state.plan.objects.length >= MAX_WORLD_OBJECTS;
 
   const assets = useMemo(() => {
@@ -95,6 +99,13 @@ export function AssetsPanel({
           <p>عناصر محلية ثلاثية الأبعاد؛ اضغط لإضافتها إلى العالم.</p>
         </div>
       </div>
+
+      <div className="callout" dir="rtl"><div>
+        <strong>مجسمات مجانية من الإنترنت</strong>
+        <p>ابحث في 3DAssets.dev وأضف مجسمات جاهزة إلى العالم الحالي.</p>
+        {!onlinePlan && <button type="button" className="btn btn-small" onClick={()=>setOnlinePlan(state.plan)}>إضافة مجسمات مجانية للعالم</button>}
+        {onlinePlan && <LibraryWorldComposer initialItems={[{id:createId('model'),prompt:'',x:0,z:0,size:5,height:0}]} initialPlan={onlinePlan} description="إضافة مجسمات جاهزة" mode="append" onClose={()=>setOnlinePlan(null)} />}
+      </div></div>
 
       <div className="search-field">
         <Icon name="search" size={15} />

@@ -9,6 +9,7 @@ import { photoStyleForTopic, type PhotoMeshStyle } from '../../ai/photoStyle';
 import { scenePhotoCrop } from '../../ai/scenePhotoCrop';
 import { localSceneVision } from '../../ai/localVision';
 import { CloudWorldComposer } from './CloudWorldComposer';
+import { LibraryWorldComposer } from './LibraryWorldComposer';
 import { regionsToCloudItems, MAX_CLOUD_OBJECTS, type CloudWorldItem } from '../../ai/cloudWorld';
 import { semanticRegions, regionsToSceneMarks } from '../../ai/semanticScene';
 import { researchDetectedClasses, type SemanticResearchResult } from '../../ai/semanticResearch';
@@ -31,7 +32,7 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
   const [showPreview,setShowPreview]=useState(false);
   const [autoBusy,setAutoBusy]=useState(false), [autoStatus,setAutoStatus]=useState('');
   const [cloudBatchBusy,setCloudBatchBusy]=useState(false);
-  const [cloudDraft,setCloudDraft]=useState<{items:CloudWorldItem[];plan:WorldPlan;description:string;skipped:number;ignored:string[];id:number}|null>(null);
+  const [cloudDraft,setCloudDraft]=useState<{items:CloudWorldItem[];plan:WorldPlan;description:string;skipped:number;ignored:string[];id:number;kind:'cloud'|'library'}|null>(null);
   const cloudSequence=useRef(0);
   const [autoReport,setAutoReport]=useState<{count:number;ignored:string[];truncated:number;failed:string[];research:SemanticResearchResult[]}|null>(null);
   const autoController=useRef<AbortController|null>(null), planRef=useRef(state.plan), descriptionRef=useRef(description), autoButtonRef=useRef<HTMLButtonElement|null>(null);planRef.current=state.plan;descriptionRef.current=description;
@@ -108,7 +109,7 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
     } catch(reason) {if(!controller.signal.aborted)setError(reason instanceof Error?reason.message:'تعذّر التحليل التلقائي.');}
     finally {if(autoController.current===controller){autoController.current=null;setAutoBusy(false);setAutoStatus('');}}
   };
-  const prepareCloudFromImage=async()=>{
+  const prepareCloudFromImage=async(kind:'cloud'|'library'='cloud')=>{
     if(!picture || autoBusy || loading || cloudBatchBusy)return;
     const controller=new AbortController();autoController.current=controller;
     const initialPlan=planRef.current, sourceDescription=description;
@@ -121,7 +122,8 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
       if(!detected.regions.length)throw new Error('لم يجد النموذج مناطق يمكن بناؤها. جرّب صورة أخرى.');
       if(planRef.current!==initialPlan || descriptionRef.current!==sourceDescription || (canApply && !canApply()))throw new Error('تغيّر العالم أو الوصف؛ لم يُطبّق شيء.');
       const items=regionsToCloudItems(detected.regions,picture.pixels);
-      setCloudDraft({items,plan:initialPlan,description:sourceDescription,skipped:detected.truncated+Math.max(0,detected.regions.length-MAX_CLOUD_OBJECTS),ignored:detected.ignored,id:++cloudSequence.current});
+      if(kind==='library')items.forEach((item,i)=>{item.prompt=detected.regions[i]!.label;});
+      setCloudDraft({items,plan:initialPlan,description:sourceDescription,skipped:detected.truncated+Math.max(0,detected.regions.length-MAX_CLOUD_OBJECTS),ignored:detected.ignored,id:++cloudSequence.current,kind});
     }catch(reason){if(!controller.signal.aborted)setError(reason instanceof Error?reason.message:'تعذّر تحليل الصورة.');}
     finally {if(autoController.current===controller){autoController.current=null;setAutoBusy(false);setAutoStatus('');}}
   };
@@ -154,7 +156,8 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
         <div className="selected-photo"><img src={picture.url} alt="الصورة المختارة للتحليل"/><span>{picture.title}</span></div>
         <p>يتعرّف محلياً على مناطق الصورة، ويبحث عن فئاتها، ثم يبني أشكالاً تقريبية. لا تُرسل الصورة، لكن أسماء الفئات تُرسل للبحث.</p>
         {!cloudDraft && <button type="button" className="btn btn-primary" disabled={autoBusy || loading || cloudBatchBusy || !!autoReport} onClick={()=>void prepareCloudFromImage()}>حلّل الصورة لتوليد عناصر سحابية</button>}
-        {cloudDraft && <div><p>يتعرّف النموذج على فئات محدودة ومناطق متصلة لا على كل الأشياء؛ قد يدمجها أو يخطئ في الألوان. لا يعرف العمق أو الجوانب المخفية. السماء والأرض مستبعدتان؛ قد تقترح بعض الجبال والطرق كأجسام. {cloudDraft.skipped ? `تُركت ${cloudDraft.skipped} منطقة بسبب الحد الأقصى. `:''}{cloudDraft.ignored.length?`الخلفية المستبعدة: ${cloudDraft.ignored.join('، ')}.`:''}</p><CloudWorldComposer key={cloudDraft.id} initialItems={cloudDraft.items} initialPlan={cloudDraft.plan} description={cloudDraft.description} mode={mode==='edit'?'append':'image'} canApply={()=>descriptionRef.current===cloudDraft.description && (!canApply || canApply())} onBusyChange={setCloudBatchBusy} onBuilt={()=>onAutoBuilt?.()} onClose={()=>setCloudDraft(null)} onOpenStudio={onOpenStudio}/></div>}
+        {!cloudDraft && <button type="button" className="btn btn-primary" disabled={autoBusy || loading || cloudBatchBusy || !!autoReport} onClick={()=>void prepareCloudFromImage('library')}>حلّل الصورة واختر مجسمات جاهزة</button>}
+        {cloudDraft && <div><p>يتعرّف النموذج على فئات محدودة ومناطق متصلة لا على كل الأشياء؛ قد يدمجها أو يخطئ في الألوان. لا يعرف العمق أو الجوانب المخفية. السماء والأرض مستبعدتان؛ قد تقترح بعض الجبال والطرق كأجسام. {cloudDraft.skipped ? `تُركت ${cloudDraft.skipped} منطقة بسبب الحد الأقصى. `:''}{cloudDraft.ignored.length?`الخلفية المستبعدة: ${cloudDraft.ignored.join('، ')}.`:''}</p>{cloudDraft.kind==='cloud' ? <CloudWorldComposer key={cloudDraft.id} initialItems={cloudDraft.items} initialPlan={cloudDraft.plan} description={cloudDraft.description} mode={mode==='edit'?'append':'image'} canApply={()=>descriptionRef.current===cloudDraft.description && (!canApply || canApply())} onBusyChange={setCloudBatchBusy} onBuilt={()=>onAutoBuilt?.()} onClose={()=>setCloudDraft(null)} onOpenStudio={onOpenStudio}/> : <LibraryWorldComposer key={cloudDraft.id} initialItems={cloudDraft.items} initialPlan={cloudDraft.plan} description={cloudDraft.description} mode={mode==='edit'?'append':'image'} canApply={()=>descriptionRef.current===cloudDraft.description && (!canApply || canApply())} onBusyChange={setCloudBatchBusy} onBuilt={()=>onAutoBuilt?.()} onClose={()=>setCloudDraft(null)} onOpenStudio={onOpenStudio}/>}</div>}
         <button ref={autoButtonRef} type="button" className="btn btn-primary auto-build-btn" disabled={autoBusy || loading || cloudBatchBusy || !!autoReport} onClick={()=>void buildAutomatically()}>حلّل وابحث وابنِ تلقائياً</button>
         <details className="workflow-details"><summary>ما يلزم وحدود التحليل</summary><p>يحتاج تثبيت نموذج الرؤية مرة واحدة على الهاتف. التحليل تقريبي وقد يدمج عناصر أو يفوّت الصغيرة؛ لا يستنتج العمق الحقيقي. يبني حتى 30 منطقة، ويعامل الأرض والخلفية كخلفية.</p><p>إذا كانت ملفات التحديث مثبتة، ثبّت النموذج في Termux بالأمر: <code>cd ~/world-builder &amp;&amp; python vision-setup.py</code> ثم أعد تشغيل الخادم وحدّث الصفحة.</p></details>
         {autoBusy && <><p role="status">{autoStatus}</p><button type="button" className="btn btn-small" onClick={()=>{autoController.current?.abort();setMessage('أُلغي التحليل؛ لم يتغيّر العالم.');}}>إلغاء التحليل</button></>}

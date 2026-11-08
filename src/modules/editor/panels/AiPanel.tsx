@@ -12,6 +12,7 @@ import { type WorldPlan } from '../../../core/world-plan/schema';
 import { correctBuildSpelling } from '../../ai/spelling';
 import { unknownTopics } from '../../ai/unknownResearch';
 import { CloudWorldComposer } from './CloudWorldComposer';
+import { LibraryWorldComposer } from './LibraryWorldComposer';
 import { textToCloudItems, type CloudWorldItem } from '../../ai/cloudWorld';
 import { generatedGlbToWorld, requestGeneratedGlb } from '../../ai/generatedMesh';
 import { interpretPromptLocally } from '../../ai/promptInterpreter';
@@ -76,6 +77,8 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   const [batchBusy, setBatchBusy] = useState(false);
   const [cloudDraft, setCloudDraft] = useState<{items:CloudWorldItem[];prompt:string;plan:WorldPlan;id:number}|null>(null);
   const cloudDraftId=useRef(0);
+  const [libraryDraft,setLibraryDraft]=useState<{items:CloudWorldItem[];prompt:string;plan:WorldPlan;id:number}|null>(null);
+  const libraryDraftId=useRef(0);
   const [cloudResult, setCloudResult] = useState(false);
   const cloudController = useRef<AbortController | null>(null);
   useEffect(() => () => cloudController.current?.abort(), []);
@@ -202,9 +205,16 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       <div className="callout" dir="rtl"><div>
         <strong>عالم من عناصر مولّدة منفصلة</strong>
         <p>يقترح تقسيم الوصف محلياً دون الاعتماد على أسماء المكتبة، ثم يرسل وصف كل عنصر للخدمة بعد المراجعة. التقسيم والعلاقات تقريبية؛ راجعها. التضاريس تبقى إجرائية محلية، لا مجسماً مولّداً.</p>
-        {!cloudDraft && <button type="button" className="btn btn-primary" disabled={!prompt.trim() || prompt.trim().length>400 || generating || batchBusy} onClick={()=>setCloudDraft({items:textToCloudItems(prompt),prompt:prompt.trim(),plan:state.plan,id:++cloudDraftId.current})}>تخطيط عالم من الوصف</button>}
+        {!cloudDraft && <button type="button" className="btn btn-primary" disabled={!prompt.trim() || prompt.trim().length>400 || generating || batchBusy} onClick={()=>{setLibraryDraft(null);setCloudDraft({items:textToCloudItems(prompt),prompt:prompt.trim(),plan:state.plan,id:++cloudDraftId.current});}}>تخطيط عالم من الوصف</button>}
       </div></div>
       {cloudDraft && <CloudWorldComposer key={cloudDraft.id} initialItems={cloudDraft.items} initialPlan={cloudDraft.plan} description={cloudDraft.prompt} mode="text" canApply={()=>currentPrompt.current.trim()===cloudDraft.prompt} onBusyChange={setBatchBusy} onClose={()=>setCloudDraft(null)} onOpenStudio={onOpenStudio} />}
+
+      <div className="callout" dir="rtl"><div>
+        <strong>خريطة من مجسمات جاهزة مجانية</strong>
+        <p>اختر عناصر جاهزة من مكتبة 3DAssets.dev المجانية وأضفها إلى الخريطة، بدلاً من توليدها بالذكاء الاصطناعي.</p>
+        {!libraryDraft && <button type="button" className="btn btn-primary" disabled={!prompt.trim() || prompt.trim().length>400 || generating || batchBusy} onClick={()=>{setCloudDraft(null);setLibraryDraft({items:textToCloudItems(prompt),prompt:prompt.trim(),plan:state.plan,id:++libraryDraftId.current});}}>تخطيط خريطة بمجسمات جاهزة</button>}
+      </div></div>
+      {libraryDraft && <LibraryWorldComposer key={libraryDraft.id} initialItems={libraryDraft.items} initialPlan={libraryDraft.plan} description={libraryDraft.prompt} mode="text" canApply={()=>currentPrompt.current.trim()===libraryDraft.prompt} onBusyChange={setBatchBusy} onClose={()=>setLibraryDraft(null)} onOpenStudio={onOpenStudio} />}
       {referenceFlow && <ReferenceSceneWorkflow key={referenceFlow.id} prompt={referenceFlow.prompt} basePlan={referenceFlow.plan} mode="create" canApply={()=>currentPrompt.current.trim()===referenceFlow.prompt} onCancel={()=>setReferenceFlow(null)} onApplied={()=>{setReferenceFlow(null);notify('أُنشئ المشهد؛ يمكن التراجع بـ Undo.','success');}} onOpenStudio={onOpenStudio}/>}
       {result && (
         <div className="ai-result">

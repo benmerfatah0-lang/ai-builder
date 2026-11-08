@@ -22,6 +22,9 @@ MAX_REQUEST = 64 * 1024
 MAX_RESPONSE = 2 * 1024 * 1024
 USER_AGENT = 'AIWorldBuilder/1.0 (https://github.com/benmerfatah0-lang/ai-builder)'
 CLOUD_3D_URL = 'https://hysts-shap-e.hf.space'
+ASSET_SEARCH_URL = 'https://3dassets.dev/api/v1/assets'
+ASSET_CDN_URL = 'https://cdn.3dassets.dev'
+MAX_LIBRARY_MODEL = 2_000_000
 CLOUD_3D_LOCK = threading.Lock()
 MAX_CLOUD_3D = 12_000_000
 ONLINE_URL = 'https://ar.wikipedia.org/w/api.php?action=query&meta=siteinfo&siprop=general&format=json'
@@ -261,6 +264,45 @@ def fetch_cloud_3d(prompt):
     return data
 
 
+def search_free_models(query):
+    """Search on demand; return only self-contained, static, small CC0 models."""
+    params = urlencode({'q': query, 'limit': 60})
+    data = get_json(Request(ASSET_SEARCH_URL + '?' + params, headers={'User-Agent': USER_AGENT}), timeout=25)
+    if not isinstance(data, dict) or not isinstance(data.get('data'), list): raise ValueError('invalid asset catalogue')
+    results = []
+    for item in data['data'][:60]:
+        if not isinstance(item, dict) or item.get('status') != 'published': continue
+        ident, slug, title, url = item.get('id'), item.get('slug'), item.get('title'), item.get('cdnUrl')
+        stats, license = item.get('stats'), item.get('license')
+        if not isinstance(ident,str) or not re.fullmatch(r'[0-9]{1,12}',ident): continue
+        if not isinstance(slug,str) or not re.fullmatch(r'[a-z0-9-]{1,160}',slug): continue
+        if not isinstance(title,str) or not title.strip(): continue
+        if not isinstance(url,str): continue
+        match = re.fullmatch(r'https://cdn\.3dassets\.dev/assets/([0-9]{1,12})/v([0-9]{1,5})/model\.glb',url)
+        if not match or match.group(1) != ident: continue
+        if not isinstance(license,dict) or license.get('slug') != 'cc0-1.0': continue
+        if not isinstance(stats,dict) or type(stats.get('fileSize')) is not int or not 24 <= stats['fileSize'] <= MAX_LIBRARY_MODEL: continue
+        if type(stats.get('triangles')) is not int or not 1 <= stats['triangles'] <= 10000: continue
+        if type(stats.get('vertices')) is not int or not 3 <= stats['vertices'] <= 50000: continue
+        if type(stats.get('meshes')) is not int or not 1 <= stats['meshes'] <= 100: continue
+        if stats.get('textures') != 0 or stats.get('animations') != []: continue
+        extensions = stats.get('extensionsUsed')
+        if not isinstance(extensions,list) or any(x not in ('KHR_mesh_quantization','KHR_materials_unlit') for x in extensions): continue
+        results.append({'id':ident, 'version':match.group(2), 'slug':slug, 'title':title.strip()[:120], 'triangles':stats['triangles']})
+        if len(results) == 12: break
+    return {'results': results}
+
+
+def download_free_model(ident, version):
+    if not isinstance(ident,str) or not re.fullmatch(r'[0-9]{1,12}',ident) or not isinstance(version,str) or not re.fullmatch(r'[0-9]{1,5}',version):
+        raise ValueError('invalid asset identifier')
+    url = ASSET_CDN_URL + '/assets/' + ident + '/v' + version + '/model.glb'
+    with build_opener(NoRedirects()).open(Request(url,headers={'User-Agent': USER_AGENT}),timeout=120) as response:
+        model = response.read(MAX_LIBRARY_MODEL + 1)
+    if len(model) < 24 or len(model) > MAX_LIBRARY_MODEL or model[:4] != b'glTF': raise ValueError('invalid model')
+    return model
+
+
 VISION_FILES = frozenset({
     '/vision-worker.js', '/vision/scene.onnx', '/vision/ort.wasm.min.js',
     '/vision/ort-wasm-simd-threaded.mjs', '/vision/ort-wasm-simd-threaded.wasm',
@@ -350,7 +392,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.valid_host() or self.headers.get('Origin', '') != f'http://{host}':
             self.api_result(403, {'error': 'invalid origin'})
             return
-        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/image-analyze', '/api/image-pixels', '/api/translate-en', '/api/wiki-article', '/api/dictionary', '/api/knowledge', '/api/house-learning', '/api/text-to-3d'):
+        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/image-analyze', '/api/image-pixels', '/api/translate-en', '/api/wiki-article', '/api/dictionary', '/api/knowledge', '/api/house-learning', '/api/text-to-3d', '/api/asset-library/search', '/api/asset-library/model'):
             self.api_result(404, {'error': 'unknown endpoint'})
             return
         if self.headers.get_content_type() != 'application/json':
@@ -367,6 +409,31 @@ class Handler(SimpleHTTPRequestHandler):
             self.api_result(400, {'error': 'invalid request'})
             return
         try:
+            if self.path == '/api/asset-library/search':
+                query = payload.get('query')
+                if set(payload) != {'query'} or not isinstance(query,str) or not query.strip() or len(query) > 200:
+                    self.api_result(400, {'error': 'invalid query'})
+                    return
+                self.api_result(200, search_free_models(query.strip()))
+                return
+            if self.path == '/api/asset-library/model':
+                if set(payload) != {'id','version'}:
+                    self.api_result(400, {'error': 'invalid asset'})
+                    return
+                try:
+                    model = download_free_model(payload.get('id'), payload.get('version'))
+                except ValueError:
+                    self.api_result(400, {'error': 'invalid asset'})
+                    return
+                self.send_response(200)
+                self.send_header('Content-Type', 'model/gltf-binary')
+                self.send_header('Content-Length', str(len(model)))
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('X-World-Builder-Proxy', '1')
+                self.end_headers()
+                self.wfile.write(model)
+                return
             if self.path == '/api/text-to-3d':
                 query = payload.get('query')
                 if set(payload) != {'query'} or not isinstance(query, str) or not query.strip() or len(query) > 400:
