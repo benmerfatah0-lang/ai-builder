@@ -38,7 +38,7 @@ const MAX_DEFAULT_POINT_LIGHTS = 12;
 function tagObject(group: THREE.Object3D, object: WorldObject): void {
   group.name = object.name;
   group.userData.worldObjectId = object.id;
-  if (object.meta.photoModel) { group.userData.imageSource = object.meta.photoModel.source; group.userData.imageApproximation = object.meta.photoModel.mode ?? 'silhouette'; }
+  if (object.meta.photoModel) { group.userData.imageSource = object.meta.photoModel.source; group.userData.imageApproximation = object.meta.photoModel.mode ?? 'silhouette'; group.userData.imageMeshStyle = object.meta.photoModel.meshStyle ?? 'blocky'; }
   group.traverse((child) => {
     child.userData.worldObjectId = object.id;
   });

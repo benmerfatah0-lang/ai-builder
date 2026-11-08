@@ -819,4 +819,32 @@ describe('lightweight local planning interface', () => {
     expect(screen.getByText('Wikipedia approximate standing water')).toBeTruthy();
   },20000);
 
+  it('follows a pixel-style description and can smooth the resulting model with undo', async () => {
+    const image={title:'File:Elephant.jpg',url:'https://commons.wikimedia.org/wiki/File:Elephant.jpg',thumbnail:'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Elephant.jpg/250px-Elephant.jpg',author:'A',license_url:'https://creativecommons.org/licenses/by/4.0/',license_name:'CC BY 4.0'};
+    const bytes=new Uint8Array(12*12*4);
+    for(let y=0;y<12;y++) for(let x=0;x<12;x++) bytes.set(x>=3&&x<=8&&y>=2&&y<=9?[120,40,30,255]:[255,255,255,255],(y*12+x)*4);
+    vi.stubGlobal('fetch',vi.fn(async (url:string,opts:RequestInit) => {
+      if(url==='/api/online') return new Response('{"online":true}');
+      if(url==='/api/search') { expect(JSON.parse(opts.body as string).query).toBe('فيل'); return new Response('{"results":[]}'); }
+      if(url==='/api/image-search') return new Response(JSON.stringify({results:[image]}));
+      if(url==='/api/image-pixels') return new Response(JSON.stringify({width:12,height:12,rgba:btoa(String.fromCharCode(...bytes))}));
+      return new Response('{}');
+    }));
+    render(<App />);
+    await waitFor(()=>expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Description'),{target:{value:'عالم فيه فيل بكسلي'}});
+    fireEvent.click(screen.getByRole('button',{name:'Generate world'}));
+    const studio=await screen.findByRole('region',{name:'استوديو تقريب الصورة'});
+    expect((within(studio).getByLabelText('أسلوب المجسم') as HTMLSelectElement).value).toBe('blocky');
+    fireEvent.click(within(studio).getByRole('button',{name:/File:Elephant.jpg/}));
+    expect(await screen.findByText(/أُضيف مجسم الصورة التقريبي/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button',{name:'فتح العالم في المحرر ←'}));
+    const surface=await screen.findByLabelText('شكل سطح المجسم') as HTMLSelectElement;
+    expect(surface.value).toBe('blocky');
+    fireEvent.change(surface,{target:{value:'smooth'}});
+    expect(surface.value).toBe('smooth');
+    fireEvent.click(screen.getByRole('button',{name:/Undo \(Ctrl\/Cmd\+Z\)/}));
+    expect((screen.getByLabelText('شكل سطح المجسم') as HTMLSelectElement).value).toBe('blocky');
+  },20000);
+
 });

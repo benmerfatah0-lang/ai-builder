@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { buildPhotoModelGeometry } from '../../../core/scene/photoModel';
 import type { PhotoModel } from '../../../core/world-plan/schema';
+import type { PhotoMeshStyle } from '../../ai/photoStyle';
 import type { ImageReference } from '../../ai/imageReferences';
 import { photoToModel, type TinyImage } from '../../ai/photoModel';
 import { constructionStage, type PreparedConstruction, type ConstructionPreview } from '../constructionPreview';
@@ -47,8 +48,8 @@ function Preview({ model, rows }: { model: PhotoModel; rows: number }) {
 }
 
 /** Candidate choice, actual placement preparation and a real, transient build preview. */
-export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغلاق الاستوديو', onPrepare, onPreview, showMapPreview = false }: {
-  topic: TopicResearch; onComplete: (model: PhotoModel, prepared?: PreparedConstruction) => void; onCancel: () => void; cancelLabel?: string;
+export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغلاق الاستوديو', onPrepare, onPreview, showMapPreview = false, initialMeshStyle = 'smooth' }: {
+  initialMeshStyle?: PhotoMeshStyle; topic: TopicResearch; onComplete: (model: PhotoModel, prepared?: PreparedConstruction) => void; onCancel: () => void; cancelLabel?: string;
   onPrepare?: (model: PhotoModel) => PreparedConstruction; onPreview?: Dispatch<SetStateAction<ConstructionPreview | null>>; showMapPreview?: boolean;
 }) {
   const root = useRef<HTMLElement>(null);
@@ -82,6 +83,7 @@ export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغل
   const [pixels, setPixels] = useState<TinyImage | null>(null);
   const [rows, setRows] = useState(0), [error, setError] = useState('');
   const [canUseSlab, setCanUseSlab] = useState(false);
+  const [meshStyle, setMeshStyle] = useState<PhotoMeshStyle>(initialMeshStyle);
   const [manualMode, setManualMode] = useState(false);
   const [showOutline, setShowOutline] = useState(false);
   const [finished, setFinished] = useState(false), [loading, setLoading] = useState(false);
@@ -91,7 +93,7 @@ export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغل
   const previewKey = useRef(`photo-${Math.random().toString(36).slice(2)}`);
   const build = (image: TinyImage, source: ImageReference, includeBackground = false, mask?: Uint8Array) => {
     let built: PhotoModel;
-    try { built = photoToModel(image, source, includeBackground, mask); }
+    try { built = photoToModel(image, source, includeBackground, mask, meshStyle); }
     catch (reason) {
       setError(reason instanceof Error ? reason.message : 'تعذّر فصل الصورة.');
       setCanUseSlab(!includeBackground); setShowOutline(!includeBackground); setLoading(false); return;
@@ -138,6 +140,8 @@ export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغل
     <strong>استوديو بناء «{topic.term}»</strong>
     {topic.imageNotice && <p>{topic.imageNotice}</p>}
     <p>تقريب منخفض الدقة؛ الخلف والعمق مفترضان، وليسا استعادة حقيقية. يحتاج الفصل صورة جسم واحد بخلفية شفافة أو موحدة.</p>
+    <label className="field"><span>أسلوب المجسم (يُختار من الوصف عند ذكره، ويمكن تغييره قبل اختيار الصورة)</span><select aria-label="أسلوب المجسم" value={meshStyle} disabled={loading || !!model || finished} onChange={(event) => setMeshStyle(event.target.value as PhotoMeshStyle)}><option value="smooth">ناعم — سطح متصل وتقريبي</option><option value="blocky">بكسلي — مكعبات واضحة</option></select></label>
+    <p>الناعم يلطّف الحدود والألوان لكنه لا يعرف حقيقة ظهر الجسم أو عمقه. أسلوب اللوح الكامل يبقى مسطحاً.</p>
     <label><input type="checkbox" checked={manualMode} onChange={(event) => setManualMode(event.target.checked)} disabled={loading || !!model || finished} /> أريد تحديد حدود الجسم يدوياً بعد اختيار الصورة</label>
     <div className="wiki-list"><span>لبدء البناء اضغط على الصورة الأقرب، ويفضّل أن تكون بخلفية بسيطة:</span>{images.map((image, index) => <div key={image.url}>
       <button className="image-ref-card" type="button" onClick={() => { if (selected?.url === image.url) setAttempt((old) => old + 1); else setSelected(image); }} disabled={finished} aria-pressed={selected?.url === image.url}>

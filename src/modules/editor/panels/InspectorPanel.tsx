@@ -383,6 +383,15 @@ export function InspectorPanel({
         </div>
       </Section>
 
+      {!groupNode && node.meta.photoModel && node.meta.photoModel.mode !== 'full-image-slab' && <Section title="أسلوب مجسم الصورة" icon="sparkles" defaultOpen>
+        <label className="field" dir="rtl"><span className="field-label">شكل السطح</span>
+          <select aria-label="شكل سطح المجسم" value={node.meta.photoModel.meshStyle ?? 'blocky'} disabled={locked} onChange={(event) => {
+            const value = event.target.value;
+            if (value === 'smooth' || value === 'blocky') dispatch({ type:'updateObject', id, patch:{ photoMeshStyle:value } });
+          }}><option value="smooth">ناعم</option><option value="blocky">بكسلي</option></select>
+        </label>
+        <p dir="rtl">يمكن التراجع عن التغيير. العمق والخلف يظلان تقديراً.</p>
+      </Section>}
       {!groupNode && (
         <Section title="Generated" icon="sparkles" defaultOpen={false}>
           <div className="kv-row">

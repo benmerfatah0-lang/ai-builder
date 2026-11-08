@@ -212,7 +212,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
       {variant === 'panel' && <TextEditPanel shapeModel={shapeModel} />}
       {studio && <div dir="rtl">
         <p role="status">العنصر {studio.index + 1} من {studio.requests.length} · العدد المطلوب: {studio.requests[studio.index]!.count}</p>
-        <PhotoStudio key={`${studio.index}:${studio.requests[studio.index]!.topic.term}`} topic={studio.requests[studio.index]!.topic}
+        <PhotoStudio key={`${studio.index}:${studio.requests[studio.index]!.topic.term}`} topic={studio.requests[studio.index]!.topic} initialMeshStyle={studio.requests[studio.index]!.meshStyle}
           cancelLabel="تخطّي هذا العنصر" onCancel={() => {
             const item = studio.requests[studio.index]!;
             setNotes((old) => [`تم تخطي «${item.topic.term}» دون إضافته.`, ...old]);

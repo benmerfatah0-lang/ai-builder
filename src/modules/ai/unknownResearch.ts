@@ -10,8 +10,8 @@ import type { Approximation } from './referenceUnderstanding';
 const canonical = (word: string) => word.replace(/ة/g, 'ه');
 const known = new Set(`و او ثم مع في من علي الي عن ل ب امام قدام خلف وراء يمين يسار شمال بالقرب قرب بجانب بجوار
 اصنع انشئ ابن ابني ابناء اريد اريدك صمم اعمل ضع اضف اضيف حرك لون كبر صغر احذف انقل اجعل غير
-عالم عالما خريطه مشهد مكان بيئه مجسم العنصر المحدد المختار نوع نوعا انواع تضاريس تضاريسيه بايوم بايومات مسطح مسطحات مائي مائيه حيوان حيوانات منشاه منشات استركشر استركشرات structure structures
-صغير صغيره كبير كبيره ضخم ضخمه طويل طويله عريض عريضه واسع واسعه مرتفع مرتفعه قديم قديمه حديث حديثه جميل جميله
+عالم عالما خريطه مشهد مكان بيئه مجسم ثلاثي ثلاثيه الابعاد ابعاد 3d العنصر المحدد المختار نوع نوعا انواع تضاريس تضاريسيه بايوم بايومات مسطح مسطحات مائي مائيه حيوان حيوانات منشاه منشات استركشر استركشرات structure structures
+صغير صغيره كبير كبيره ضخم ضخمه واقعي واقعيه ناعم ناعمه سموث انسيابي انسيابيه املس ملساء بكسل بكسلي بكسليه بكسلات بالبكسلات البكسلات فوكسل فوكسلي فوكسليه طويل طويله عريض عريضه واسع واسعه مرتفع مرتفعه قديم قديمه حديث حديثه جميل جميله
 احمر حمراء ازرق زرقاء اخضر خضراء اصفر صفراء ابيض بيضاء اسود سوداء بني بنفسجي برتقالي
 صحراء صحراوي صحراويه غابه غابات جبل جبال جزيره جزر استوائي استوائيه بحر بحيره نهر انهار وادي وديان واحة واحات رمال
 مرج مروج سهل سهول مزرعه مزارع مدينه مدن قريه قري قرية حضاره اثار اطلال منجم ذهب عميق عميقه
@@ -20,10 +20,10 @@ const known = new Set(`و او ثم مع في من علي الي عن ل ب ام
 create make build add put place move delete remove paint color colour enlarge shrink change a an the and or with in on at of to for from near next beside right left behind front above below
 world map scene area landscape terrain small tiny little large big huge tall wide old new beautiful red blue green yellow white black brown purple orange
 forest forests jungle desert deserts oasis oases mountain mountains island islands lake sea ocean river rivers meadow grassland plain farm city village ruins mine gold day night sunset sunrise dense sparse
-cartoon natural stylized low poly farmhouse connected dirt wheat wheatfield grass bright sparse normal
+cartoon natural stylized realistic realism dimensional low poly smooth rounded pixel pixelated pixels voxel voxels blocky minecraft art farmhouse connected dirt wheat wheatfield grass bright sparse normal
 search wikipedia real image pictures picture photo photos
 crée creer créez construire construis fais fabrique ajouter ajoute place un une le la les des du de dans avec et ou sur pour pres près monde carte scene scène petit petite grand grande vieux vieille rouge bleu vert jaune blanc noir`.split(/\s+/u).map(canonical));
-const NEGATIONS = new Set(['بدون', 'دون', 'بلا', 'without', 'no']);
+const NEGATIONS = new Set(['بدون', 'دون', 'بلا', 'without', 'no', 'not']);
 
 /** Best-effort candidate extraction, including unknown nouns alongside known assets. */
 export function unknownTopics(prompt: string): { terms: string[]; truncated: boolean } {
@@ -45,6 +45,7 @@ export function unknownTopics(prompt: string): { terms: string[]; truncated: boo
     const prior = previous;
     previous = word;
     if (NEGATIONS.has(word)) { flush(); negateNext = true; continue; }
+    if (negateNext && /^(?:(?:ب?ال)?بكسل(?:ي|يه|ات)?|فوكسل(?:ي|يه)?|ناعم(?:ه)?|سموث|smooth|pixel(?:ated|s)?|voxel(?:s)?|blocky)$/iu.test(word)) { negateNext = false; flush(); continue; }
     if (/^\d+$/u.test(raw) || parseCountToken(raw) !== undefined || parseCountToken(stripped) !== undefined ||
         known.has(word) || known.has(bare(word)) || known.has(stripped) || known.has(bare(stripped)) || raw.length < 2) {
       flush();

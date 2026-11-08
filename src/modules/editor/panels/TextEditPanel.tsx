@@ -102,7 +102,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
       {feedback && <p className={feedback.error ? 'online-error' : 'text-edit-success'} role={feedback.error ? 'alert' : 'status'}>{feedback.text}</p>}
       {studio && <div dir="rtl">
         <p role="status">العنصر {studio.index + 1} من {studio.requests.length} · العدد المطلوب: {studio.requests[studio.index]!.count}</p>
-        <PhotoStudio key={`${studio.index}:${studio.requests[studio.index]!.topic.term}`} topic={studio.requests[studio.index]!.topic} cancelLabel="إلغاء التعديل"
+        <PhotoStudio key={`${studio.index}:${studio.requests[studio.index]!.topic.term}`} topic={studio.requests[studio.index]!.topic} initialMeshStyle={studio.requests[studio.index]!.meshStyle} cancelLabel="إلغاء التعديل"
           onCancel={() => { sequence.current++; setStudio(null); setFeedback({ text: 'أُلغي التعديل؛ لم يتغير العالم.', error: true }); }}
           onPreview={setConstructionPreview}
           onPrepare={(model) => {

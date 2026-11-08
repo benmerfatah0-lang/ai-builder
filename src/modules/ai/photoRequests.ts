@@ -1,8 +1,9 @@
 import { directionBetween, findAssetMentions, normalizeAssetText, parseCountToken, type AssetDirection } from './assetRequests';
+import { photoStyleForTopic, type PhotoMeshStyle } from './photoStyle';
 import { classifyTopic, isLandscapeKind, topicLabels } from './topicClassification';
 import type { TopicResearch } from './unknownResearch';
 
-export interface PhotoRequest { topic: TopicResearch; count: number; relation?: { assetId: string; direction: AssetDirection } }
+export interface PhotoRequest { topic: TopicResearch; count: number; meshStyle: PhotoMeshStyle; relation?: { assetId: string; direction: AssetDirection } }
 export interface PhotoRequestPlan { requests: PhotoRequest[]; warnings: string[] }
 
 /** Conservative interpretation: distinct single mentions and explicit adjacent counts.
@@ -23,6 +24,8 @@ export function planPhotoRequests(prompt: string, topics: TopicResearch[]): Phot
       warnings.push(`«${topic.term}» صُنّف ${topicLabels[classification.kind]}، وليس جسماً منفرداً؛ لن يُبنى كصورة مجسّمة. قد لا يتوفر نوعه الدقيق في التطبيق.`);
       continue;
     }
+    const meshStyle = photoStyleForTopic(prompt, topic.term, topics.length);
+    if (meshStyle === 'conflict') { warnings.push(`أسلوب «${topic.term}» متعارض بين ناعم وبكسلي؛ وضح أسلوباً واحداً.`); continue; }
     const term = normalizeAssetText(topic.term).trim().replace(/^ال/u, '');
     if (!term || term.length > 400) { warnings.push(`تعذّر تحديد «${topic.term.slice(0,80)}» للإنشاء.`); continue; }
     const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])(?:و?ال|و)?${escape(term)}(?![\\p{L}\\p{N}_])`, 'gu');
@@ -52,7 +55,7 @@ export function planPhotoRequests(prompt: string, topics: TopicResearch[]): Phot
       warnings.push(`لم يُنشأ «${topic.term}»: لم يُفهم الحجم أو اللون المطلوب من الصورة.`); continue;
     }
     if (!topic.images.length && topic.imageNext == null) { warnings.push(topic.imageError ? `تعذّر البحث عن صور «${topic.term}»؛ لم يُنشأ. ${topic.imageError}` : `لم أجد صوراً مناسبة لـ «${topic.term}»؛ لم يُنشأ.`); continue; }
-    requests.push({ topic, count: count ?? 1, ...(relation ? { relation } : {}) });
+    requests.push({ topic, count: count ?? 1, meshStyle, ...(relation ? { relation } : {}) });
   }
   return { requests, warnings };
 }

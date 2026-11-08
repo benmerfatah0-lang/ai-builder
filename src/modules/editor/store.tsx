@@ -59,6 +59,8 @@ export interface ObjectPatch {
   /** Colour of the kind's secondary channel (roof, trunk, rails, soil). */
   secondaryColor?: string;
   material?: Partial<MaterialSettings>;
+  /** Rendering style for photo silhouettes, not for full-image slabs. */
+  photoMeshStyle?: 'smooth' | 'blocky';
 }
 
 export interface EditorState {
@@ -252,6 +254,9 @@ export function applyObjectPatch(object: WorldObject, patch: ObjectPatch): World
   if (patch.roofColor !== undefined && 'roofColor' in next) {
     next.roofColor = hexOr(patch.roofColor, next.roofColor ?? '#7a4d3c');
   }
+  if ((patch.photoMeshStyle === 'smooth' || patch.photoMeshStyle === 'blocky') && next.meta.photoModel && next.meta.photoModel.mode !== 'full-image-slab') {
+    next.meta = { ...next.meta, photoModel: { ...next.meta.photoModel, meshStyle: patch.photoMeshStyle } };
+  }
   if (patch.material !== undefined) {
     next.material = applyMaterialPatch(next.material, patch.material);
   }
@@ -375,7 +380,8 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       if (!object) return state;
       const patch = { ...action.patch };
       // Locked objects keep their transform; other edits (revealing, renaming) pass.
-      if (patch.transform && isEffectivelyLocked(state.plan, action.id)) delete patch.transform;
+      if (isEffectivelyLocked(state.plan, action.id)) { delete patch.transform; delete patch.photoMeshStyle; }
+      if (!Object.keys(patch).length) return state;
       const updated = markEdited(applyObjectPatch(object, patch));
       if (updated === object) return state;
       return commit(state, {

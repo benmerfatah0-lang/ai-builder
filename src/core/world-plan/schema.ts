@@ -140,6 +140,8 @@ const referenceUrl = z.string().max(1200).refine((url) => {
 });
 export const photoModelSchema = z.object({
   mode: z.enum(['silhouette', 'manual-silhouette', 'full-image-slab']).optional(),
+  /** Older projects omit this field and keep their original blocky geometry. */
+  meshStyle: z.enum(['smooth', 'blocky']).optional(),
   width: z.number().int().min(1).max(24), height: z.number().int().min(1).max(24),
   cells: z.array(z.object({ x: z.number().int().min(0).max(23), y: z.number().int().min(0).max(23), depth: z.number().int().min(1).max(12), color: hexColorSchema }).strict()).min(1).max(576),
   source: z.object({ title: z.string().min(1).max(120), url: referenceUrl, author: z.string().min(1).max(200), license_name: z.string().min(1).max(200), license_url: z.string().regex(/^https:\/\/creativecommons\.org\/(?:licenses\/(?:by|by-sa)\/[1-4]\.0\/|publicdomain\/zero\/1\.0\/)$/) }).strict(),

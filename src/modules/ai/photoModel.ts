@@ -9,11 +9,12 @@ import { worldTransformOf } from '../../core/world-plan/hierarchy';
 import { matchesAsset } from './worldEdit';
 import type { AssetDirection } from './assetRequests';
 import type { PhotoRequest } from './photoRequests';
+import type { PhotoMeshStyle } from './photoStyle';
 import type { ImageReference } from './imageReferences';
 
 export interface TinyImage { width: number; height: number; rgba: Uint8Array }
 /** Isolate a simple transparent or uniform-edged background. No object recognition. */
-export function photoToModel(image: TinyImage, source: ImageReference, includeBackground = false, manualMask?: Uint8Array): PhotoModel {
+export function photoToModel(image: TinyImage, source: ImageReference, includeBackground = false, manualMask?: Uint8Array, meshStyle: PhotoMeshStyle = 'blocky'): PhotoModel {
   const { width: w, height: h, rgba } = image;
   if (w < 2 || h < 2 || w > 24 || h > 24 || rgba.length !== w * h * 4) throw new Error('بيانات الصورة غير صالحة.');
   if (manualMask && (includeBackground || manualMask.length !== w * h || manualMask.some((value) => value !== 0 && value !== 1))) throw new Error('تحديد الصورة غير صالح.');
@@ -57,7 +58,7 @@ export function photoToModel(image: TinyImage, source: ImageReference, includeBa
     const [r,g,b] = pixel(i);
     return { x: x-minX, y: y-minY, depth: distance, color: `#${[r,g,b].map((v) => v.toString(16).padStart(2,'0')).join('')}` };
   });
-  return photoModelSchema.parse({ mode: includeBackground ? 'full-image-slab' : manualMask ? 'manual-silhouette' : 'silhouette', width: maxX-minX+1, height: maxY-minY+1, cells,
+  return photoModelSchema.parse({ mode: includeBackground ? 'full-image-slab' : manualMask ? 'manual-silhouette' : 'silhouette', meshStyle: includeBackground ? 'blocky' : meshStyle, width: maxX-minX+1, height: maxY-minY+1, cells,
     source: { title: source.title, url: source.url, author: source.author, license_name: source.license_name, license_url: source.license_url } });
 }
 
