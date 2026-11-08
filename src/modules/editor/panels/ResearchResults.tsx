@@ -5,7 +5,14 @@ export function ResearchResults({ report, busy }: { report: ResearchReport | nul
   if (!report || !report.topics.length) return null;
   return <section className="wiki-library" dir="rtl" aria-label="نتائج البحث التلقائي">
     <strong>بحث تلقائي عن كلمات قد لا أفهمها</strong>
-    <p>التعرف تقريبي وقد لا تكون كل كلمة شيئاً مجهولاً. الصور للعرض فقط؛ لا يحللها المساعد ولا يحولها إلى 3D. راجع المصادر والتراخيص.</p>
+    <p>التعرف تقريبي وقد لا تكون النتائج مطابقة. يستطيع التطبيق في حالة محدودة تحليل لون مركز صورة؛ لا يفصل الجسم عن الخلفية ولا يستخرج شكلاً ثلاثي الأبعاد. راجع المصادر والتراخيص.</p>
+    {report.approximation && <div className="wiki-entry">
+      <p>مقتطف المقالة صنّف «{report.approximation.term}» كبيت؛ {report.approximation.applied ? 'استُخدم' : 'اقتُرح'} نموذج بيت موجود كتقريب وليس نموذجاً مطابقاً.</p>
+      {report.approximation.color && <p>متوسط لون مركز أول صورة: <strong>{report.approximation.color}</strong>. {report.approximation.colorApplied ? 'استُخدم كلون البيت.' : 'لم يُطبّق اللون.'} قد يمثل الخلفية، وليس لون الجسم.</p>}
+      {report.approximation.imageError && <p className="online-error">{report.approximation.imageError} استُخدم اللون الافتراضي.</p>}
+      {!report.approximation.image && <p>لم تتوفر صورة مناسبة؛ استُخدم اللون الافتراضي.</p>}
+      {report.approximation.image && <p>مصدر التحليل: <a href={report.approximation.image.url} target="_blank" rel="noopener noreferrer">{report.approximation.image.title}</a> · {report.approximation.image.author} · <a href={report.approximation.image.license_url} target="_blank" rel="noopener noreferrer">{report.approximation.image.license_name}</a></p>}
+    </div>}
     {report.truncated && <p>بحثت عن أول موضوعين فقط لتقليل الطلبات؛ قسّم الوصف للبحث عن البقية.</p>}
     {report.topics.map((topic) => <article className="wiki-entry" key={topic.term}>
       <strong>البحث عن: {topic.term}</strong>

@@ -3,6 +3,8 @@ export type AssetDirection = 'left' | 'right' | 'front' | 'behind' | 'near';
 export interface AssetRequest {
   assetId: string;
   count: number;
+  /** Optional central thumbnail colour for a clearly labelled approximate house. */
+  referenceColor?: string;
   size?: 'small' | 'large' | 'tall' | 'wide';
   relation?: { target: number; direction: AssetDirection };
 }

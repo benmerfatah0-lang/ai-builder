@@ -11,7 +11,8 @@ import { Icon } from '../../../ui/Icon';
 import { NumberField, SelectField } from '../../../ui/controls';
 import { TextEditPanel } from './TextEditPanel';
 import { ResearchResults } from './ResearchResults';
-import { normalizeAssetText } from '../../ai/assetRequests';
+import { normalizeAssetText, parseAssetRequests } from '../../ai/assetRequests';
+import { analyzeApproximation, hasExplicitColor, matchHouseApproximation, type Approximation } from '../../ai/referenceUnderstanding';
 import { applyWikiArticleHint } from '../../ai/wikiReference';
 import { researchUnknown, unknownTopics, type ResearchReport } from '../../ai/unknownResearch';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
@@ -37,6 +38,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   notify: (message: string, tone?: 'neutral' | 'success' | 'danger') => void;
 }) {
   const { state, dispatch } = useEditor();
+  const currentPlan = useRef(state.plan); currentPlan.current = state.plan;
   const [shapeModel, setShapeModel] = useState(() => {
     try { return readShapeModel(window.localStorage); } catch { return initialShapeModel(); }
   });
@@ -82,6 +84,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   const generate = async () => {
     const text = prompt.trim();
     if (!text || generating) return;
+    const originalPlan = state.plan;
     setGenerationError('');
     researchSequence.current++;
     setResearch(null); setResearchBusy(false);
@@ -99,9 +102,22 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         ...(density !== 'auto' ? { density } : {}),
       }, false, unknownTopics(text).terms.length > 0);
       const discovered = await researchFor(text);
+      const match = !interpretation.intent.features?.farm ? matchHouseApproximation(text, discovered) : null;
+      let approximate: Approximation | null = match;
+      if (match) {
+        setResearchBusy(true);
+        approximate = await analyzeApproximation(match);
+        setResearchBusy(false);
+        setResearch({ ...discovered, approximation: approximate });
+        const assets = parseAssetRequests(approximate.rewritten, true)!;
+        interpretation.intent.assets = assets.map((item) => item.assetId === 'house' && approximate?.color && !hasExplicitColor(text) ? { ...item, referenceColor: approximate.color } : item);
+        interpretation.intent.cues = [...interpretation.intent.cues.filter((cue) => !cue.startsWith('default counts')), `Wikipedia approximate house: ${match.term}`];
+        interpretation.intent.summary += ` · ${match.term}: approximate house`;
+        interpretation.notes = [`«${match.term}» ممثل ببيت تقريبي وفق مقتطف ويكيبيديا؛ لا يتم استنتاج شكل 3D من الصورة.${approximate.color && !hasExplicitColor(text) ? ' لُوّن البيت بمتوسط مركز الصورة، وقد يكون لون الخلفية.' : hasExplicitColor(text) ? ' لم يُستخدم لون الصورة؛ لون الوصف لا يُطبّق تلقائياً هنا ويمكن تغييره في Inspect.' : ' لم يُستخدم لون الصورة.'}`, ...(interpretation.notes ?? [])];
+      }
       if (discovered.topics.length) {
         const names = discovered.topics.map((topic) => `«${topic.term}»`).join('، ');
-        interpretation.notes = [`بحثت عن ${names}؛ البحث لا ينشئ العنصر غير المدعوم، والنتيجة تعتمد على الأصول المعروفة فقط.`, ...(interpretation.notes ?? [])];
+        interpretation.notes = [`بحثت عن ${names}؛ ${match ? 'استُخدم تقريب من أصل موجود، وليس بناءً مطابقاً.' : 'البحث لا ينشئ العنصر غير المدعوم، والنتيجة تعتمد على الأصول المعروفة فقط.'}`, ...(interpretation.notes ?? [])];
         // Use only an exact article-title match, only for a single candidate, and only
         // the fixed terrain vocabulary. Search results are untrusted and not 3D data.
         const topic = discovered.topics.length === 1 && !discovered.truncated ? discovered.topics[0] : undefined;
@@ -120,8 +136,12 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         const first = report.validation.errors[0]?.message ?? 'Unknown validation error.';
         throw new Error(`The generated plan is invalid: ${first}`);
       }
+      if (currentPlan.current !== originalPlan) throw new Error('تغيّر العالم أثناء البحث؛ لم نستبدله. أعد الإنشاء إذا أردت.');
       const plan = variant === 'forge' && worldName.trim() ? { ...report.plan, name: worldName.trim() } : report.plan;
       dispatch({ type: 'replacePlan', plan });
+      if (approximate) setResearch({ ...discovered, approximation: { ...approximate,
+        applied: plan.objects.some((object) => object.kind === 'building' && object.variant === 'house'),
+        colorApplied: Boolean(approximate.color && !hasExplicitColor(text) && plan.objects.some((object) => object.kind === 'building' && object.variant === 'house')) } });
       setResult(interpretation);
       const learnedCount = report.plan.objects.filter((object) => object.meta.learnedShape).length;
       const hasMine = report.plan.objects.some((object) => object.kind === 'primitive' && object.primitive === 'mine-entrance');
@@ -181,7 +201,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         <input className="input" aria-label="اسم العالم (اختياري)" value={worldName} onChange={(event) => setWorldName(event.target.value)} maxLength={80} placeholder="مثلاً: أرض الأحلام" />
       </label>}
 
-      <p className="generate-caption" dir="rtl">يبحث المساعد تلقائياً عن كلمات قد لا يعرفها في ويكيبيديا وWikimedia Commons؛ تُرسل هذه الكلمات إلى الموقعين. التعرّف تقريبي والصور لا تُحلّل.</p>
+      <p className="generate-caption" dir="rtl">يبحث المساعد تلقائياً عن كلمات قد لا يعرفها في ويكيبيديا وWikimedia Commons؛ تُرسل هذه الكلمات إلى الموقعين. التعرّف تقريبي؛ يمكن استخدام لون وسط الصورة لحالات بيت محدودة فقط.</p>
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
 
       <button

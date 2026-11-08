@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Loopback-only phone server with fixed Wikipedia endpoints; no API keys."""
 import argparse
+import io
 import json
 import os
 import re
@@ -59,6 +60,30 @@ def search_image_references(query):
                         'license_name': ('CC0' if '/publicdomain/zero/' in license_url else 'CC ' + ('BY-SA' if '/by-sa/' in license_url else 'BY') + ' ' + license_url.rstrip('/').split('/')[-1])})
         if len(results) == 8: break
     return results
+
+
+def analyze_reference_image(url):
+    # Only bounded thumbnail URLs on Wikimedia's fixed upload host are accepted.
+    if not isinstance(url, str) or len(url) > 1200 or not good_thumb(url) or not url.startswith('https://upload.wikimedia.org/wikipedia/commons/thumb/') or '/240px-' not in url:
+        raise ValueError('invalid thumbnail')
+    try:
+        from PIL import Image, ImageStat
+    except ImportError as error:
+        raise RuntimeError('missing pillow') from error
+    raw = get_image(Request(url, headers={'User-Agent': USER_AGENT}), timeout=25)
+    with Image.open(io.BytesIO(raw)) as image:
+        if image.format not in ('JPEG', 'PNG') or image.width < 1 or image.height < 1 or image.width * image.height > 1_000_000:
+            raise ValueError('invalid image')
+        image.load()
+        image.thumbnail((64, 64))
+        rgba = image.convert('RGBA')
+        background = Image.new('RGBA', rgba.size, (255, 255, 255, 255))
+        rgb = Image.alpha_composite(background, rgba).convert('RGB')
+        w, h = rgb.size
+        # This is the central area of the entire photo, not object segmentation.
+        crop = rgb.crop((w // 4, h // 4, max(w // 4 + 1, w * 3 // 4), max(h // 4 + 1, h * 3 // 4)))
+        color = '#' + ''.join(f'{max(0, min(255, round(v))):02x}' for v in ImageStat.Stat(crop).mean[:3])
+        return {'center_color': color}
 
 
 
@@ -137,7 +162,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.valid_host() or self.headers.get('Origin', '') != f'http://{host}':
             self.api_result(403, {'error': 'invalid origin'})
             return
-        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/knowledge', '/api/house-learning'):
+        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/image-analyze', '/api/knowledge', '/api/house-learning'):
             self.api_result(404, {'error': 'unknown endpoint'})
             return
         if self.headers.get_content_type() != 'application/json':
@@ -165,6 +190,20 @@ class Handler(SimpleHTTPRequestHandler):
                 if not isinstance(response, dict) or 'query' not in response:
                     raise ValueError('invalid connectivity response')
                 self.api_result(200, {'online': True})
+                return
+            if self.path == '/api/image-analyze':
+                if not isinstance(payload.get('url'), str) or not good_thumb(payload['url']) or not payload['url'].startswith('https://upload.wikimedia.org/wikipedia/commons/thumb/') or '/240px-' not in payload['url'] or len(payload['url']) > 1200:
+                    self.api_result(400, {'error': 'invalid thumbnail'})
+                    return
+                try:
+                    result = analyze_reference_image(payload['url'])
+                except RuntimeError:
+                    self.api_result(503, {'error': 'missing_pillow'})
+                    return
+                except Exception:
+                    self.api_result(502, {'error': 'image_analysis_failed'})
+                    return
+                self.api_result(200, result)
                 return
             query = payload.get('query')
             if not isinstance(query, str) or not query.strip() or len(query) > 400:

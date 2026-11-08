@@ -127,7 +127,7 @@ function validateCommandWords(text: string, verb: RegExp, action: string): numbe
 }
 
 /** Apply one supported command, or throw without changing the original world. */
-export function editWorldByText(plan: WorldPlan, selection: string[], command: string, shapeModel?: ShapeModel): WorldEditResult {
+export function editWorldByText(plan: WorldPlan, selection: string[], command: string, shapeModel?: ShapeModel, referenceColor?: string): WorldEditResult {
   const text = normalizeAssetText(command.trim().replace(/\s+/g, ' '));
   if (!text || text.length > 400) throw new Error('اكتب أمراً واحداً لا يتجاوز 400 حرف.');
   const verbs: [RegExp, 'add' | 'delete' | 'grow' | 'shrink' | 'color' | 'move'][] = [
@@ -179,7 +179,8 @@ export function editWorldByText(plan: WorldPlan, selection: string[], command: s
     for (let i = 0; i < item.count; i++) {
       const base = asset.create(rng, [0, 0, 0]);
       const shaped = shapeModel ? applyShapeModel(base, shapeModel, rng) : base;
-      const object = withSize(shaped, item.size);
+      const colored = shaped.kind === 'building' && shaped.variant === 'house' && referenceColor && /^#[0-9a-f]{6}$/i.test(referenceColor) ? { ...shaped, color: referenceColor } : shaped;
+      const object = withSize(colored, item.size);
       const position = place(plan, object, ledger, rng, direction, anchor);
       if (!position) throw new Error('لم أجد مساحة آمنة لكل العناصر المطلوبة؛ لم يتغير العالم.');
       const placed: WorldObject = { ...object, transform: { ...object.transform, position }, meta: { ...object.meta, status: 'edited' } };

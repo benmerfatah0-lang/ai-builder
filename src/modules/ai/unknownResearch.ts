@@ -2,6 +2,7 @@ import { findAssetMentions, normalizeAssetText, parseCountToken } from './assetR
 import { searchImageReferences, searchWikiArticles } from './onlineInterpreter';
 import type { ImageReference } from './imageReferences';
 import type { WikiArticle } from './wikiReference';
+import type { Approximation } from './referenceUnderstanding';
 
 // These are grammar words, supported modifiers and existing environment cues, not a general language model.
 const canonical = (word: string) => word.replace(/ة/g, 'ه');
@@ -64,7 +65,7 @@ export interface TopicResearch {
   wikiError: string | null;
   imageError: string | null;
 }
-export interface ResearchReport { topics: TopicResearch[]; truncated: boolean }
+export interface ResearchReport { topics: TopicResearch[]; truncated: boolean; approximation?: Approximation }
 export async function researchUnknown(prompt: string): Promise<ResearchReport> {
   const { terms, truncated } = unknownTopics(prompt);
   const topics = await Promise.all(terms.map(async (term): Promise<TopicResearch> => {

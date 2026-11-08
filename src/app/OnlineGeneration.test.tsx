@@ -45,6 +45,101 @@ describe('lightweight local planning interface', () => {
     expect(window.localStorage.getItem('worldforge-wiki-notebook-v1')).toBeNull();
     expect(window.localStorage.getItem('worldforge-image-references-v1')).toBeNull();
   }, 20000);
+  it('uses an exact article definition and thumbnail color to build an approximate house', async () => {
+    const image = { title: 'File:Hut.jpg', url: 'https://commons.wikimedia.org/wiki/File:Hut.jpg', thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Hut.jpg/240px-Hut.jpg', author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' };
+    const mock = vi.fn(async (url: string) => {
+      if (url === '/api/online') return new Response('{"online":true}');
+      if (url === '/api/search') return new Response(JSON.stringify({results: [{ title: 'كوخ', url: 'https://ar.wikipedia.org/wiki/كوخ', content: 'الكوخ هو منزل صغير.' }]}));
+      if (url === '/api/image-search') return new Response(JSON.stringify({ results: [image] }));
+      if (url === '/api/image-analyze') return new Response('{"center_color":"#a04020"}');
+      return new Response('{}');
+    });
+    vi.stubGlobal('fetch', mock);
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'كوخ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    expect(await screen.findByText(/استُخدم كلون البيت/)).toBeTruthy();
+    expect(screen.getByText('#a04020')).toBeTruthy();
+    expect(screen.getByText(/ممثّل ببيت تقريبي|ممثل ببيت تقريبي/)).toBeTruthy();
+    expect(mock.mock.calls.some(([url]) => url === '/api/image-analyze')).toBe(true);
+    fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
+  }, 20000);
+  it('adds an inferred house by text and keeps the addition undoable', async () => {
+    const image = { title: 'File:Hut.jpg', url: 'https://commons.wikimedia.org/wiki/File:Hut.jpg', thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Hut.jpg/240px-Hut.jpg', author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' };
+    const mock = vi.fn(async (url: string) => {
+      if (url === '/api/online') return new Response('{"online":true}');
+      if (url === '/api/search') return new Response(JSON.stringify({ results: [{ title: 'كوخ', url: 'https://ar.wikipedia.org/wiki/كوخ', content: 'كوخ هو منزل صغير.' }] }));
+      if (url === '/api/image-search') return new Response(JSON.stringify({ results: [image] }));
+      if (url === '/api/image-analyze') return new Response('{"center_color":"#a04020"}');
+      return new Response('{}');
+    });
+    vi.stubGlobal('fetch', mock);
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'شجرة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
+    fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف كوخ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
+    expect(await screen.findByText(/أُضيف «كوخ» كنموذج بيت تقريبي/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: /Undo \(Ctrl\/Cmd\+Z\)/ }));
+    expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
+  }, 20000);
+  it('does not overwrite a world changed while an image is being analyzed', async () => {
+    const image = { title: 'File:Hut.jpg', url: 'https://commons.wikimedia.org/wiki/File:Hut.jpg', thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Hut.jpg/240px-Hut.jpg', author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' };
+    let finish: ((response: Response) => void) | undefined;
+    const delayed = new Promise<Response>((resolve) => { finish = resolve; });
+    const mock = vi.fn(async (url: string) => {
+      if (url === '/api/online') return new Response('{"online":true}');
+      if (url === '/api/search') return new Response(JSON.stringify({ results: [{ title: 'كوخ', url: 'https://ar.wikipedia.org/wiki/كوخ', content: 'الكوخ هو منزل.' }] }));
+      if (url === '/api/image-search') return new Response(JSON.stringify({ results: [image] }));
+      if (url === '/api/image-analyze') return delayed;
+      return new Response('{}');
+    });
+    vi.stubGlobal('fetch', mock);
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'كوخ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    await waitFor(() => expect(mock.mock.calls.some(([url]) => url === '/api/image-analyze')).toBe(true));
+    fireEvent.change(screen.getByLabelText('World name'), { target: { value: 'Preserve my edit' } });
+    fireEvent.blur(screen.getByLabelText('World name'));
+    finish!(new Response('{"center_color":"#a04020"}'));
+    expect((await screen.findByRole('alert')).textContent).toContain('تغيّر العالم أثناء البحث');
+    expect((screen.getByLabelText('World name') as HTMLInputElement).value).toBe('Preserve my edit');
+    expect(screen.queryByText('World generated')).toBeNull();
+  }, 20000);
+  it('does not apply a delayed approximation after the edit command changes', async () => {
+    const image = { title: 'File:Hut.jpg', url: 'https://commons.wikimedia.org/wiki/File:Hut.jpg', thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Hut.jpg/240px-Hut.jpg', author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' };
+    let finish: ((response: Response) => void) | undefined;
+    const delayed = new Promise<Response>((resolve) => { finish = resolve; });
+    const mock = vi.fn(async (url: string) => {
+      if (url === '/api/online') return new Response('{"online":true}');
+      if (url === '/api/search') return new Response(JSON.stringify({ results: [{ title: 'كوخ', url: 'https://ar.wikipedia.org/wiki/كوخ', content: 'كوخ هو منزل صغير.' }] }));
+      if (url === '/api/image-search') return new Response(JSON.stringify({ results: [image] }));
+      if (url === '/api/image-analyze') return delayed;
+      return new Response('{}');
+    });
+    vi.stubGlobal('fetch', mock);
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'شجرة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
+    fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف كوخ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
+    await waitFor(() => expect(mock.mock.calls.some(([url]) => url === '/api/image-analyze')).toBe(true));
+    fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف صخرة' } });
+    finish!(new Response('{"center_color":"#a04020"}'));
+    expect(await screen.findByText(/تغيّر العالم أو الأمر أثناء البحث/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
+  }, 20000);
   it('shows failures from both lookup services instead of claiming success', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url === '/api/online') return new Response('{"online":true}');

@@ -13,9 +13,10 @@ async function postJSON(path: string, body: object): Promise<unknown> {
   try {
     const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal });
     if (!response.ok) {
-      if ((response.status === 404 || response.status === 501) && (path === '/api/image-search' || response.headers.get('X-World-Builder-Proxy') !== '1')) {
+      if ((response.status === 404 || response.status === 501) && (['/api/image-search', '/api/image-analyze'].includes(path) || response.headers.get('X-World-Builder-Proxy') !== '1')) {
         throw new Error('شغّل خادم الهاتف الجديد world-builder-server.py بدلاً من الخادم القديم.');
       }
+      if (path === '/api/image-analyze') throw new Error(response.status === 503 ? 'تحليل الصور يحتاج python-pillow في Termux.' : 'تعذّر تحليل الصورة المصغرة.');
       throw new Error(path === '/api/image-search' ? 'تعذّر البحث في Wikimedia Commons. تحقّق من الإنترنت ثم حاول مجدداً.' : 'تعذّر الاتصال بويكيبيديا. تحقّق من الإنترنت ثم حاول مجدداً.');
     }
     return await response.json();
@@ -34,6 +35,15 @@ export async function searchWikiArticles(query: string): Promise<WikiArticle[]> 
   if (!parsed.success) throw new Error('استجابت ويكيبيديا ببيانات بحث غير صالحة.');
   return parsed.data.results.filter((item) => item.title.trim() && safeWikiUrl(item.url)).slice(0, 4)
     .map((item) => ({ title: item.title.slice(0, 120), url: item.url, content: item.content.slice(0, 1200) }));
+}
+
+/** Analyze one Commons thumbnail in Termux; the server never retains image bytes. */
+export async function analyzeImageReference(image: ImageReference): Promise<string> {
+  const safe = imageReferenceSchema.parse(image);
+  const response = await postJSON('/api/image-analyze', { url: safe.thumbnail });
+  const parsed = z.object({ center_color: z.string().regex(/^#[0-9a-f]{6}$/) }).safeParse(response);
+  if (!parsed.success) throw new Error('تعذّر تحليل بيانات الصورة.');
+  return parsed.data.center_color;
 }
 
 /** Search Commons without downloading originals or accepting arbitrary client URLs. */

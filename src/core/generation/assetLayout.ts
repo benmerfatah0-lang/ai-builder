@@ -74,7 +74,8 @@ export function buildAssetLayout(
           : baseObject;
         const shaped = intent.shapeModel ? applyShapeModel(themed, intent.shapeModel, rng) : themed;
         const factors = request.size === 'small' ? [0.7, 0.7, 0.7] : request.size === 'large' ? [1.4, 1.4, 1.4] : request.size === 'tall' ? [1, 1.4, 1] : request.size === 'wide' ? [1.4, 1, 1.4] : [1, 1, 1];
-        const object: WorldObject = { ...shaped, transform: { ...shaped.transform, scale: shaped.transform.scale.map((value, axis) => value * factors[axis]!) as [number, number, number] } };
+        const colored = shaped.kind === 'building' && shaped.variant === 'house' && request.referenceColor && /^#[0-9a-f]{6}$/i.test(request.referenceColor) ? { ...shaped, color: request.referenceColor } : shaped;
+        const object: WorldObject = { ...colored, transform: { ...shaped.transform, scale: shaped.transform.scale.map((value, axis) => value * factors[axis]!) as [number, number, number] } };
         let position: [number, number, number] | undefined;
         for (let attempt = 0; attempt < 120; attempt += 1) {
           if (request.relation?.direction === 'near' && attempt >= 48) break;

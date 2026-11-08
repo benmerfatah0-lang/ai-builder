@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { researchUnknown, unknownTopics, type ResearchReport } from '../../ai/unknownResearch';
 import { ResearchResults } from './ResearchResults';
+import { analyzeApproximation, hasExplicitColor, matchHouseApproximation } from '../../ai/referenceUnderstanding';
 import { editWorldByText } from '../../ai/worldEdit';
 import type { ShapeModel } from '../../ai/shapeLearner';
 import { useEditor } from '../store';
@@ -13,14 +14,34 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
   const [research, setResearch] = useState<ResearchReport | null>(null);
   const [busy, setBusy] = useState(false);
   const sequence = useRef(0);
+  const currentEditor = useRef(state); currentEditor.current = state;
+  const currentCommand = useRef(command); currentCommand.current = command;
   useEffect(() => () => { sequence.current++; }, []);
   const lookup = async (text: string) => {
     const current = ++sequence.current;
+    const original = currentEditor.current;
     setResearch(null);
     if (!unknownTopics(text).terms.length) { setBusy(false); return; }
     setBusy(true);
     const report = await researchUnknown(text);
-    if (current === sequence.current) { setResearch(report); setBusy(false); }
+    if (current !== sequence.current) return;
+    // Only additions can be approximated: never reinterpret delete/move commands.
+    const isAdd = /^(?:اضف|ضع|add)\s/iu.test(text.trim().replace(/[أإآ]/g, 'ا'));
+    const match = isAdd ? matchHouseApproximation(text, report) : null;
+    if (!match) { setResearch(report); setBusy(false); return; }
+    const approximation = await analyzeApproximation(match);
+    if (current !== sequence.current) return;
+    setResearch({ ...report, approximation }); setBusy(false);
+    if (currentEditor.current.plan !== original.plan || currentEditor.current.selection.join('\0') !== original.selection.join('\0') || currentCommand.current !== text) {
+      setFeedback({ text: 'تغيّر العالم أو الأمر أثناء البحث؛ لم يُطبّق التعديل. أعد المحاولة.', error: true }); return;
+    }
+    try {
+      const edit = editWorldByText(original.plan, original.selection, approximation.rewritten, shapeModel, !hasExplicitColor(text) ? approximation.color : undefined);
+      dispatch({ type: 'replacePlan', plan: edit.plan });
+      setResearch({ ...report, approximation: { ...approximation, applied: true, colorApplied: Boolean(approximation.color && !hasExplicitColor(text)) } });
+      setFeedback({ text: `أُضيف «${match.term}» كنموذج بيت تقريبي من المقالة. ${edit.message} يمكنك التراجع من Undo.`, error: false });
+      setCommand('');
+    } catch (error) { setFeedback({ text: error instanceof Error ? error.message : 'تعذّر تطبيق التقريب؛ لم يتغير العالم.', error: true }); }
   };
   const apply = () => {
     try {

@@ -144,6 +144,32 @@ class PhoneServerTests(unittest.TestCase):
         with patch.object(phone_server, 'build_opener', return_value=Opener(Reply('image/png', b'png'))):
             self.assertEqual(phone_server.get_image(request, timeout=1), b'png')
 
+    @unittest.skipIf(__import__('house_learner').Image is None, 'Pillow needed for image analysis')
+    @patch.object(phone_server, 'get_image')
+    def test_analyzes_bounded_thumbnail_color_without_storing_it(self, downloader):
+        from PIL import Image
+        import io
+        image = Image.new('RGB', (64, 64), (0, 0, 255))
+        for y in range(16, 48):
+            for x in range(16, 48): image.putpixel((x, y), (190, 40, 30))
+        raw = io.BytesIO(); image.save(raw, format='PNG'); downloader.return_value = raw.getvalue()
+        url = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/a.png/240px-a.png'
+        status, body = self.request('/api/image-analyze', body=json.dumps({'url': url}).encode())
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {'center_color': '#be281e'})
+        self.assertEqual(downloader.call_args.args[0].full_url, url)
+        self.assertEqual(self.request('/api/image-analyze', body=b'{"url":"https://evil.example/a"}')[0], 400)
+        self.assertEqual(self.request('/api/image-analyze', origin='https://evil.example', body=json.dumps({'url': url}).encode())[0], 403)
+        downloader.return_value = b'not an image'
+        self.assertEqual(self.request('/api/image-analyze', body=json.dumps({'url': url}).encode())[0], 502)
+
+    @patch.object(phone_server, 'analyze_reference_image', side_effect=RuntimeError('missing pillow'))
+    def test_image_analysis_explains_missing_pillow(self, analyzer):
+        url = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/a.png/240px-a.png'
+        status, body = self.request('/api/image-analyze', body=json.dumps({'url': url}).encode())
+        self.assertEqual(status, 503)
+        self.assertEqual(json.loads(body)['error'], 'missing_pillow')
+
     def test_redirects_are_not_followed(self):
         self.assertIsNone(phone_server.NoRedirects().redirect_request(None, None, 302, '', {}, 'https://example.com'))
 

@@ -29,6 +29,17 @@ describe('atomic editing with a small, explicit vocabulary', () => {
     expect(message).toContain('2');
     expect(validateWorldPlan(result).success).toBe(true);
   });
+  it('uses a validated thumbnail-derived color only on the newly added house', () => {
+    const plan = base();
+    const result = editWorldByText(plan, [], 'أضف بيت', undefined, '#a04020').plan;
+    expect(result.objects.slice(0, 2)).toEqual(plan.objects);
+    const object = result.objects.at(-1)!;
+    expect(object.kind === 'building' && object.color).toBe('#a04020');
+    expect(validateWorldPlan(result).success).toBe(true);
+    const invalid = editWorldByText(plan, [], 'أضف بيت', undefined, 'javascript:bad').plan;
+    const invalidObject = invalid.objects.at(-1)!;
+    expect(invalidObject.kind === 'building' && invalidObject.color).not.toBe('javascript:bad');
+  });
   it('colors, resizes, moves and deletes exactly one matched object', () => {
     const plan = base();
     const house = plan.objects[0]!;
