@@ -69,6 +69,14 @@ existing objects; use “Snap to ground” in the inspector.
 
 ---
 
+A cloud-generated `primitive.generated-mesh` embeds bounded, base64-encoded
+indexed triangles and vertex colors in `meta.generatedMesh`; it does not embed
+executable code or remote URLs. Runtime validation additionally checks binary
+lengths, finite coordinates, index ranges and an aggregate project-size limit,
+which are not fully expressible in the JSON Schema. Older builds do not support
+this primitive. Textures, animations and compressed glTF extensions are not
+preserved by the experimental cloud import.
+
 ## `WorldGroup`
 
 A transform-only container used to organise the scene and move several nodes

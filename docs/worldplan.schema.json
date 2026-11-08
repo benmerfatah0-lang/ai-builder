@@ -629,6 +629,31 @@
                     ],
                     "additionalProperties": false
                   },
+                  "generatedMesh": {
+                    "type": "object",
+                    "properties": {
+                      "vertices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 120000
+                      },
+                      "indices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 750000
+                      },
+                      "data": {
+                        "type": "string",
+                        "maxLength": 7000000
+                      }
+                    },
+                    "required": [
+                      "vertices",
+                      "indices",
+                      "data"
+                    ],
+                    "additionalProperties": false
+                  },
                   "desertHouse": {
                     "type": "boolean"
                   },
@@ -722,6 +747,7 @@
                   "torus",
                   "plane",
                   "photo-model",
+                  "generated-mesh",
                   "mine-entrance",
                   "mine-cart",
                   "pickaxe",
@@ -1113,6 +1139,31 @@
                       "height",
                       "cells",
                       "source"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "generatedMesh": {
+                    "type": "object",
+                    "properties": {
+                      "vertices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 120000
+                      },
+                      "indices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 750000
+                      },
+                      "data": {
+                        "type": "string",
+                        "maxLength": 7000000
+                      }
+                    },
+                    "required": [
+                      "vertices",
+                      "indices",
+                      "data"
                     ],
                     "additionalProperties": false
                   },
@@ -1569,6 +1620,31 @@
                     ],
                     "additionalProperties": false
                   },
+                  "generatedMesh": {
+                    "type": "object",
+                    "properties": {
+                      "vertices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 120000
+                      },
+                      "indices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 750000
+                      },
+                      "data": {
+                        "type": "string",
+                        "maxLength": 7000000
+                      }
+                    },
+                    "required": [
+                      "vertices",
+                      "indices",
+                      "data"
+                    ],
+                    "additionalProperties": false
+                  },
                   "desertHouse": {
                     "type": "boolean"
                   },
@@ -2011,6 +2087,31 @@
                       "height",
                       "cells",
                       "source"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "generatedMesh": {
+                    "type": "object",
+                    "properties": {
+                      "vertices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 120000
+                      },
+                      "indices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 750000
+                      },
+                      "data": {
+                        "type": "string",
+                        "maxLength": 7000000
+                      }
+                    },
+                    "required": [
+                      "vertices",
+                      "indices",
+                      "data"
                     ],
                     "additionalProperties": false
                   },
@@ -2467,6 +2568,31 @@
                     ],
                     "additionalProperties": false
                   },
+                  "generatedMesh": {
+                    "type": "object",
+                    "properties": {
+                      "vertices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 120000
+                      },
+                      "indices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 750000
+                      },
+                      "data": {
+                        "type": "string",
+                        "maxLength": 7000000
+                      }
+                    },
+                    "required": [
+                      "vertices",
+                      "indices",
+                      "data"
+                    ],
+                    "additionalProperties": false
+                  },
                   "desertHouse": {
                     "type": "boolean"
                   },
@@ -2901,6 +3027,31 @@
                       "height",
                       "cells",
                       "source"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "generatedMesh": {
+                    "type": "object",
+                    "properties": {
+                      "vertices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 120000
+                      },
+                      "indices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 750000
+                      },
+                      "data": {
+                        "type": "string",
+                        "maxLength": 7000000
+                      }
+                    },
+                    "required": [
+                      "vertices",
+                      "indices",
+                      "data"
                     ],
                     "additionalProperties": false
                   },
@@ -3379,6 +3530,31 @@
                     ],
                     "additionalProperties": false
                   },
+                  "generatedMesh": {
+                    "type": "object",
+                    "properties": {
+                      "vertices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 120000
+                      },
+                      "indices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 750000
+                      },
+                      "data": {
+                        "type": "string",
+                        "maxLength": 7000000
+                      }
+                    },
+                    "required": [
+                      "vertices",
+                      "indices",
+                      "data"
+                    ],
+                    "additionalProperties": false
+                  },
                   "desertHouse": {
                     "type": "boolean"
                   },
@@ -3842,6 +4018,31 @@
                       "height",
                       "cells",
                       "source"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "generatedMesh": {
+                    "type": "object",
+                    "properties": {
+                      "vertices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 120000
+                      },
+                      "indices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 750000
+                      },
+                      "data": {
+                        "type": "string",
+                        "maxLength": 7000000
+                      }
+                    },
+                    "required": [
+                      "vertices",
+                      "indices",
+                      "data"
                     ],
                     "additionalProperties": false
                   },
@@ -4325,6 +4526,31 @@
                     ],
                     "additionalProperties": false
                   },
+                  "generatedMesh": {
+                    "type": "object",
+                    "properties": {
+                      "vertices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 120000
+                      },
+                      "indices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 750000
+                      },
+                      "data": {
+                        "type": "string",
+                        "maxLength": 7000000
+                      }
+                    },
+                    "required": [
+                      "vertices",
+                      "indices",
+                      "data"
+                    ],
+                    "additionalProperties": false
+                  },
                   "desertHouse": {
                     "type": "boolean"
                   },
@@ -4794,6 +5020,31 @@
                       "height",
                       "cells",
                       "source"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "generatedMesh": {
+                    "type": "object",
+                    "properties": {
+                      "vertices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 120000
+                      },
+                      "indices": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 750000
+                      },
+                      "data": {
+                        "type": "string",
+                        "maxLength": 7000000
+                      }
+                    },
+                    "required": [
+                      "vertices",
+                      "indices",
+                      "data"
                     ],
                     "additionalProperties": false
                   },

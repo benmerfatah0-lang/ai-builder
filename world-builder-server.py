@@ -7,6 +7,8 @@ import json
 import os
 import re
 import sys
+import threading
+import time
 from functools import partial
 from wiki_learner import WikiLearner
 from house_learner import HouseLearner, good_thumb, good_source, plain, LICENSE_PATTERN
@@ -19,6 +21,9 @@ from urllib.request import Request, build_opener, HTTPRedirectHandler
 MAX_REQUEST = 64 * 1024
 MAX_RESPONSE = 2 * 1024 * 1024
 USER_AGENT = 'AIWorldBuilder/1.0 (https://github.com/benmerfatah0-lang/ai-builder)'
+CLOUD_3D_URL = 'https://hysts-shap-e.hf.space'
+CLOUD_3D_LOCK = threading.Lock()
+MAX_CLOUD_3D = 12_000_000
 ONLINE_URL = 'https://ar.wikipedia.org/w/api.php?action=query&meta=siteinfo&siprop=general&format=json'
 COMMONS_API = 'https://commons.wikimedia.org/w/api.php?'
 DICTIONARY_API = 'https://en.wiktionary.org/api/rest_v1/page/definition/'
@@ -220,6 +225,42 @@ def get_image(request, timeout):
         return body
 
 
+def fetch_cloud_3d(prompt):
+    """Anonymous Shap-E Gradio queue, fixed upstream. No returned URL is trusted blindly."""
+    opener = build_opener(NoRedirects())
+    headers = {'User-Agent': USER_AGENT, 'Content-Type': 'application/json'}
+    body = json.dumps({'prompt': prompt, 'seed': 0, 'guidance_scale': 15, 'num_inference_steps': 64}).encode('utf-8')
+    request = Request(CLOUD_3D_URL + '/gradio_api/call/v2/text-to-3d', data=body, headers=headers, method='POST')
+    with opener.open(request, timeout=35) as response:
+        data = json.loads(response.read(16_385))
+    event_id = data.get('event_id') if isinstance(data, dict) else None
+    if not isinstance(event_id, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}', event_id):
+        raise ValueError('invalid cloud event')
+    request = Request(CLOUD_3D_URL + '/gradio_api/call/text-to-3d/' + event_id, headers={'User-Agent': USER_AGENT})
+    deadline, total, event, result = time.monotonic() + 600, 0, '', None
+    with opener.open(request, timeout=120) as response:
+        while time.monotonic() < deadline:
+            line = response.readline(65537)
+            total += len(line)
+            if not line or len(line) > 65536 or total > 1_000_000: break
+            if line.startswith(b'event:'):
+                event = line[6:].strip().decode('ascii', 'replace')
+            elif line.startswith(b'data:') and event == 'complete':
+                result = json.loads(line[5:].strip())
+                break
+            elif line.startswith(b'data:') and event == 'error':
+                raise ValueError('cloud generation failed')
+    item = result[0] if isinstance(result, list) and result else None
+    url = item.get('url') if isinstance(item, dict) else None
+    if not isinstance(url, str) or not re.fullmatch(r'https://hysts-shap-e\.hf\.space/gradio_api/file=/tmp/gradio/[A-Za-z0-9_./-]+\.glb', url) or '..' in url.split('/'):
+        raise ValueError('invalid cloud model URL')
+    with opener.open(Request(url, headers={'User-Agent': USER_AGENT}), timeout=120) as response:
+        data = response.read(MAX_CLOUD_3D + 1)
+    if len(data) < 24 or len(data) > MAX_CLOUD_3D or data[:4] != b'glTF':
+        raise ValueError('invalid or oversized cloud model')
+    return data
+
+
 VISION_FILES = frozenset({
     '/vision-worker.js', '/vision/scene.onnx', '/vision/ort.wasm.min.js',
     '/vision/ort-wasm-simd-threaded.mjs', '/vision/ort-wasm-simd-threaded.wasm',
@@ -309,7 +350,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.valid_host() or self.headers.get('Origin', '') != f'http://{host}':
             self.api_result(403, {'error': 'invalid origin'})
             return
-        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/image-analyze', '/api/image-pixels', '/api/translate-en', '/api/wiki-article', '/api/dictionary', '/api/knowledge', '/api/house-learning'):
+        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/image-analyze', '/api/image-pixels', '/api/translate-en', '/api/wiki-article', '/api/dictionary', '/api/knowledge', '/api/house-learning', '/api/text-to-3d'):
             self.api_result(404, {'error': 'unknown endpoint'})
             return
         if self.headers.get_content_type() != 'application/json':
@@ -326,6 +367,27 @@ class Handler(SimpleHTTPRequestHandler):
             self.api_result(400, {'error': 'invalid request'})
             return
         try:
+            if self.path == '/api/text-to-3d':
+                query = payload.get('query')
+                if set(payload) != {'query'} or not isinstance(query, str) or not query.strip() or len(query) > 400:
+                    self.api_result(400, {'error': 'invalid prompt'})
+                    return
+                if not CLOUD_3D_LOCK.acquire(blocking=False):
+                    self.api_result(429, {'error': 'busy'})
+                    return
+                try:
+                    model = fetch_cloud_3d(query.strip())
+                finally:
+                    CLOUD_3D_LOCK.release()
+                self.send_response(200)
+                self.send_header('Content-Type', 'model/gltf-binary')
+                self.send_header('Content-Length', str(len(model)))
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('X-World-Builder-Proxy', '1')
+                self.end_headers()
+                self.wfile.write(model)
+                return
             if self.path == '/api/house-learning':
                 self.api_result(200, self.server.house_learner.snapshot())
                 return

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { generatedMeshValid, MAX_GENERATED_DATA, MAX_GENERATED_INDICES, MAX_GENERATED_VERTICES } from './generatedMesh';
 import { EXPANDED_ASSET_IDS } from '../assets/expandedDefinitions';
 
 /**
@@ -169,6 +170,7 @@ export const objectMetaSchema = z.object({
   seed: z.number().int().min(0).max(4294967295).optional(),
   /** Low-resolution photo-based silhouette with a guessed symmetrical depth. */
   photoModel: photoModelSchema.optional(),
+  generatedMesh: z.object({ vertices: z.number().int().min(3).max(MAX_GENERATED_VERTICES), indices: z.number().int().min(3).max(MAX_GENERATED_INDICES), data: z.string().max(MAX_GENERATED_DATA) }).strict().refine(generatedMeshValid, 'Invalid generated triangle geometry').optional(),
   /** A flat-roof desert house variation used by the mining town. */
   desertHouse: z.boolean().optional(),
   /** Parameters of an app-generated trainable procedural design. */
@@ -196,7 +198,7 @@ export const primitiveKindSchema = z.enum([
   'cone',
   'torus',
   'plane',
-  'photo-model',
+  'photo-model', 'generated-mesh',
   'mine-entrance', 'mine-cart', 'pickaxe', 'excavator', 'chest',
   ...EXPANDED_ASSET_IDS,
 ]);
@@ -332,12 +334,18 @@ export const worldPlanSchema = z.object({
   objects: z.array(worldObjectSchema).max(MAX_WORLD_OBJECTS),
 }).superRefine((plan, ctx) => {
   let cells = 0;
+  let generatedSize = 0;
   for (const object of plan.objects) {
     const photo = object.meta.photoModel;
     const isPhoto = object.kind === 'primitive' && object.primitive === 'photo-model';
     if (isPhoto !== Boolean(photo)) ctx.addIssue({ code: 'custom', path: ['objects'], message: 'Photo models must have matching photo geometry and metadata.' });
     if (photo) cells += photo.cells.length;
+    const generated = object.meta.generatedMesh;
+    const isGenerated = object.kind === 'primitive' && object.primitive === 'generated-mesh';
+    if (isGenerated !== Boolean(generated)) ctx.addIssue({ code: 'custom', path: ['objects'], message: 'Generated meshes must have matching geometry data.' });
+    if (generated) generatedSize += generated.data.length;
   }
+  if (generatedSize > MAX_GENERATED_DATA) ctx.addIssue({ code: 'custom', path: ['objects'], message: 'Generated mesh data exceeds the mobile project limit.' });
   if (cells > MAX_PHOTO_CELLS) ctx.addIssue({ code: 'custom', path: ['objects'], message: 'Too many photo model cells for a mobile project.' });
 });
 

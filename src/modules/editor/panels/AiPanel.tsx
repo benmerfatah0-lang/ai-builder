@@ -11,6 +11,7 @@ import { ReferenceSceneWorkflow } from './ReferenceSceneWorkflow';
 import { type WorldPlan } from '../../../core/world-plan/schema';
 import { correctBuildSpelling } from '../../ai/spelling';
 import { unknownTopics } from '../../ai/unknownResearch';
+import { generatedGlbToWorld, requestGeneratedGlb } from '../../ai/generatedMesh';
 import { interpretPromptLocally } from '../../ai/promptInterpreter';
 import { seedFromPrompt } from '../../../core/world-plan/factory';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
@@ -69,18 +70,44 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   const [scale, setScale] = useState<WorldScale | 'auto'>('auto');
   const [density, setDensity] = useState<WorldDensity | 'auto'>('auto');
   const [generating, setGenerating] = useState(false);
+  const [cloudRunning, setCloudRunning] = useState(false);
+  const [cloudResult, setCloudResult] = useState(false);
+  const cloudController = useRef<AbortController | null>(null);
+  useEffect(() => () => cloudController.current?.abort(), []);
   const [result, setResult] = useState<PromptInterpretation | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
   const [stats, setStats] = useState<{ objects: number; groups: number } | null>(null);
   const [generationError, setGenerationError] = useState('');
+  const generateCloud = async () => {
+    const text = prompt.trim();
+    if (!text || generating || text.length > 400) return;
+    const originalPlan = state.plan;
+    const controller = new AbortController(); cloudController.current = controller;
+    const timer = window.setTimeout(() => controller.abort(), 600_000);
+    setReferenceFlow(null); setResult(null); setCloudResult(false); setNotes([]); setStats(null); setGenerationError(''); setGenerating(true); setCloudRunning(true);
+    try {
+      const glb = await requestGeneratedGlb(text, controller.signal);
+      if (!alive.current || controller.signal.aborted || currentPlan.current !== originalPlan || currentPrompt.current.trim() !== text) throw new Error('تغيّر العالم أو الوصف؛ لم يُنشأ شيء.');
+      const plan = await generatedGlbToWorld(glb, text, variant === 'forge' ? worldName : undefined);
+      if (!alive.current || controller.signal.aborted || currentPlan.current !== originalPlan || currentPrompt.current.trim() !== text) throw new Error('تغيّر العالم أو الوصف؛ لم يُنشأ شيء.');
+      dispatch({type:'replacePlan',plan});
+      dispatch({type:'select',ids:[plan.objects[0]!.id]});
+      setCloudResult(true); notify('أُنشئ مجسم جديد؛ يمكن التراجع عنه.', 'success');
+    } catch (error) {
+      if (alive.current) {
+        const message = controller.signal.aborted ? 'توقف الانتظار؛ قد يستمر الطلب على الخادم السحابي حتى ينتهي.' : error instanceof Error ? error.message : 'تعذّر التوليد السحابي.';
+        setGenerationError(message); notify(message,'danger');
+      }
+    } finally { window.clearTimeout(timer); if(cloudController.current===controller) cloudController.current=null; if(alive.current) {setGenerating(false);setCloudRunning(false);} }
+  };
   const generate = async (useReference = false) => {
     const text = prompt.trim();
     if (!text || generating) return;
     if (useReference) {
-      setResult(null);setNotes([]);setStats(null);
+      setResult(null);setCloudResult(false);setNotes([]);setStats(null);
       setReferenceFlow({prompt:text,plan:state.plan,id:++referenceSequence.current});setGenerationError('');return;
     }
-    setReferenceFlow(null);
+    setReferenceFlow(null); setCloudResult(false);
     const originalPlan = state.plan;
     setGenerationError('');setResult(null);setNotes([]);setStats(null);setGenerating(true);
     try {
@@ -155,7 +182,18 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
           {generating ? 'جاري إنشاء العالم…' : 'إنشاء بالوصف فقط'}
         </button>
       </div>
-      <p className="create-actions-hint" dir="rtl">«الوصف فقط» يبني محلياً دون بحث أو صور؛ اختر زر الصورة إذا أردت استعمالها.</p>
+      <p className="create-actions-hint" dir="rtl">«الوصف فقط» يبني محلياً بقواعد وعناصر محدودة؛ اختر زر الصورة إذا أردت استعمالها.</p>
+      <div dir="rtl" className="callout">
+        <div>
+          <strong>مجسّم جديد من الوصف (سحابي مجاني وتجريبي)</strong>
+          <p>يرسل الزر الوصف إلى خدمة Shap-E على Hugging Face؛ لا ترسل معلومات خاصة. ينشئ مجسّماً واحداً في عالم جديد بدلاً من تركيب مكتبة، لا مشهداً متعدد العناصر. الإنجليزية قد تعطي نتائج أفضل. المجسمات تقريبية وقد تفشل التفاصيل المعقدة. الخدمة مشتركة وقد تتوقف أو تنفد حصتها المجانية.</p>
+          <button type="button" className="btn btn-primary" disabled={!prompt.trim() || prompt.trim().length > 400 || generating} onClick={() => void generateCloud()}>{cloudRunning ? 'ينتظر التوليد السحابي…' : 'توليد مجسّم جديد من الوصف'}</button>
+          {cloudRunning && <button type="button" className="btn" onClick={() => cloudController.current?.abort()}>إيقاف الانتظار</button>}
+          {prompt.trim().length > 400 && <p>الحد الأقصى للتوليد السحابي 400 حرف.</p>}
+          {cloudRunning && <p role="status">قد يستغرق الانتظار عدة دقائق؛ إيقاف الانتظار لا يضمن إلغاء مهمة الخدمة.</p>}
+          {cloudResult && <div><p role="status">اكتمل المجسم. يمكنك تحريكه وحفظ العالم وتصديره، والتراجع عن استبدال العالم السابق.</p>{onOpenStudio && <button type="button" className="btn" onClick={onOpenStudio}>فتح العالم في المحرر ←</button>}</div>}
+        </div>
+      </div>
       {referenceFlow && <ReferenceSceneWorkflow key={referenceFlow.id} prompt={referenceFlow.prompt} basePlan={referenceFlow.plan} mode="create" canApply={()=>currentPrompt.current.trim()===referenceFlow.prompt} onCancel={()=>setReferenceFlow(null)} onApplied={()=>{setReferenceFlow(null);notify('أُنشئ المشهد؛ يمكن التراجع بـ Undo.','success');}} onOpenStudio={onOpenStudio}/>}
       {result && (
         <div className="ai-result">

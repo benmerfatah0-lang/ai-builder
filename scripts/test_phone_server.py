@@ -388,8 +388,63 @@ class PhoneServerTests(unittest.TestCase):
         self.assertEqual(status, 503)
         self.assertEqual(json.loads(body)['error'], 'missing_pillow')
 
+    def test_cloud_endpoint_requires_consentful_same_origin_and_never_falls_back(self):
+        prompt = json.dumps({'query': 'a copper robot'}).encode()
+        self.assertEqual(self.request('/api/text-to-3d', origin='https://evil.example', body=prompt)[0], 403)
+        self.assertEqual(self.request('/api/text-to-3d', body=b'{"query":"a", "url":"https://evil.example"}')[0], 400)
+        self.assertEqual(self.request('/api/text-to-3d', body=json.dumps({'query': 'x'*401}).encode())[0], 400)
+        with patch.object(phone_server, 'fetch_cloud_3d', return_value=b'glTF' + bytes(32)) as generate:
+            status, content = self.request('/api/text-to-3d', body=prompt)
+            self.assertEqual(status, 200)
+            self.assertEqual(content, b'glTF' + bytes(32))
+            generate.assert_called_once_with('a copper robot')
+        with patch.object(phone_server, 'fetch_cloud_3d', side_effect=ValueError('quota')):
+            self.assertEqual(self.request('/api/text-to-3d', body=prompt)[0], 502)
+        with phone_server.CLOUD_3D_LOCK:
+            self.assertEqual(self.request('/api/text-to-3d', body=prompt)[0], 429)
+
     def test_redirects_are_not_followed(self):
         self.assertIsNone(phone_server.NoRedirects().redirect_request(None, None, 302, '', {}, 'https://example.com'))
+
+
+class Cloud3DTests(unittest.TestCase):
+    def test_cloud_queue_download_is_fixed_host_and_bounded(self):
+        import io
+        model = b'glTF' + b'\0' * 40
+        completed = b'event: heartbeat\ndata: null\n\nevent: complete\ndata: [{"url":"https://hysts-shap-e.hf.space/gradio_api/file=/tmp/gradio/abc/result.glb"}]\n\n'
+        class FakeOpener:
+            def __init__(self): self.requests=[]
+            def open(self, req, timeout):
+                self.requests.append(req)
+                if len(self.requests)==1: return io.BytesIO(b'{"event_id":"good_123"}')
+                if len(self.requests)==2: return io.BytesIO(completed)
+                return io.BytesIO(model)
+        opener=FakeOpener()
+        with patch.object(phone_server, 'build_opener', return_value=opener):
+            self.assertEqual(phone_server.fetch_cloud_3d('a robot'), model)
+        self.assertEqual(opener.requests[0].full_url, phone_server.CLOUD_3D_URL + '/gradio_api/call/v2/text-to-3d')
+        self.assertEqual(json.loads(opener.requests[0].data)['prompt'], 'a robot')
+        self.assertTrue(all(req.full_url.startswith(phone_server.CLOUD_3D_URL + '/') for req in opener.requests))
+
+    def test_cloud_never_fetches_an_untrusted_result_url(self):
+        import io
+        class FakeOpener:
+            def __init__(self): self.n=0
+            def open(self, req, timeout):
+                self.n+=1
+                if self.n==1: return io.BytesIO(b'{"event_id":"123"}')
+                return io.BytesIO(b'event: complete\ndata: [{"url":"https://evil.example/result.glb"}]\n')
+        opener=FakeOpener()
+        with patch.object(phone_server, 'build_opener', return_value=opener):
+            with self.assertRaises(ValueError): phone_server.fetch_cloud_3d('robot')
+        self.assertEqual(opener.n, 2)
+
+    def test_cloud_does_not_follow_malicious_event_id(self):
+        import io
+        class FakeOpener:
+            def open(self, req, timeout): return io.BytesIO(b'{"event_id":"../../other"}')
+        with patch.object(phone_server, 'build_opener', return_value=FakeOpener()):
+            with self.assertRaises(ValueError): phone_server.fetch_cloud_3d('robot')
 
 
 if __name__ == '__main__':

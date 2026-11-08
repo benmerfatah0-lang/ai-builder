@@ -11,6 +11,7 @@ import type { WorldObject } from './schema';
 export const SUPPORTED_GEOMETRY: readonly string[] = [
   'primitive.box',
   'primitive.photo-model',
+  'primitive.generated-mesh',
   'primitive.sphere',
   'primitive.cylinder',
   'primitive.cone',

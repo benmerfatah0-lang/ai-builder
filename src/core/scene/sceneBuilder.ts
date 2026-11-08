@@ -17,6 +17,7 @@ import { createTerrainSampler } from '../../core/generation/terrain';
 import { isEffectivelyVisible } from '../../core/world-plan/hierarchy';
 import { addMesh, material, mergeStaticMeshes } from './kit';
 import { getSurfaceTexture } from './textures';
+import { buildGeneratedGeometry } from './generatedMesh';
 import { buildPhotoModelGeometry } from './photoModel';
 import { buildExpandedAsset } from './expandedAssets';
 import { buildMiningObject } from './miningObjects';
@@ -177,6 +178,13 @@ export function createWaterMesh(plan: WorldPlan): THREE.Mesh | null {
 function buildPrimitive(object: PrimitiveObject): THREE.Group {
   const expanded = buildExpandedAsset(object);
   if (expanded) return expanded;
+  if (object.primitive === 'generated-mesh' && object.meta.generatedMesh) {
+    const group = new THREE.Group();
+    const mesh = new THREE.Mesh(buildGeneratedGeometry(object.meta.generatedMesh), new THREE.MeshStandardMaterial({ color: object.color, vertexColors: true, roughness: .85 }));
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    group.add(mesh);
+    return group;
+  }
   if (object.primitive === 'photo-model' && object.meta.photoModel) {
     const group = new THREE.Group();
     const mesh = new THREE.Mesh(buildPhotoModelGeometry(object.meta.photoModel), new THREE.MeshStandardMaterial({ color: object.color, vertexColors: true, roughness: .85 }));
