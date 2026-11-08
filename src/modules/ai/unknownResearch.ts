@@ -26,7 +26,7 @@ const NEGATIONS = new Set(['بدون', 'دون', 'بلا', 'without', 'no']);
 
 /** Best-effort candidate extraction, including unknown nouns alongside known assets. */
 export function unknownTopics(prompt: string): { terms: string[]; truncated: boolean } {
-  const text = normalizeAssetText(prompt).slice(0, 400);
+  const text = normalizeAssetText(prompt).replace(/و(?=\d)/gu, 'و ');
   const mentions = findAssetMentions(text);
   const terms: string[] = [];
   let phrase: string[] = [];

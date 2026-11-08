@@ -6,6 +6,9 @@ import { photoModelDimensions } from '../../core/scene/photoModel';
 import { footprintFromObject, footprintFromRect, PlacementLedger } from '../../core/generation/placement';
 import { createTerrainSampler } from '../../core/generation/terrain';
 import { worldTransformOf } from '../../core/world-plan/hierarchy';
+import { matchesAsset } from './worldEdit';
+import type { AssetDirection } from './assetRequests';
+import type { PhotoRequest } from './photoRequests';
 import type { ImageReference } from './imageReferences';
 
 export interface TinyImage { width: number; height: number; rgba: Uint8Array }
@@ -57,7 +60,7 @@ export function photoToModel(image: TinyImage, source: ImageReference): PhotoMod
 }
 
 /** Place one approx model safely, without changing existing objects or terrain. */
-export function addPhotoModel(plan: WorldPlan, model: PhotoModel, name: string): { plan: WorldPlan; object: PrimitiveObject } {
+export function addPhotoModel(plan: WorldPlan, model: PhotoModel, name: string, relation?: { anchorId: string; direction: AssetDirection }): { plan: WorldPlan; object: PrimitiveObject } {
   if (plan.objects.length >= MAX_WORLD_OBJECTS) throw new Error('العالم ممتلئ؛ لم يُضف المجسم.');
   const safe = photoModelSchema.parse(model);
   if (plan.objects.reduce((sum, object) => sum + (object.meta.photoModel?.cells.length ?? 0), 0) + safe.cells.length > MAX_PHOTO_CELLS) throw new Error('وصلت للحد المخصص لمجسمات الصور على الهاتف.');
@@ -66,16 +69,37 @@ export function addPhotoModel(plan: WorldPlan, model: PhotoModel, name: string):
     transform: createTransform(), visible: true, locked: false, kind: 'primitive', primitive: 'photo-model', color: '#ffffff',
     meta: { ...createMeta({ category: 'prop', geometry: 'primitive.photo-model', dimensions, status: 'edited' }), photoModel: safe } };
   const ledger = new PlacementLedger();
+  let occupiedCells = 0;
+  const half = plan.terrain.size / 2;
   for (const existing of plan.objects) {
     const transform = worldTransformOf(plan, existing.id);
     if (!transform) throw new Error('تعذّر فحص موقع عنصر؛ لم يُضف المجسم.');
     const bounds = footprintFromObject({ ...existing, transform, meta: { ...existing.meta, collision: { shape: 'box', blocking: true } } });
-    if (bounds) ledger.add(bounds, existing.id);
+    if (bounds) {
+      const bounded = { minX: Math.max(-half, bounds.minX), maxX: Math.min(half, bounds.maxX), minZ: Math.max(-half, bounds.minZ), maxZ: Math.min(half, bounds.maxZ) };
+      if (bounded.minX > bounded.maxX || bounded.minZ > bounded.maxZ) continue;
+      occupiedCells += (Math.ceil((bounded.maxX - bounded.minX) / 8) + 2) * (Math.ceil((bounded.maxZ - bounded.minZ) / 8) + 2);
+      if (occupiedCells > 100_000) throw new Error('المشهد مزدحم جداً للفحص على الهاتف.');
+      ledger.add(bounded, existing.id);
+    }
   }
   const sampler = createTerrainSampler(plan.terrain, plan.seed), radius=plan.terrain.size*.36;
+  const anchor = relation ? worldTransformOf(plan, relation.anchorId)?.position : undefined;
+  if (relation && !anchor) throw new Error('لم أجد العنصر المرجعي للموقع.');
   for (let n=0; n<160; n++) {
     const angle = n * 2.399963, dist = n === 0 ? 0 : radius * Math.sqrt(n/160);
-    const x=Math.cos(angle)*dist, z=Math.sin(angle)*dist, y=sampler.heightAt(x,z);
+    let x = Math.cos(angle)*dist, z = Math.sin(angle)*dist;
+    if (relation && anchor) {
+      const distance = 6 + Math.floor(n / 8) * 1.5, side = (n % 8 - 3.5) * .8;
+      if (relation.direction === 'right') { x=anchor[0]+distance; z=anchor[2]+side; }
+      else if (relation.direction === 'left') { x=anchor[0]-distance; z=anchor[2]+side; }
+      else if (relation.direction === 'front') { x=anchor[0]+side; z=anchor[2]-distance; }
+      else if (relation.direction === 'behind') { x=anchor[0]+side; z=anchor[2]+distance; }
+      else { if (n >= 48) break; x=anchor[0]+Math.cos(angle)*distance; z=anchor[2]+Math.sin(angle)*distance; }
+    }
+    const edge = plan.terrain.size / 2 - 1;
+    if (Math.abs(x) + dimensions[0]/2 > edge || Math.abs(z) + dimensions[2]/2 > edge) continue;
+    const y=sampler.heightAt(x,z);
     const samples = [[-1,-1],[-1,1],[1,-1],[1,1]].map(([dx,dz]) => sampler.heightAt(x + dx! * dimensions[0]/2, z + dz! * dimensions[2]/2));
     if (samples.some((height) => Math.abs(height-y) > 1.2 || (plan.terrain.waterLevel !== null && height < plan.terrain.waterLevel + .35))) continue;
     if (plan.terrain.waterLevel !== null && y < plan.terrain.waterLevel + .35) continue;
@@ -106,4 +130,21 @@ export function isSinglePhotoRequest(text: string, term: string, mode: 'edit' | 
     input = input.replace(/^(?:a|an|un|une)\s+/u, '');
   }
   return input.replace(/^ال/u, '') === word;
+}
+
+/** Prepare all copies before returning a plan; a failure leaves the caller's plan untouched. */
+export function addPhotoModels(plan: WorldPlan, model: PhotoModel, name: string, count: number, relation?: PhotoRequest['relation']): WorldPlan {
+  if (!Number.isSafeInteger(count) || count < 1) throw new Error('عدد المجسمات غير صالح.');
+  const safe = photoModelSchema.parse(model);
+  const cells = plan.objects.reduce((sum, obj) => sum + (obj.meta.photoModel?.cells.length ?? 0), 0);
+  if (plan.objects.length + count > MAX_WORLD_OBJECTS || cells + count * safe.cells.length > MAX_PHOTO_CELLS) throw new Error('العدد يتجاوز سعة العالم أو سعة مجسمات الصور على الهاتف.');
+  let placement: { anchorId: string; direction: AssetDirection } | undefined;
+  if (relation) {
+    const targets = plan.objects.filter((object) => matchesAsset(object, relation.assetId));
+    if (targets.length !== 1) throw new Error('يجب أن يوجد عنصر مرجعي واحد واضح للموقع.');
+    placement = { anchorId: targets[0]!.id, direction: relation.direction };
+  }
+  let next = plan;
+  for (let i = 0; i < count; i++) next = addPhotoModel(next, safe, count > 1 ? `${name} ${i + 1}` : name, placement).plan;
+  return next;
 }

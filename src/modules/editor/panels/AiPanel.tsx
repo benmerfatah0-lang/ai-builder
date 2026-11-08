@@ -13,9 +13,9 @@ import { NumberField, SelectField } from '../../../ui/controls';
 import { TextEditPanel } from './TextEditPanel';
 import { ResearchResults } from './ResearchResults';
 import { PhotoStudio } from './PhotoStudio';
-import { addPhotoModel, isSinglePhotoRequest } from '../../ai/photoModel';
-import type { TopicResearch } from '../../ai/unknownResearch';
-import type { WorldPlan } from '../../../core/world-plan/schema';
+import { addPhotoModels } from '../../ai/photoModel';
+import { planPhotoRequests, type PhotoRequest } from '../../ai/photoRequests';
+import { type WorldPlan } from '../../../core/world-plan/schema';
 import { normalizeAssetText, parseAssetRequests } from '../../ai/assetRequests';
 import { analyzeApproximation, hasExplicitColor, matchHouseApproximation, type Approximation } from '../../ai/referenceUnderstanding';
 import { applyWikiArticleHint } from '../../ai/wikiReference';
@@ -48,7 +48,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
     try { return readShapeModel(window.localStorage); } catch { return initialShapeModel(); }
   });
   const [studioPending, setStudioPending] = useState(false);
-  const [studio, setStudio] = useState<{ topic: TopicResearch; plan: WorldPlan; text: string } | null>(null);
+  const [studio, setStudio] = useState<{ requests: PhotoRequest[]; index: number; plan: WorldPlan; text: string } | null>(null);
   const [research, setResearch] = useState<ResearchReport | null>(null);
   const [researchBusy, setResearchBusy] = useState(false);
   const researchSequence = useRef(0);
@@ -121,7 +121,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       if (!alive.current) return;
       const discovered = await researchFor(correctedText);
       const singleTopic = discovered.topics.length === 1 && !discovered.truncated ? discovered.topics[0] : undefined;
-      const ambiguousPhoto = singleTopic && (singleTopic.images.length > 1 || singleTopic.imageNext != null) && isSinglePhotoRequest(correctedText, singleTopic.term, 'generate');
+      const ambiguousPhoto = singleTopic && (singleTopic.images.length > 1 || singleTopic.imageNext != null) && planPhotoRequests(correctedText, [singleTopic]).requests.length > 0;
       const match = !interpretation.intent.features?.farm && !ambiguousPhoto ? matchHouseApproximation(correctedText, discovered) : null;
       let approximate: Approximation | null = match;
       if (match) {
@@ -137,7 +137,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       }
       if (discovered.topics.length) {
         const names = discovered.topics.map((topic) => `«${topic.term}»`).join('، ');
-        interpretation.notes = [`بحثت عن ${names}؛ ${match ? 'استُخدم تقريب من أصل موجود، وليس بناءً مطابقاً.' : discovered.topics.length === 1 && (discovered.topics[0]?.images.length || discovered.topics[0]?.imageNext != null) && discovered.topics[0] && isSinglePhotoRequest(correctedText, discovered.topics[0].term, 'generate') ? 'سنحاول بناء مجسم تقريبي من صورة؛ قد تفشل المحاولة إذا كانت الخلفية غير مناسبة.' : 'البحث لا ينشئ العنصر غير المدعوم تلقائياً في الوصف المركب، والنتيجة تعتمد على الأصول المعروفة فقط.'}`, ...(interpretation.notes ?? [])];
+        interpretation.notes = [`بحثت عن ${names}؛ ${match ? 'استُخدم تقريب من أصل موجود، وليس بناءً مطابقاً.' : 'سنحاول بناء العناصر المجهولة من الصور عندما يكون الطلب مناسباً؛ راجع التنبيهات للعناصر التي لم تُبنَ.'}`, ...(interpretation.notes ?? [])];
         // Use only an exact article-title match, only for a single candidate, and only
         // the fixed terrain vocabulary. Search results are untrusted and not 3D data.
         const topic = discovered.topics.length === 1 && !discovered.truncated ? discovered.topics[0] : undefined;
@@ -160,9 +160,9 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       if (currentPlan.current !== originalPlan || currentPrompt.current.trim() !== text) throw new Error('تغيّر العالم أثناء البحث أو تغيّر الوصف؛ لم نستبدله. أعد الإنشاء إذا أردت.');
       const plan = variant === 'forge' && worldName.trim() ? { ...report.plan, name: worldName.trim() } : report.plan;
       dispatch({ type: 'replacePlan', plan });
-      const photoTopic = !match && !discovered.truncated && discovered.topics.length === 1 ? discovered.topics[0] : undefined;
-      if ((photoTopic?.images.length || photoTopic?.imageNext != null) && photoTopic && isSinglePhotoRequest(correctedText, photoTopic.term, 'generate')) {
-        setStudio({ topic: photoTopic, plan, text }); setStudioPending(true);
+      const photos = match ? { requests: [], warnings: [] } : planPhotoRequests(correctedText, discovered.topics);
+      if (photos.requests.length) {
+        setStudio({ requests: photos.requests, index: 0, plan, text }); setStudioPending(true);
       }
       if (approximate) setResearch({ ...discovered, approximation: { ...approximate,
         applied: plan.objects.some((object) => object.kind === 'building' && object.variant === 'house'),
@@ -170,11 +170,11 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       setResult(interpretation);
       const learnedCount = report.plan.objects.filter((object) => object.meta.learnedShape).length;
       const hasMine = report.plan.objects.some((object) => object.kind === 'primitive' && object.primitive === 'mine-entrance');
-      setNotes([...report.warnings, ...(interpretation.notes ?? []),
+      setNotes([...photos.warnings, ...report.warnings, ...(interpretation.notes ?? []),
         ...(hasMine ? ['المنجم مدخل زخرفي يوحي بالعمق فقط؛ لا توجد أنفاق محفورة أو قابلة للدخول، والأدوات والحفارات ثابتة.'] : []),
         learnedCount ? `تم توليد ${learnedCount} من أشكال البيت أو الشجرة عريضة الأوراق أو الصخرة من النموذج الصغير.` :
           'لم يُستخدم تدريب الأشكال لهذا الوصف؛ جرّب وصفاً مثل: بيت وشجرة وصخرة. المزارع تحتفظ بقالبها الخاص.',
-        ].slice(0, 12));
+        ]);
       setStats({ objects: report.plan.objects.length, groups: report.plan.groups.length });
       notify(
         report.warnings.length > 0
@@ -195,18 +195,34 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   return (
     <div className={`panel-scroll ${variant === 'forge' ? 'forge-ai' : ''}`}>
       {variant === 'panel' && <TextEditPanel shapeModel={shapeModel} />}
-      {studio && <PhotoStudio topic={studio.topic} onCancel={() => { setStudio(null); setStudioPending(false); }} onComplete={(model) => {
-        setStudioPending(false);
-        if (currentPlan.current !== studio.plan || currentPrompt.current.trim() !== studio.text) {
-          setGenerationError('تغيّر العالم أو الوصف أثناء البناء؛ لم يُضف المجسم.'); return;
-        }
-        try {
-          const built = addPhotoModel(studio.plan, model, studio.topic.term);
-          dispatch({ type: 'addObject', object: built.object });
-          setStats({ objects: built.plan.objects.length, groups: built.plan.groups.length });
-          setNotes((old) => ['أُضيف مجسم الصورة التقريبي؛ العمق والخلف افتراضيان، وموقعه آلي وليس علاقة مكانية مفهومة.', ...old]);
-        } catch (error) { setGenerationError(error instanceof Error ? error.message : 'تعذّر إضافة المجسم.'); }
-      }} />}
+      {studio && <div dir="rtl">
+        <p role="status">العنصر {studio.index + 1} من {studio.requests.length} · العدد المطلوب: {studio.requests[studio.index]!.count}</p>
+        <PhotoStudio key={`${studio.index}:${studio.requests[studio.index]!.topic.term}`} topic={studio.requests[studio.index]!.topic}
+          cancelLabel="تخطّي هذا العنصر" onCancel={() => {
+            const item = studio.requests[studio.index]!;
+            setNotes((old) => [`تم تخطي «${item.topic.term}» دون إضافته.`, ...old]);
+            if (studio.index + 1 < studio.requests.length) setStudio({ ...studio, index: studio.index + 1 });
+            else { setStudio(null); setStudioPending(false); }
+          }} onComplete={(model) => {
+            const item = studio.requests[studio.index]!;
+            if (currentPlan.current !== studio.plan || currentPrompt.current.trim() !== studio.text) {
+              setGenerationError('تغيّر العالم أو الوصف أثناء البناء؛ أُوقفت بقية الإضافات.'); setStudio(null); setStudioPending(false); return;
+            }
+            let next = studio.plan;
+            try {
+              next = addPhotoModels(next, model, item.topic.term, item.count, item.relation);
+              dispatch({ type: 'replacePlan', plan: next });
+              setStats({ objects: next.objects.length, groups: next.groups.length });
+              setNotes((old) => [item.count === 1 ? `أُضيف مجسم الصورة التقريبي؛ «${item.topic.term}»، الخلف والعمق افتراضيان.` : `أُضيف ${item.count} من «${item.topic.term}» من الصورة تقريبياً؛ الخلف والعمق افتراضيان.`, ...old]);
+            } catch (error) {
+              setNotes((old) => [`لم تُضف نسخ «${item.topic.term}»: ${error instanceof Error ? error.message : 'تعذّر البناء.'}`, ...old]);
+              next = studio.plan;
+            }
+            if (studio.index + 1 < studio.requests.length) setStudio({ ...studio, index: studio.index + 1, plan: next });
+            else { setStudio(null); setStudioPending(false); }
+          }} />
+        <button type="button" className="btn btn-small" onClick={() => { setNotes((old) => ['أُوقف بناء بقية العناصر؛ احتفظنا بما أُضيف سابقاً.', ...old]); setStudio(null); setStudioPending(false); }}>إيقاف بناء البقية</button>
+      </div>}
       {researchBusy && <button type="button" className="btn btn-small" onClick={() => researchAbort.current?.abort()}>إيقاف البحث</button>}
       <ResearchResults report={research} busy={researchBusy} progress={progress} />
       {variant !== 'forge' && <div className="create-intro" dir="rtl">
@@ -225,7 +241,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
           onChange={(event) => setPrompt(event.target.value)}
           placeholder="مثلاً: جزيرة استوائية فيها نخيل وبحر عند الغروب..."
           rows={4}
-          maxLength={400}
+          maxLength={4000}
           onKeyDown={(event) => {
             if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
               event.preventDefault();
@@ -240,7 +256,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         <input className="input" aria-label="اسم العالم (اختياري)" value={worldName} onChange={(event) => setWorldName(event.target.value)} maxLength={80} placeholder="مثلاً: أرض الأحلام" />
       </label>}
 
-      <p className="generate-caption" dir="rtl">يبحث المساعد تلقائياً عن كلمات قد لا يعرفها في ويكيبيديا وWikimedia Commons؛ تُرسل هذه الكلمات إلى الموقعين. التعرّف تقريبي؛ قد نستخدم صورة ذات خلفية بسيطة لبناء حجم تقديري متناظر لعنصر واحد فقط.</p>
+      <p className="generate-caption" dir="rtl">يبحث المساعد تلقائياً عن كلمات قد لا يعرفها في ويكيبيديا وWikimedia Commons؛ تُرسل هذه الكلمات إلى الموقعين. التعرّف تقريبي؛ قد نستخدم صوراً ذات خلفية بسيطة لبناء أحجام تقديرية متناظرة لعناصر متعددة.</p>
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
 
       <button

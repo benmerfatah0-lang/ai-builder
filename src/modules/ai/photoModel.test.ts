@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { photoToModel, addPhotoModel, isSinglePhotoRequest, type TinyImage } from './photoModel';
+import { photoToModel, addPhotoModel, addPhotoModels, isSinglePhotoRequest, type TinyImage } from './photoModel';
 import { buildPhotoModelGeometry } from '../../core/scene/photoModel';
+import { createBuilding } from '../../core/assets/catalog';
 import { createEmptyWorldPlan } from '../../core/world-plan/factory';
 import { validateWorldPlan } from '../../core/world-plan/schema';
 import { serializeWorldPlan, deserializeWorldPlan } from '../../core/world-plan/migrate';
@@ -63,4 +64,18 @@ describe('bounded single-photo reconstruction', () => {
     expect(gltf.nodes.some((node: { extras?: { imageSource?: { author?: string } } }) => node.extras?.imageSource?.author === 'Alice')).toBe(true);
     expect(gltf.meshes.some((mesh: { primitives: { attributes: Record<string, number> }[] }) => mesh.primitives.some((p) => p.attributes.COLOR_0 !== undefined))).toBe(true);
   }, 20000);
+  it('places copies on the requested side of a unique known object and refuses ambiguous anchors', () => {
+    const model = photoToModel(fixture(), source);
+    const empty = createEmptyWorldPlan({ seed: 1 });
+    const house = createBuilding('house', [0,0,0], () => 0.5);
+    const base = { ...empty, objects:[house], terrain:{ ...empty.terrain, style:'flat' as const, heightScale:0 } };
+    const next = addPhotoModels(base, model, 'فيل', 2, {assetId:'house',direction:'right'});
+    expect(next.objects).toHaveLength(3);
+    expect(deserializeWorldPlan(serializeWorldPlan(next))).toEqual(next);
+    expect(next.objects.slice(1).every((object) => object.transform.position[0] > house.transform.position[0])).toBe(true);
+    expect(() => addPhotoModels({ ...base, objects:[house,createBuilding('house', [20,0,0], () => 0.5)] }, model, 'فيل', 1, {assetId:'house',direction:'right'})).toThrow(/عنصر مرجعي واحد/);
+    expect(() => addPhotoModels(base, model, 'فيل', 10000)).toThrow(/سعة العالم/);
+    expect(base.objects).toHaveLength(1);
+  });
+
 });

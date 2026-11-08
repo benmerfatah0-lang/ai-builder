@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { researchUnknown, unknownTopics, type ResearchReport } from '../../ai/unknownResearch';
 import { ResearchResults } from './ResearchResults';
 import { PhotoStudio } from './PhotoStudio';
-import { addPhotoModel, isSinglePhotoRequest } from '../../ai/photoModel';
-import type { TopicResearch } from '../../ai/unknownResearch';
+import { addPhotoModels } from '../../ai/photoModel';
+import { planPhotoRequests, type PhotoRequest } from '../../ai/photoRequests';
+import { findAssetMentions, normalizeAssetText } from '../../ai/assetRequests';
 import type { WorldPlan } from '../../../core/world-plan/schema';
 import { analyzeApproximation, hasExplicitColor, matchHouseApproximation } from '../../ai/referenceUnderstanding';
 import { editWorldByText } from '../../ai/worldEdit';
@@ -17,7 +18,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
   const [feedback, setFeedback] = useState<{ text: string; error: boolean } | null>(null);
   const [research, setResearch] = useState<ResearchReport | null>(null);
   const [busy, setBusy] = useState(false);
-  const [studio, setStudio] = useState<{ topic: TopicResearch; plan: WorldPlan; selection: string; command: string; seq: number } | null>(null);
+  const [studio, setStudio] = useState<{ requests: PhotoRequest[]; index: number; plan: WorldPlan; draft: WorldPlan; selection: string; command: string; seq: number } | null>(null);
   const sequence = useRef(0);
   const researchAbort = useRef<AbortController | null>(null);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -47,13 +48,17 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
     const isAdd = /^(?:اضف|اضيف|ضع|اصنع|انشئ|ابني|اعمل|صمم|add|ajoute|ajouter)\s/iu.test(text.trim().replace(/[أإآ]/g, 'ا'));
     const singleTopic = report.topics.length === 1 && !report.truncated ? report.topics[0] : undefined;
     // If the images are ambiguous, ask before using one instead of coloring a house from the first hit.
-    const match = isAdd && !(singleTopic && (singleTopic.images.length > 1 || singleTopic.imageNext != null) && isSinglePhotoRequest(text, singleTopic.term, 'edit')) ? matchHouseApproximation(text, report) : null;
+    const match = isAdd && !(singleTopic && (singleTopic.images.length > 1 || singleTopic.imageNext != null) && planPhotoRequests(text, [singleTopic]).requests.length > 0) ? matchHouseApproximation(text, report) : null;
     if (!match) {
       setResearch(report); setBusy(false);
-      const topic = report.topics.length === 1 && !report.truncated ? report.topics[0] : undefined;
-      if (isAdd && (topic?.images.length || topic?.imageNext != null) && topic && isSinglePhotoRequest(text, topic.term, 'edit')) {
-        setStudio({ topic, plan: original.plan, selection: original.selection.join('\0'), command: text, seq: current });
-        setFeedback({ text: 'وجدت صوراً؛ سأحاول بناء شكل تقريبي منها، إذا كانت الخلفية مناسبة.', error: false });
+      const photos = planPhotoRequests(text, report.topics);
+      // Never silently omit catalog items in an atomic edit: mixed additions need a separate command.
+      const mixed = findAssetMentions(normalizeAssetText(text)).length > 0;
+      if (isAdd && mixed && !(photos.requests.length === 1 && photos.requests[0]?.relation && !photos.warnings.length)) setFeedback({ text: 'في التعديل المركب، أضف العناصر المعروفة والمجهولة في أوامر منفصلة؛ لم يتغير العالم.', error: true });
+      else if (isAdd && photos.warnings.length) setFeedback({ text: `${photos.warnings.join(' ')} لم يتغير العالم.`, error: true });
+      else if (isAdd && photos.requests.length) {
+        setStudio({ requests: photos.requests, index: 0, plan: original.plan, draft: original.plan, selection: original.selection.join('\0'), command: text, seq: current });
+        setFeedback({ text: 'وجدت صوراً؛ سأحاول بناء أشكال تقريبية منها، إذا كانت الخلفيات مناسبة.', error: false });
       }
       return;
     }
@@ -94,17 +99,23 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
         <Icon name="sparkles" size={16} /> تطبيق التعديل
       </button>
       {feedback && <p className={feedback.error ? 'online-error' : 'text-edit-success'} role={feedback.error ? 'alert' : 'status'}>{feedback.text}</p>}
-      {studio && <PhotoStudio topic={studio.topic} onCancel={() => { sequence.current++; setStudio(null); }} onComplete={(model) => {
-        if (studio.seq !== sequence.current || currentEditor.current.plan !== studio.plan || currentEditor.current.selection.join('\0') !== studio.selection || currentCommand.current !== studio.command) {
-          setFeedback({ text: 'تغيّر العالم أو التحديد أو الأمر أثناء البناء؛ لم يُضف المجسم. أعد المحاولة.', error: true }); return;
-        }
-        try {
-          const built = addPhotoModel(studio.plan, model, studio.topic.term);
-          dispatch({ type: 'addObject', object: built.object });
-          setFeedback({ text: 'أُضيف مجسم الصورة التقريبي في مكان متاح؛ الخلف والعمق تقديريان. يمكن التراجع بـ Undo.', error: false });
-          setCommand('');
-        } catch (error) { setFeedback({ text: error instanceof Error ? error.message : 'تعذّر إضافة المجسم.', error: true }); }
-      }} />}
+      {studio && <div dir="rtl">
+        <p role="status">العنصر {studio.index + 1} من {studio.requests.length} · العدد المطلوب: {studio.requests[studio.index]!.count}</p>
+        <PhotoStudio key={`${studio.index}:${studio.requests[studio.index]!.topic.term}`} topic={studio.requests[studio.index]!.topic} cancelLabel="إلغاء التعديل"
+          onCancel={() => { sequence.current++; setStudio(null); setFeedback({ text: 'أُلغي التعديل؛ لم يتغير العالم.', error: true }); }} onComplete={(model) => {
+          const item = studio.requests[studio.index]!;
+          if (studio.seq !== sequence.current || currentEditor.current.plan !== studio.plan || currentEditor.current.selection.join('\0') !== studio.selection || currentCommand.current !== studio.command) {
+            setFeedback({ text: 'تغيّر العالم أو التحديد أو الأمر أثناء البناء؛ لم يُضف المجسم. أعد المحاولة.', error: true }); setStudio(null); return;
+          }
+          try {
+            const draft = addPhotoModels(studio.draft, model, item.topic.term, item.count, item.relation);
+            if (studio.index + 1 < studio.requests.length) { setStudio({ ...studio, draft, index: studio.index + 1 }); return; }
+            dispatch({ type: 'replacePlan', plan: draft });
+            setFeedback({ text: studio.requests.length === 1 && item.count === 1 ? 'أُضيف مجسم الصورة التقريبي في مكان متاح؛ الخلف والعمق تقديريان. يمكن التراجع بـ Undo.' : 'أُضيفت مجسمات الصور التقريبية معاً؛ الخلف والعمق تقديريان. يمكن التراجع عن التعديل كاملاً بـ Undo.', error: false });
+            setCommand(''); setStudio(null);
+          } catch (error) { setFeedback({ text: `${error instanceof Error ? error.message : 'تعذّر إضافة المجسم.'} لم يُطبّق أي جزء من التعديل.`, error: true }); setStudio(null); }
+        }} />
+      </div>}
       {busy && <button type="button" className="btn btn-small" onClick={() => { sequence.current++; researchAbort.current?.abort(); setBusy(false); setFeedback({ text: 'أُوقف البحث؛ لم يُطبّق تعديل.', error: true }); }}>إيقاف البحث</button>}
       <ResearchResults report={research} busy={busy} progress={progress} />
       <details className="text-edit-help"><summary>الأوامر المتاحة</summary><p>مثال: «اصنع لي نهراً يمر وسط القرية»، «أضف شجرتين على يمين البيت»، «لوّن البيت أحمر»، «كبّر البيت»، «احذف البيت»، أو «حرّك البيت إلى يسار الشجرة». إذا وُجد أكثر من عنصر مطابق، اختر واحداً في المشهد أولاً. يمكن كتابة «العنصر المحدد». النهر عنصر مرئي زخرفي لا يحفر التضاريس؛ يقدّر القرية من تجمع البيوت ويحاول تجنب العناصر، ويمكن التراجع عنه. يصحح التطبيق أخطاء إملائية محدودة ويعرض التصحيح، ولا يصحح أوامر الحذف والتحريك تلقائياً. الأوامر المحدودة تعمل محلياً؛ اليمين واليسار حسب محاور العالم، وليس اتجاه الكاميرا.</p></details>

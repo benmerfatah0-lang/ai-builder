@@ -43,7 +43,7 @@ function Preview({ model, rows }: { model: PhotoModel; rows: number }) {
 }
 
 /** User selects only if search returned multiple ambiguous candidates. */
-export function PhotoStudio({ topic, onComplete, onCancel }: { topic: TopicResearch; onComplete: (model: PhotoModel) => void; onCancel: () => void }) {
+export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغلاق الاستوديو' }: { topic: TopicResearch; onComplete: (model: PhotoModel) => void; onCancel: () => void; cancelLabel?: string }) {
   const [images, setImages] = useState(topic.images);
   const [next, setNext] = useState(topic.imageNext ?? null);
   const [pageBusy, setPageBusy] = useState(false);
@@ -105,6 +105,6 @@ export function PhotoStudio({ topic, onComplete, onCancel }: { topic: TopicResea
     {loading && <p role="status">أقرأ مصغّرة الصورة وأحاول فصل الجسم…</p>}
     {error && <p role="alert" className="online-error">{error} لم يُضف مجسم. اختر نتيجة أخرى أو أعد البحث بصورة مختلفة.</p>}
     {model && <><Preview model={model} rows={rows} /><p role="status">بناء طبقات الشكل: {Math.min(rows, model.height)} / {model.height} · اسحب لتدوير المعاينة</p></>}
-    <button type="button" className="btn btn-small" onClick={onCancel}>إغلاق الاستوديو</button>
+    <button type="button" className="btn btn-small" onClick={onCancel}>{cancelLabel}</button>
   </section>;
 }

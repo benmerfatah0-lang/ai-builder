@@ -14,7 +14,7 @@ import { applyShapeModel, type ShapeModel } from './shapeLearner';
 type Position = [number, number, number];
 export interface WorldEditResult { plan: WorldPlan; message: string }
 
-function matchesAsset(object: WorldObject, id: string): boolean {
+export function matchesAsset(object: WorldObject, id: string): boolean {
   if (id === 'tree') return object.kind === 'tree' && ['pine', 'broadleaf', 'palm'].includes(object.variant);
   if (['pine', 'palm', 'broadleaf', 'cactus', 'bush'].includes(id)) return object.kind === 'tree' && object.variant === id;
   if (id === 'boulder') return object.kind === 'rock';
