@@ -1,3 +1,4 @@
+import type { TerrainStyle } from '../../core/world-plan/schema';
 import type { HouseKnowledge } from './houseKnowledge';
 import type { ShapeModel } from './shapeLearner';
 import type { AssetRequest } from './assetRequests';
@@ -42,6 +43,8 @@ export interface WorldIntent {
   scale: WorldScale;
   settlement: boolean;
   water: boolean;
+  /** Explicit terrain form, independent of the vegetation biome. */
+  landform?: TerrainStyle;
   /** A named landscape, so explicit assets can retain their surroundings. */
   landscape?: boolean;
   /** Forest vegetation on mountainous terrain. */

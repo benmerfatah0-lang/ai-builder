@@ -7,7 +7,8 @@ import type { AssetDirection, AssetRequest } from '../../modules/ai/assetRequest
 import type { WorldIntent } from '../../modules/ai/types';
 import { createTerrainSampler } from './terrain';
 import { mulberry32, range } from './rng';
-import { footprintFromRect, PlacementLedger } from './placement';
+import { footprintFromObject, footprintFromRect, PlacementLedger } from './placement';
+import { worldTransformOf } from '../world-plan/hierarchy';
 
 const MAX_REQUESTED_ASSETS = 300;
 
@@ -16,11 +17,19 @@ export function buildAssetLayout(
   shell: WorldPlan,
   intent: WorldIntent,
   requests: AssetRequest[],
+  preserveExisting = false,
 ): { plan: WorldPlan; warnings: string[] } {
   const rng = mulberry32(intent.seed);
   const sampler = createTerrainSampler(shell.terrain, intent.seed);
   const ledger = new PlacementLedger();
-  const objects: WorldObject[] = [];
+  const objects: WorldObject[] = preserveExisting ? [...shell.objects] : [];
+  if (preserveExisting) for (const object of shell.objects) {
+    if (object.kind === 'path' || object.kind === 'river') continue;
+    const transform = worldTransformOf(shell, object.id);
+    if (!transform) continue;
+    const footprint = footprintFromObject({ ...object, transform, meta: { ...object.meta, collision: { shape: 'box', blocking: true } } });
+    if (footprint) ledger.add(footprint, object.name);
+  }
   const warnings: string[] = [];
   const normalizedPrompt = normalizeAssetText(intent.prompt);
   if (/(?:امام|خلف|وراء|يمين|يسار|بجانب|بجوار|قرب)\s*(?:ال)?(?:جبل|جبال)/.test(normalizedPrompt) || /(?:in front of|behind|right of|left of|near)\s+(?:the\s+)?mountain/.test(normalizedPrompt)) {
@@ -31,7 +40,7 @@ export function buildAssetLayout(
   const visiting = new Set<number>();
   const counters = new Map<string, number>();
   const radius = shell.terrain.size * 0.38;
-  const maxObjects = Math.min(MAX_REQUESTED_ASSETS, MAX_WORLD_OBJECTS);
+  const maxObjects = Math.min(objects.length + MAX_REQUESTED_ASSETS, MAX_WORLD_OBJECTS);
 
   const assetId = (id: string) => id !== 'tree' ? id :
     intent.biome === 'desert' ? 'cactus' : intent.biome === 'island' ? 'palm' :
@@ -98,7 +107,7 @@ export function buildAssetLayout(
         counters.set(asset.id, number);
         const placedObject: WorldObject = {
           ...object,
-          id: `obj_${intent.seed.toString(36)}_${objects.length.toString(36)}`,
+          id: `obj_${intent.seed.toString(36)}_${preserveExisting ? 'extra_' : ''}${objects.length.toString(36)}`,
           name: `${asset.label} ${number}`,
           transform: { ...object.transform, position },
         };
@@ -112,5 +121,5 @@ export function buildAssetLayout(
     completed.add(index);
   }
   requests.forEach((_, index) => placeRequest(index));
-  return { plan: { ...shell, objects, description: `Generated from: “${intent.prompt}” · ${objects.length} library assets`.slice(0, 500) }, warnings };
+  return { plan: { ...shell, objects, description: preserveExisting ? shell.description : `Generated from: “${intent.prompt}” · ${objects.length} library assets`.slice(0, 500) }, warnings };
 }

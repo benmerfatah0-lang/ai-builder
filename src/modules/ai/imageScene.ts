@@ -1,3 +1,4 @@
+import { EXPANDED_ASSETS } from '../../core/assets/expandedDefinitions';
 import { ASSET_LIBRARY } from '../../core/assets/catalog';
 import { createTerrainSampler } from '../../core/generation/terrain';
 import { createEmptyWorldPlan, createTransform } from '../../core/world-plan/factory';
@@ -13,6 +14,7 @@ export const SCENE_TYPES = [
   { id:'tower', label:'برج' }, { id:'bridge', label:'جسر' }, { id:'wood-fence', label:'سياج' },
   { id:'sphere', label:'كرة' }, { id:'box', label:'صندوق' }, { id:'water', label:'ماء زخرفي مسطح' },
   { id:'photo', label:'عنصر محدد من الصورة' },
+  ...EXPANDED_ASSETS.map((asset)=>({id:asset.id,label:asset.ar})),
 ] as const;
 export type SceneType = typeof SCENE_TYPES[number]['id'];
 export interface SceneMark { id:string; name:string; type:SceneType; x:number; y:number; depth:number; size:number; height?:number; thickness?:number; model?:PhotoModel }

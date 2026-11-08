@@ -449,7 +449,7 @@ describe('lightweight local planning interface', () => {
   }, 20000);
 
   it('refuses to insert a terrain photograph into an existing map', async () => {
-    const article={title:'فوهة بركانية',url:'https://ar.wikipedia.org/wiki/فوهة_بركانية',content:'الفوهة البركانية هي تضاريس.'};
+    const article={title:'كالديرا',url:'https://ar.wikipedia.org/wiki/كالديرا',content:'الكالديرا هي تضاريس.'};
     const image={title:'File:Crater.jpg',url:'https://commons.wikimedia.org/wiki/File:Crater.jpg',thumbnail:'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Crater.jpg/250px-Crater.jpg',author:'A',license_url:'https://creativecommons.org/licenses/by/4.0/',license_name:'CC BY 4.0'};
     vi.stubGlobal('fetch',vi.fn(async (url:string) => {
       if(url==='/api/search') return new Response(JSON.stringify({results:[article]}));
@@ -460,7 +460,7 @@ describe('lightweight local planning interface', () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.click(screen.getByRole('button',{name:'المحرر'}));
-    fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'),{target:{value:'أضف تضاريس فوهة بركانية'}});
+    fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'),{target:{value:'أضف تضاريس كالديرا'}});
     fireEvent.click(screen.getByRole('button',{name:'تطبيق التعديل'}));
     expect(await screen.findByText(/صُنّف تضاريس، وليس جسماً منفرداً/)).toBeTruthy();
     expect(screen.getByText(/لم يتغير العالم/)).toBeTruthy();

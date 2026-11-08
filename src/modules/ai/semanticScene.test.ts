@@ -21,3 +21,15 @@ describe('semantic segmentation regions',()=>{
     expect(()=>semanticRegions(new Uint8Array(12))).toThrow();labels[100]=150;expect(()=>semanticRegions(labels)).toThrow();
   });
 });
+
+it('maps recognized furniture and structures to the expanded local catalog', async () => {
+  const { regionsToSceneMarks } = await import('./semanticScene');
+  const { createImageScene } = await import('./imageScene');
+  const labels = ['table','chair','flower','bench','fountain','barrel','tent','flag'];
+  const regions = labels.map((label, i) => ({classId:ADE_CLASSES.indexOf(label),label,x:i*5,y:3,width:4,height:4,pixels:[1,2,3,4,5,6]}));
+  const result = regionsToSceneMarks(regions, {} as HTMLImageElement, {kind:'local',title:'x',author:'user',license_name:'unknown'});
+  expect(result.failed).toEqual([]);
+  expect(result.marks.map((mark)=>mark.type)).toEqual(labels);
+  const plan=createImageScene('image',result.marks,7);
+  expect(plan.objects.map((object)=>object.kind === 'primitive' ? object.primitive : object.kind)).toEqual(labels);
+});

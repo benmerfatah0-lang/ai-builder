@@ -71,7 +71,7 @@ describe('atomic editing with a small, explicit vocabulary', () => {
     expect(() => editWorldByText(plan, [], 'احذف العنصر المحدد')).toThrow();
     expect(() => editWorldByText(plan, [plan.objects[1]!.id], 'احذف البيت المحدد')).toThrow('لا يطابق');
     expect(() => editWorldByText(plan, [plan.objects[1]!.id], 'أضف شجرة يمين البيت المحدد')).toThrow('لا يطابق');
-    expect(() => editWorldByText(plan, [], 'اصنع قلعة')).toThrow();
+    expect(() => editWorldByText(plan, [], 'اصنع فيل')).toThrow();
     const locked = { ...plan, objects: plan.objects.map((object, index) => index ? object : { ...object, locked: true }) };
     expect(() => editWorldByText(locked, [plan.objects[0]!.id], 'احذف البيت')).toThrow('مقفل');
     expect(plan).toEqual(before);

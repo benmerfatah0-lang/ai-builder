@@ -267,7 +267,7 @@ export function applyObjectPatch(object: WorldObject, patch: ObjectPatch): World
   return next;
 }
 
-const TERRAIN_STYLES: TerrainStyle[] = ['flat', 'hills', 'mountains', 'dunes', 'islands'];
+const TERRAIN_STYLES: TerrainStyle[] = ['flat', 'hills', 'mountains', 'dunes', 'islands', 'valley', 'plateau', 'canyon', 'volcano', 'crater'];
 
 function updateTerrain(plan: WorldPlan, patch: Partial<Terrain>): WorldPlan {
   const current = plan.terrain;

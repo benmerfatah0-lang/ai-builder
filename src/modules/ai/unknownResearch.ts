@@ -14,12 +14,12 @@ const known = new Set(`و او ثم مع في من علي الي عن ل ب ام
 صغير صغيره كبير كبيره ضخم ضخمه واقعي واقعيه ناعم ناعمه سموث انسيابي انسيابيه املس ملساء بكسل بكسلي بكسليه بكسلات بالبكسلات البكسلات فوكسل فوكسلي فوكسليه طويل طويله عريض عريضه واسع واسعه مرتفع مرتفعه قديم قديمه حديث حديثه جميل جميله
 احمر حمراء ازرق زرقاء اخضر خضراء اصفر صفراء ابيض بيضاء اسود سوداء بني بنفسجي برتقالي
 صحراء صحراوي صحراويه غابه غابات جبل جبال جزيره جزر استوائي استوائيه بحر بحيره نهر انهار وادي وديان واحة واحات رمال
-مرج مروج سهل سهول مزرعه مزارع مدينه مدن قريه قري قرية حضاره اثار اطلال منجم ذهب عميق عميقه
+مرج مروج سهل سهول فوهه فوهات بركان براكين بركاني بركانيه هضبه هضاب اخدود اخاديد مزرعه مزارع مدينه مدن قريه قري قرية حضاره اثار اطلال منجم ذهب عميق عميقه
 يمر يمتد منتصف نهارا لي نهار يوم ليل ليله صباح مساء غروب شروق شمس كثيف كثيفه قليل قليله عدد بدون دون بلا تحتوي تحتويه يوجد فيها فيه لها
 ابحث بحث ويكيبيديا عند حول وسط علي سطح حقيقي حقيقيه عن شكل صور صورة صوره
 create make build add put place move delete remove paint color colour enlarge shrink change a an the and or with in on at of to for from near next beside right left behind front above below
 world map scene area landscape terrain small tiny little large big huge tall wide old new beautiful red blue green yellow white black brown purple orange
-forest forests jungle desert deserts oasis oases mountain mountains island islands lake sea ocean river rivers meadow grassland plain farm city village ruins mine gold day night sunset sunrise dense sparse
+forest forests jungle desert deserts oasis oases mountain mountains island islands lake sea ocean river rivers meadow grassland plain valley plateau canyon volcano volcanic crater farm city village ruins mine gold day night sunset sunrise dense sparse
 cartoon natural stylized realistic realism dimensional low poly smooth rounded pixel pixelated pixels voxel voxels blocky minecraft art farmhouse connected dirt wheat wheatfield grass bright sparse normal
 search wikipedia real image pictures picture photo photos
 crée creer créez construire construis fais fabrique ajouter ajoute place un une le la les des du de dans avec et ou sur pour pres près monde carte scene scène petit petite grand grande vieux vieille rouge bleu vert jaune blanc noir`.split(/\s+/u).map(canonical));

@@ -1,3 +1,5 @@
+import { EXPANDED_ASSET_IDS } from '../../core/assets/expandedDefinitions';
+import type { TerrainStyle } from '../../core/world-plan/schema';
 import { correctBuildSpelling, spellingNotice } from './spelling';
 import { parseAssetRequests } from './assetRequests';
 import { clamp, titleFromPrompt } from '../../core/utils/id';
@@ -344,13 +346,23 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
   const densityResult = detectDensity(text);
   const features = detectFarmFeatures(text, timeResult.timeOfDay);
   const farm = features !== undefined;
-  const assets = farm ? undefined : parseAssetRequests(prompt);
+  const parsedAssets = parseAssetRequests(prompt);
+  // The farm planner owns its established structures; add only new catalog props afterward.
+  const farmAssets = farm ? parsedAssets?.filter((asset) => EXPANDED_ASSET_IDS.includes(asset.assetId as typeof EXPANDED_ASSET_IDS[number])).map((asset) => ({ ...asset, relation: undefined })) : undefined;
+  const assets = farm ? (farmAssets?.length ? farmAssets : undefined) : parsedAssets;
   const normalized = prompt.toLowerCase().replace(/[\u064b-\u065f\u0670]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي');
   const villageRiver = !/(?:بدون|بلا|دون)\s+(?:ال)?(?:نهر|قريه|قرية)|\b(?:without|no)\s+(?:a\s+)?(?:river|village)/u.test(normalized) &&
     /(?:قريه|قرية|\bvillage\b)/u.test(normalized) &&
     (/(?:نهر(?:ا)?|النهر)\s+(?:(?:يمر|يمتد)\s+)?(?:(?:في|عبر)\s+)?(?:وسط|منتصف)\s+(?:ال)?(?:قريه|قرية)/u.test(normalized) ||
      /(?:قريه|قرية).*?(?:نهر(?:ا)?|النهر)\s+(?:يمر|يمتد)\s+(?:في\s+)?(?:وسطها|منتصفها)/u.test(normalized) ||
      /\briver\b.{0,40}\bthrough\s+(?:the\s+)?(?:center\s+of\s+|centre\s+of\s+)?(?:the\s+)?village\b/u.test(normalized));
+  const positiveLandform = normalized.replace(/(?:بدون|بلا|دون|لا|\bwithout|\bno)\s+(?:(?:a|the)\s+|ال)?(?:وادي|واد|هضبه|هضبة|اخدود|بركان|فوهه(?:\s+بركاني(?:ه|ة)?)?|فوهة(?:\s+بركاني(?:ه|ة)?)?|valley|plateau|canyon|volcano|crater)(?![\p{L}])/gu, ' ');
+  const landforms: [RegExp, TerrainStyle][] = [
+    [/فوهه|فوهة|\bcrater\b/u, 'crater'], [/بركان|بركاني|\bvolcano\b|\bvolcanic\b/u, 'volcano'],
+    [/اخدود|\bcanyon\b/u, 'canyon'], [/هضبه|هضبة|\bplateau\b/u, 'plateau'],
+    [/وادي|\bvalley\b/u, 'valley'],
+  ];
+  const landform = landforms.find(([pattern]) => pattern.test(positiveLandform))?.[1];
   const settlementMatches = matches(text, SETTLEMENT_KEYWORDS);
   const settlement = settlementMatches.length > 0 || farm;
   const waterMatches = matches(text, WATER_KEYWORDS);
@@ -404,6 +416,7 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
     for (const asset of assets) if (asset.relation && assets[asset.relation.target]) cues.push(`${asset.assetId} ${asset.relation.direction} of ${assets[asset.relation.target]!.assetId}`);
   }
   if (settlementMatches.length > 0) cues.push(`settlement: ${settlementMatches[0]}`);
+  if (landform) cues.push(`terrain: ${landform}`);
   if (water) cues.push('water: enabled');
   if (river) cues.push('river: requested');
   if (villageRiver) cues.push('river through village: requested');
@@ -454,7 +467,8 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
     scale,
     settlement,
     water,
-    ...(biomeResult.matched.length || /قريه|قرية|مدين|\b(?:village|city|town)\b/u.test(normalized) ? { landscape: true } : {}),
+    ...(landform ? { landform } : {}),
+    ...(biomeResult.matched.length || landform || /قريه|قرية|مدين|\b(?:village|city|town)\b/u.test(normalized) ? { landscape: true } : {}),
     ...(forestAndMountains && !farm ? { mountainousForest: true } : {}),
     ...(river && !farm ? { river: true } : {}),
     ...(villageRiver ? { villageRiver: true } : {}),

@@ -1,3 +1,4 @@
+import { EXPANDED_ASSET_IDS } from '../assets/expandedDefinitions';
 import type { WorldObject } from './schema';
 
 /**
@@ -15,6 +16,7 @@ export const SUPPORTED_GEOMETRY: readonly string[] = [
   'primitive.cone',
   'primitive.torus',
   'primitive.plane',
+  ...EXPANDED_ASSET_IDS.map((id) => `primitive.${id}`),
   'primitive.mine-entrance', 'primitive.mine-cart', 'primitive.pickaxe', 'primitive.excavator', 'primitive.chest',
   'tree.pine',
   'tree.broadleaf',

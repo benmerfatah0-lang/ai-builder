@@ -24,7 +24,8 @@ describe('conservative research category routing', () => {
     expect(classifyTopic(topic('بركان','البركان هو فتحة في القشرة الأرضية.'))).toMatchObject({kind:'terrain',biome:'mountains'});
   });
   it('respects an explicit category next to one unknown topic, not unrelated or multiple subjects', () => {
-    expect(unknownTopics('أضف تضاريس فوهة بركانية').terms).toEqual(['فوهة بركانية']);
+    expect(unknownTopics('أضف تضاريس فوهة بركانية').terms).toEqual([]);
+    expect(unknownTopics('أضف تضاريس كالديرا').terms).toEqual(['كالديرا']);
     expect(explicitTopicKind('أضف تضاريس فوهة بركانية','فوهة بركانيه',1)).toBe('terrain');
     expect(explicitTopicKind('أضف فيل في تضاريس','فيل',1)).toBeUndefined();
     expect(explicitTopicKind('أضف تضاريس فوهة','فوهة',2)).toBeUndefined();

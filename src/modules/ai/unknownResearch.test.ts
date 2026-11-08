@@ -5,10 +5,11 @@ afterEach(() => vi.unstubAllGlobals());
 describe('automatic research for unfamiliar terms', () => {
   it('finds an unknown thing even when a known asset is present', () => {
     expect(unknownTopics('بيت صغير وفيل قرب شجرة').terms).toEqual(['فيل']);
-    expect(unknownTopics('أضف وردة بجانب البيت').terms).toEqual(['وردة']);
+    expect(unknownTopics('أضف وردة بجانب البيت').terms).toEqual([]);
+    expect(unknownTopics('أضف فيل بجانب البيت').terms).toEqual(['فيل']);
     expect(unknownTopics('crée une cabane').terms).toEqual(['cabane']);
     expect(unknownTopics('اصنع تاج محل').terms).toEqual(['تاج محل']);
-    expect(unknownTopics('قلعة وزرافة وطائر')).toEqual({ terms: ['قلعة', 'زرافة', 'طائر'], truncated: false });
+    expect(unknownTopics('قلعة وزرافة وطائر')).toEqual({ terms: ['زرافة', 'طائر'], truncated: false });
     for (const prompt of ['بيت في الغابة', 'بيت وشجرة', 'A desert oasis village at sunset with 18 palm trees', 'Create a large cartoon low-poly farm with a farmhouse, barn, wheat fields, a chicken coop, fences, trees, and connected dirt paths', 'جزيرة استوائية فيها نخيل وبحر عند الغروب', 'مزرعة صغيرة فيها حظيرة وحقول قمح وجسر', 'مدينة صحراوية قديمة فيها منجم عميق للذهب بعربات ومعاول وحفارات وصناديق']) expect(unknownTopics(prompt).terms).toEqual([]);
   });
   it('looks up every detected topic even alongside known objects', async () => {

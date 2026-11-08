@@ -105,7 +105,7 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
   };
   const normalizedDescription=normalizeAssetText(description);
   const negatedAt=(index:number)=>/(?:^|\s)(?:بدون|دون|بلا|لا|without|no|not)\s+(?:ال)?$/iu.test(normalizedDescription.slice(0,index));
-  const suggestions=findAssetMentions(normalizedDescription).filter((item)=>!negatedAt(item.start)).map((item)=>({tree:'broadleaf',broadleaf:'broadleaf',boulder:'boulder',house:'house',tower:'tower',bridge:'bridge','wood-fence':'wood-fence',sphere:'sphere',box:'box'} as Record<string,SceneType>)[item.id]).filter((item):item is SceneType=>!!item);
+  const suggestions=findAssetMentions(normalizedDescription).filter((item)=>!negatedAt(item.start)).map((item)=>(SCENE_TYPES.find((entry)=>entry.id===item.id)?.id ?? ({tree:'broadleaf',broadleaf:'broadleaf',boulder:'boulder',house:'house',tower:'tower',bridge:'bridge','wood-fence':'wood-fence',sphere:'sphere',box:'box'} as Record<string,SceneType>)[item.id])).filter((item):item is SceneType=>!!item);
   const water=Array.from(normalizedDescription.matchAll(/بحير|نهر|ماء|مياه|بحر|water|river|lake|sea/giu)).some((match)=>!negatedAt(match.index));
   const unique=[...new Set([...suggestions,...(water?['water' as const]:[])])];
   const unknown=description.trim()?unknownTopics(description).terms.filter((term)=>{
@@ -115,7 +115,7 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
   const normalizedArticle=normalizeAssetText(articleText);
   const articleNegated=(index:number)=>/(?:^|\s)(?:بدون|دون|بلا|لا|ليس|ليست|without|no|not)\s+(?:ال)?$/iu.test(normalizedArticle.slice(0,index));
   const articleSuggestions=[...new Set([
-    ...findAssetMentions(normalizedArticle).filter((item)=>!articleNegated(item.start)).map((item)=>({tree:'broadleaf',broadleaf:'broadleaf',boulder:'boulder',house:'house',tower:'tower',bridge:'bridge','wood-fence':'wood-fence',sphere:'sphere',box:'box'} as Record<string,SceneType>)[item.id]).filter((item):item is SceneType=>!!item),
+    ...findAssetMentions(normalizedArticle).filter((item)=>!articleNegated(item.start)).map((item)=>(SCENE_TYPES.find((entry)=>entry.id===item.id)?.id ?? ({tree:'broadleaf',broadleaf:'broadleaf',boulder:'boulder',house:'house',tower:'tower',bridge:'bridge','wood-fence':'wood-fence',sphere:'sphere',box:'box'} as Record<string,SceneType>)[item.id])).filter((item):item is SceneType=>!!item),
     ...(Array.from(normalizedArticle.matchAll(/بحير|نهر|ماء|مياه|بحر|water|river|lake|sea/giu)).some((match)=>!articleNegated(match.index))?['water' as const]:[]),
   ])];
   const regions=picture ? colorRegions(picture.pixels) : [];

@@ -1,3 +1,5 @@
+import { EXPANDED_ASSETS } from '../../core/assets/expandedDefinitions';
+
 /** A deliberately small, local vocabulary mapping descriptions to library IDs. */
 export type AssetDirection = 'left' | 'right' | 'front' | 'behind' | 'near';
 export interface AssetRequest {
@@ -11,6 +13,7 @@ export interface AssetRequest {
 
 export interface AssetMatch { id: string; start: number; end: number; text: string }
 const ALIASES: [string, string][] = [
+  ...EXPANDED_ASSETS.map((asset): [string, string] => [asset.id, asset.aliases]),
   ['mine-entrance', 'gold mines?|mines?|منجمين|منجمان|مناجم|منجم'],
   ['mine-cart', 'mine carts?|mining carts?|carts?|عربات|عربة|عربه'],
   ['pickaxe', 'pickaxes?|معاول|معول'],
@@ -66,7 +69,7 @@ function countBefore(segment: string): number | undefined {
   return parseCountToken(match?.[1]);
 }
 function countAfter(segment: string): number | undefined {
-  const match = new RegExp(`^\\s+(\\d{1,3}|${NUMBER_WORDS})(?=$|\\s*(?:و|,|،|\\.))`, 'u').exec(segment);
+  const match = new RegExp(`^\\s+(\\d{1,3}|${NUMBER_WORDS})(?=\\s*(?:$|و|,|،|\\.|and\\b))`, 'u').exec(segment);
   return parseCountToken(match?.[1]);
 }
 function sizeFor(before: string, after: string, hasPrevious = false): AssetRequest['size'] {
@@ -122,7 +125,7 @@ export function parseAssetRequests(prompt: string, _forceExplicit = false): Asse
   const kept: { match: AssetMatch; request: number }[] = [];
   for (const [index, match] of selected.entries()) {
     let between = text.slice(index ? selected[index - 1]!.end : 0, match.start);
-    if (/(?:بدون|دون|بلا|without|no)\s*(?:ال)?\s*$/u.test(between)) continue;
+    if (/(?:بدون|دون|بلا|لا|without|no)(?:\s+(?:a|an|the))?\s*(?:ال)?\s*$/u.test(between)) continue;
     // A suffix such as "شجرة أمامه" refers to the preceding object, not
     // the next noun. Do not turn it into a relation with the next object.
     const pronoun = /(?:يمين|يسار|امام|قدام|خلف|وراء|بجانب|بجوار)(?:ه|ها|هما)(?![\p{L}])/u;
@@ -144,8 +147,13 @@ export function parseAssetRequests(prompt: string, _forceExplicit = false): Asse
       requestIndex = reference.request;
     } else {
       const after = text.slice(match.end, selected[index + 1]?.start ?? text.length);
-      const number = countBefore(between) ?? countAfter(after);
-      const plural = /(?:trees|pines|boulders|stones|rocks|houses|towers|lanterns|palms|cubes|spheres|اشجار|شجرات|بيوت|منازل|صخور|صخرات|فوانيس|نخيل|مكعبات|شجيرات|عربات|معاول|حفارات|صناديق|مناجم|حظائر|جسور|barns|bridges|carts|pickaxes|excavators|chests|mines)$/.test(match.text);
+      // A number immediately before an Arabic conjunction ("زهرة 3 ومقعد")
+      // belongs to the preceding noun, not both nouns.
+      const joinedNext = index > 0 && match.text.startsWith('و') &&
+        findAssetMentions(match.text.slice(1)).some((candidate) => candidate.id === match.id && candidate.start === 0);
+      const previousSuffix = joinedNext && new RegExp(`^\\s+(?:\\d{1,3}|${NUMBER_WORDS})\\s*$`, 'u').test(between);
+      const number = (previousSuffix ? undefined : countBefore(between)) ?? countAfter(after);
+      const plural = /(?:trees|pines|boulders|stones|rocks|houses|towers|lanterns|palms|cubes|spheres|flowers|mushrooms|ferns|reeds|crystals|castles|arches|wells|windmills|gazebos|tents|stalls|fountains|watchtowers|shrines|lighthouses|barrels|crates|benches|tables|chairs|campfires|signposts|flags|wagons|columns|زهور|ورود|فطريات|قلاع|اقواس|ابار|نوافير|خيام|براميل|مقاعد|طاولات|كراسي|رايات|اشجار|شجرات|بيوت|منازل|صخور|صخرات|فوانيس|نخيل|مكعبات|شجيرات|عربات|معاول|حفارات|صناديق|مناجم|حظائر|جسور|barns|bridges|carts|pickaxes|excavators|chests|mines)$/.test(match.text);
       const dual = /(?:تين|تان|لين|لان|جين|جان|يتين|يتان)$/.test(match.text);
       requestIndex = requests.length;
       requests.push({ assetId: match.id, count: number ?? (dual ? 2 : plural ? 3 : 1), size: sizeFor(between, after, index > 0) });

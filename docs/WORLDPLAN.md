@@ -54,7 +54,7 @@ exporters all operate on this format.
 
 | Field | Type | Range | Meaning |
 | --- | --- | --- | --- |
-| `style` | enum | `flat`, `hills`, `mountains`, `dunes`, `islands` | Height function used by renderer and generator. |
+| `style` | enum | `flat`, `hills`, `mountains`, `dunes`, `islands`, `valley`, `plateau`, `canyon`, `volcano`, `crater` | Height function used by renderer and generator. |
 | `size` | number | 32 – 512 | Terrain width/depth in world units. |
 | `resolution` | integer | 16 – 256 | Grid subdivisions per axis. Renderer caps it for shadows/export. |
 | `heightScale` | number | 0 – 200 | Vertical amplitude. |
@@ -64,7 +64,7 @@ exporters all operate on this format.
 
 Terrain height is a pure function of `(style, size, heightScale, seed)` and is
 **not** stored per-vertex. This keeps documents small and makes regeneration and
-GLB export reproducible. Changing terrain parameters therefore does not move
+GLB export reproducible. New enum values are accepted by this version but older builds may reject projects containing them. Changing terrain parameters therefore does not move
 existing objects; use “Snap to ground” in the inspector.
 
 ---
@@ -130,7 +130,7 @@ Supported geometry ids: `primitive.*`, `tree.{pine,broadleaf,palm,cactus,bush}`,
 
 | Kind | Extra fields | Allowed values |
 | --- | --- | --- |
-| `primitive` | `primitive`, `color` | `box`, `sphere`, `cylinder`, `cone`, `torus`, `plane` |
+| `primitive` | `primitive`, `color` | Shapes and the procedural asset IDs in `src/core/assets/expandedDefinitions.ts`; see the generated schema for the complete enum. |
 | `tree` | `variant`, `color` (foliage), `trunkColor` | `pine`, `broadleaf`, `palm`, `cactus`, `bush` |
 | `rock` | `variant`, `color` | `boulder`, `crag` |
 | `building` | `variant`, `color` (walls), `roofColor` | `house`, `tower`, `ruin`, `barn`, `coop` |

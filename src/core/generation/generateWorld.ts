@@ -213,7 +213,9 @@ function buildPlanShell(intent: WorldIntent): WorldPlan {
   const profile = BIOME_PROFILES[intent.biome];
   const scale = SCALE_SETTINGS[intent.scale];
   const now = new Date().toISOString();
-  const terrainStyle = intent.mountainousForest ? 'mountains' : profile.terrainStyle;
+  const terrainStyle = intent.landform ?? (intent.mountainousForest ? 'mountains' : profile.terrainStyle);
+  const terrainHeight = ['volcano', 'crater', 'canyon', 'plateau'].includes(terrainStyle) ? 20 : terrainStyle === 'valley' ? 14 : intent.mountainousForest ? BIOME_PROFILES.mountains.heightScale : profile.heightScale;
+  const palette = terrainStyle === 'volcano' || terrainStyle === 'crater' ? { low: '#514b46', high: '#93887d' } : terrainStyle === 'canyon' ? { low: '#a87555', high: '#d6ad7d' } : profile.palette;
 
   return {
     schemaVersion: WORLD_PLAN_SCHEMA_VERSION,
@@ -228,9 +230,9 @@ function buildPlanShell(intent: WorldIntent): WorldPlan {
       style: terrainStyle,
       size: scale.size,
       resolution: scale.resolution,
-      heightScale: (intent.mountainousForest ? BIOME_PROFILES.mountains.heightScale : profile.heightScale) * (intent.scale === 'large' ? 1.15 : 1),
+      heightScale: terrainHeight * (intent.scale === 'large' ? 1.15 : 1),
       waterLevel: null,
-      palette: { ...profile.palette },
+      palette: { ...palette },
     },
     groups: [],
     objects: [],
@@ -282,10 +284,12 @@ export interface GenerationReport {
 export function generateWorldPlanWithReport(intent: WorldIntent): GenerationReport {
   if (intent.features?.farm) {
     const farm = generateFarmPlan(intent);
-    const validation = validateScenePlan(farm.plan);
+    const extra = intent.assets?.length ? buildAssetLayout(farm.plan, intent, intent.assets, true) : undefined;
+    const plan = extra?.plan ?? farm.plan;
+    const validation = validateScenePlan(plan);
     return {
-      plan: farm.plan,
-      warnings: [...farm.warnings, ...(intent.villageRiver ? ['نهر المزرعة ليس مضموناً أن يمر وسط القرية في قالب المزرعة.'] : []), ...validation.warnings.map((issue) => issue.message)],
+      plan,
+      warnings: [...farm.warnings, ...(extra?.warnings ?? []), ...(intent.landform ? ['قالب المزرعة يحتفظ بتضاريسه ولا يطبق شكل الأرض المطلوب.'] : []), ...(intent.villageRiver ? ['نهر المزرعة ليس مضموناً أن يمر وسط القرية في قالب المزرعة.'] : []), ...validation.warnings.map((issue) => issue.message)],
       validation,
     };
   }

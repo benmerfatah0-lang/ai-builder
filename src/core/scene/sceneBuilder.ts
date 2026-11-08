@@ -18,6 +18,7 @@ import { isEffectivelyVisible } from '../../core/world-plan/hierarchy';
 import { addMesh, material, mergeStaticMeshes } from './kit';
 import { getSurfaceTexture } from './textures';
 import { buildPhotoModelGeometry } from './photoModel';
+import { buildExpandedAsset } from './expandedAssets';
 import { buildMiningObject } from './miningObjects';
 import { buildBarn, buildBush, buildBridge, buildCoop, buildFence, buildField, buildPath, buildRiver } from './proceduralObjects';
 
@@ -145,7 +146,7 @@ export function createTerrainMesh(plan: WorldPlan, resolutionCap = 192): THREE.M
 
   const mesh = new THREE.Mesh(
     geometry,
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0, map: getSurfaceTexture(plan.terrain.style === 'dunes' || plan.terrain.style === 'islands' ? 'sand' : plan.terrain.style === 'mountains' ? 'stone' : 'grass') }),
+    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0, map: getSurfaceTexture(plan.terrain.style === 'dunes' || plan.terrain.style === 'islands' ? 'sand' : ['mountains', 'canyon', 'plateau', 'volcano', 'crater'].includes(plan.terrain.style) ? 'stone' : 'grass') }),
   );
   mesh.name = 'terrain';
   mesh.receiveShadow = true;
@@ -174,6 +175,8 @@ export function createWaterMesh(plan: WorldPlan): THREE.Mesh | null {
 }
 
 function buildPrimitive(object: PrimitiveObject): THREE.Group {
+  const expanded = buildExpandedAsset(object);
+  if (expanded) return expanded;
   if (object.primitive === 'photo-model' && object.meta.photoModel) {
     const group = new THREE.Group();
     const mesh = new THREE.Mesh(buildPhotoModelGeometry(object.meta.photoModel), new THREE.MeshStandardMaterial({ color: object.color, vertexColors: true, roughness: .85 }));

@@ -1214,6 +1214,9 @@ input[type="range"]:disabled {
 .asset-glyph.category-structures {
   color: #d2a87a;
 }
+.asset-glyph.category-props {
+  color: #bba1d0;
+}
 .asset-glyph.category-primitives {
   color: #9aa7b5;
 }

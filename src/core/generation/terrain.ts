@@ -98,6 +98,36 @@ export function createTerrainSampler(terrain: Terrain, seed: number): TerrainSam
         );
       }
 
+      case 'valley': {
+        const winding = Math.sin(z / 47 + (seed % 17) * .1) * size * .08;
+        const bank = smoothstep(clamp01(Math.abs(x - winding) / (size * .32)));
+        const noise = fbm(seed, x / 45, z / 45, 4) * .1;
+        return (bank * .9 + noise - .25) * heightScale;
+      }
+      case 'plateau': {
+        const base = fbm(seed, x / 65, z / 65, 4);
+        const level = smoothstep(clamp01((base + .25) * 2));
+        return (level * .8 + fbm(seed + 91, x / 18, z / 18, 2) * .035 - .25) * heightScale;
+      }
+      case 'canyon': {
+        const winding = Math.sin(z / 55 + (seed % 13) * .1) * size * .07;
+        const distance = Math.abs(x - winding) / (size * .19);
+        const walls = smoothstep(clamp01((distance - .3) * 2));
+        return (walls * .9 + fbm(seed, x / 30, z / 30, 3) * .08 - .3) * heightScale;
+      }
+      case 'volcano': {
+        const r = Math.hypot(x, z) / (size * .34);
+        const mountain = Math.max(0, 1 - r);
+        const crater = Math.exp(-Math.pow(r / .23, 2));
+        return (mountain * .95 - crater * .6 + fbm(seed, x / 26, z / 26, 3) * .07) * heightScale;
+      }
+      case 'crater': {
+        const r = Math.hypot(x, z) / (size * .25);
+        const rim = Math.exp(-Math.pow((r - 1) / .23, 2)) * .48;
+        const hollow = Math.exp(-Math.pow(r / .65, 4)) * .4;
+        return (rim - hollow + fbm(seed, x / 32, z / 32, 3) * .06) * heightScale;
+      }
+
       case 'islands': {
         const base = (fbm(seed, x / 46, z / 46, 4) + 1) / 2;
         const radial = Math.min(1, Math.sqrt(x * x + z * z) / half);

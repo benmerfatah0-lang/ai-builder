@@ -5,6 +5,7 @@ import {
   type AssetCategory,
   type AssetDefinition,
 } from '../../../core/assets/catalog';
+import { normalizeAssetText } from '../../ai/assetRequests';
 import { mulberry32 } from '../../../core/generation/rng';
 import { createTerrainSampler } from '../../../core/generation/terrain';
 import { MAX_WORLD_OBJECTS } from '../../../core/world-plan/schema';
@@ -15,18 +16,28 @@ import { EmptyState } from '../../../ui/controls';
 type Filter = 'all' | AssetCategory;
 
 const FILTERS: { id: Filter; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'primitives', label: 'Shapes' },
-  { id: 'nature', label: 'Nature' },
-  { id: 'structures', label: 'Structures' },
-  { id: 'lights', label: 'Lights' },
+  { id: 'all', label: 'الكل · All' },
+  { id: 'primitives', label: 'أشكال' },
+  { id: 'nature', label: 'طبيعة' },
+  { id: 'structures', label: 'منشآت' },
+  { id: 'props', label: 'أغراض' },
+  { id: 'lights', label: 'إضاءة' },
 ];
 
 const CATEGORY_ICONS: Record<AssetCategory, IconName> = {
   primitives: 'cube',
   nature: 'tree',
   structures: 'layers',
+  props: 'cube',
   lights: 'sun',
+};
+
+const AR_LABELS: Record<string, string> = {
+  'mine-entrance':'مدخل منجم', 'mine-cart':'عربة منجم', pickaxe:'معول', excavator:'حفارة', chest:'صندوق',
+  box:'مكعب', sphere:'كرة', cylinder:'أسطوانة', cone:'مخروط', torus:'حلقة', plane:'لوح', ground:'أرض مسطحة',
+  pine:'شجرة صنوبر', broadleaf:'شجرة عريضة', palm:'نخلة', cactus:'صبار', bush:'شجيرة', boulder:'صخرة', crag:'صخرة حادة',
+  house:'بيت', tower:'برج', barn:'حظيرة', coop:'قن دجاج', ruin:'أطلال', 'dirt-path':'طريق ترابي',
+  'wood-fence':'سياج خشبي', 'wheat-field':'حقل قمح', bridge:'جسر', lantern:'فانوس',
 };
 
 export function AssetsPanel({
@@ -42,13 +53,15 @@ export function AssetsPanel({
   const atLimit = state.plan.objects.length >= MAX_WORLD_OBJECTS;
 
   const assets = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
+    const normalized = normalizeAssetText(query.trim()).replace(/^ال(?=.{2,})/u, '');
     return ASSET_LIBRARY.filter((asset) => {
       const inFilter = filter === 'all' || asset.category === filter;
       const inQuery =
         !normalized ||
-        asset.label.toLowerCase().includes(normalized) ||
-        asset.description.toLowerCase().includes(normalized);
+        normalizeAssetText(asset.label).includes(normalized) ||
+        normalizeAssetText(asset.arabicLabel ?? AR_LABELS[asset.id] ?? '').includes(normalized) ||
+        normalizeAssetText(asset.searchTerms ?? '').includes(normalized) ||
+        normalizeAssetText(asset.description).includes(normalized);
       return inFilter && inQuery;
     });
   }, [filter, query]);
@@ -61,8 +74,13 @@ export function AssetsPanel({
     const seed = (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
     const rng = mulberry32(seed);
     const sampler = createTerrainSampler(state.plan.terrain, state.plan.seed);
-    const position = placementForNewObject(state.plan, sampler, rng);
-    const object = asset.create(rng, position);
+    const object = asset.create(rng, [0, 0, 0]);
+    const position = placementForNewObject(state.plan, sampler, rng, object);
+    if (!position) {
+      notify('لم أجد مساحة جافة كافية لهذا العنصر؛ لم يُضف. جرّب مساحة أوسع أو احذف عناصر.', 'danger');
+      return;
+    }
+    object.transform = { ...object.transform, position };
     object.name = nextAvailableName(state.plan, object.name);
     dispatch({ type: 'addObject', object });
     notify(`${asset.label} added to the world.`, 'success');
@@ -73,8 +91,8 @@ export function AssetsPanel({
     <div className="panel-scroll">
       <div className="panel-intro">
         <div>
-          <h2>Assets</h2>
-          <p>Procedural primitives and nature props. Click to place.</p>
+          <h2>مكتبة العناصر · Assets</h2>
+          <p>عناصر محلية ثلاثية الأبعاد؛ اضغط لإضافتها إلى العالم.</p>
         </div>
       </div>
 
@@ -83,8 +101,8 @@ export function AssetsPanel({
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search assets"
-          aria-label="Search assets"
+          placeholder="ابحث عن عنصر · Search assets"
+          aria-label="البحث عن العناصر"
         />
         {query && (
           <button type="button" className="clear-search" onClick={() => setQuery('')} aria-label="Clear search">
@@ -118,7 +136,7 @@ export function AssetsPanel({
           Try another search term.
         </EmptyState>
       ) : (
-        <div className="asset-grid">
+        <><p className="hint-text" dir="rtl">{assets.length} عنصر متاح</p><div className="asset-grid">
           {assets.map((asset) => (
             <button
               type="button"
@@ -131,17 +149,17 @@ export function AssetsPanel({
               <span className={`asset-glyph category-${asset.category}`}>
                 <Icon name={CATEGORY_ICONS[asset.category]} size={18} />
               </span>
-              <span className="asset-label">{asset.label}</span>
+              <span className="asset-label">{asset.label}{(asset.arabicLabel ?? AR_LABELS[asset.id]) && <small style={{display: "block"}}>{asset.arabicLabel ?? AR_LABELS[asset.id]}</small>}</span>
               <span className="asset-add">
                 <Icon name="plus" size={12} />
               </span>
             </button>
           ))}
-        </div>
+        </div></>
       )}
 
       <p className="hint-text">
-        Props are generated from geometry at runtime — no textures or external downloads.
+        العناصر نماذج إجرائية محلية؛ أضفها ثم حرّكها أو غيّر حجمها. بعض المباني زخرفية ولا تحتوي غرفاً قابلة للدخول.
       </p>
     </div>
   );

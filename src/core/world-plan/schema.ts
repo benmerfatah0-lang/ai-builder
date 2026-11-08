@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EXPANDED_ASSET_IDS } from '../assets/expandedDefinitions';
 
 /**
  * Version of the WorldPlan document format.
@@ -76,6 +77,7 @@ export const terrainStyleSchema = z.enum([
   'mountains',
   'dunes',
   'islands',
+  'valley', 'plateau', 'canyon', 'volcano', 'crater',
 ]);
 
 export const terrainSchema = z.object({
@@ -196,6 +198,7 @@ export const primitiveKindSchema = z.enum([
   'plane',
   'photo-model',
   'mine-entrance', 'mine-cart', 'pickaxe', 'excavator', 'chest',
+  ...EXPANDED_ASSET_IDS,
 ]);
 
 export const treeVariantSchema = z.enum(['pine', 'broadleaf', 'palm', 'cactus', 'bush']);
