@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ReplaceOnlineModel } from './ReplaceOnlineModel';
 import { researchUnknown, unknownTopics, type ResearchReport } from '../../ai/unknownResearch';
 import { ResearchResults } from './ResearchResults';
 import { PhotoStudio } from './PhotoStudio';
@@ -101,6 +102,7 @@ export function TextEditPanel({ shapeModel, onOpenStudio }: { shapeModel: ShapeM
   return (
     <section className="text-edit" dir="rtl" aria-labelledby="text-edit-heading">
       <div className="text-edit-heading"><span><Icon name="sparkles" size={17} /></span><div><h2 id="text-edit-heading">عدّل عالمك بالكتابة</h2><p>تعديل واحد على العالم الحالي، دون إنشاء عالم جديد. إذا لم أفهم كلمات فقد أرسلها للبحث في ويكيبيديا وويكاموس وCommons.</p></div></div>
+      <ReplaceOnlineModel />
       <label className="field">
         <span className="field-label">اكتب التعديل</span>
         <textarea className="prompt-input text-edit-input" aria-label="تعديل العالم بالكتابة" value={command} onChange={(event) => setCommand(event.target.value)} dir="auto" maxLength={400} rows={3} placeholder="مثلاً: أضف شجرتين على يمين البيت" />

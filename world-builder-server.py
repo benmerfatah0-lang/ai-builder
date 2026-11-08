@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 from functools import partial
+from concurrent.futures import ThreadPoolExecutor
 from wiki_learner import WikiLearner
 from house_learner import HouseLearner, good_thumb, good_source, plain, LICENSE_PATTERN
 from html.parser import HTMLParser
@@ -293,6 +294,72 @@ def search_free_models(query):
     return {'results': results}
 
 
+GOBKIT_URL = 'https://gobkit.com/api/free'
+
+
+def gobkit_models():
+    data = get_json(Request(GOBKIT_URL, headers={'User-Agent': USER_AGENT}), timeout=15)
+    if not isinstance(data, dict) or not isinstance(data.get('packs'), list):
+        raise ValueError('invalid Gobkit catalogue')
+    models = []
+    for pack in data['packs']:
+        if not isinstance(pack, dict) or pack.get('id') != 'gobkit-nature-kit' or pack.get('rigged') is not False or not str(pack.get('license', '')).startswith('CC0 1.0') or not isinstance(pack.get('models'), list): continue
+        for item in pack['models'][:100]:
+            if not isinstance(item, dict): continue
+            ident, name, url = item.get('id'), item.get('name'), item.get('url')
+            if not isinstance(ident, str) or not re.fullmatch(r'[A-Za-z0-9]{1,80}', ident): continue
+            if not isinstance(name, str) or not name.strip() or not isinstance(url, str): continue
+            if not re.fullmatch(r'https://gobkit\.com/freebies/environment/[A-Za-z0-9_-]{1,100}\.glb', url): continue
+            if item.get('rigged') is not False or item.get('animations') != [] or item.get('lowPoly') is not True or item.get('format') != 'glb' or not str(item.get('license', '')).startswith('CC0 1.0'): continue
+            models.append((ident, name.strip()[:120], url))
+    return models
+
+
+def search_gobkit_models(query):
+    # Require a matching word, never return unrelated models just to fill a scene.
+    words = re.findall(r'[a-z]+', query.lower())
+    results = []
+    for ident, name, _ in gobkit_models():
+        text = (ident + ' ' + name).lower()
+        if not any(len(w) >= 3 and (w in text or (w.endswith('s') and w[:-1] in text)) for w in words): continue
+        results.append({'source': 'gobkit', 'id': ident, 'version': '1', 'slug': 'nature-kit', 'title': name, 'triangles': None})
+        if len(results) == 12: break
+    return results
+
+
+def search_all_models(query):
+    # Each independent upstream failure is reported, not mistaken for an empty search.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = [pool.submit(search_free_models, query), pool.submit(search_gobkit_models, query)]
+        results, warnings = [], []
+        for name, job in zip(('3DAssets.dev', 'Gobkit'), jobs):
+            try:
+                value = job.result()
+                if name == '3DAssets.dev':
+                    value = [dict(item, source='3dassets') for item in value['results']]
+                results.append(value)
+            except (ValueError, URLError, OSError, TimeoutError, KeyError, TypeError):
+                results.append([]); warnings.append(name)
+    if len(warnings) == 2: raise ValueError('all asset sources failed')
+    # Interleave providers, so a single provider cannot hide all alternatives.
+    merged = []
+    for i in range(12):
+        for items in results:
+            if i < len(items): merged.append(items[i])
+            if len(merged) == 12: return {'results': merged, 'warnings': warnings}
+    return {'results': merged, 'warnings': warnings}
+
+
+def download_gobkit_model(ident, version):
+    if not isinstance(ident, str) or not re.fullmatch(r'[A-Za-z0-9]{1,80}', ident) or version != '1': raise ValueError('invalid Gobkit identifier')
+    matches = [url for item_id, _, url in gobkit_models() if item_id == ident]
+    if len(matches) != 1: raise ValueError('unknown Gobkit model')
+    with build_opener(NoRedirects()).open(Request(matches[0], headers={'User-Agent': USER_AGENT}), timeout=30) as response:
+        model = response.read(MAX_LIBRARY_MODEL + 1)
+    if len(model) < 24 or len(model) > MAX_LIBRARY_MODEL or model[:4] != b'glTF': raise ValueError('invalid model')
+    return model
+
+
 def download_free_model(ident, version):
     if not isinstance(ident,str) or not re.fullmatch(r'[0-9]{1,12}',ident) or not isinstance(version,str) or not re.fullmatch(r'[0-9]{1,5}',version):
         raise ValueError('invalid asset identifier')
@@ -414,14 +481,17 @@ class Handler(SimpleHTTPRequestHandler):
                 if set(payload) != {'query'} or not isinstance(query,str) or not query.strip() or len(query) > 200:
                     self.api_result(400, {'error': 'invalid query'})
                     return
-                self.api_result(200, search_free_models(query.strip()))
+                self.api_result(200, search_all_models(query.strip()))
                 return
             if self.path == '/api/asset-library/model':
-                if set(payload) != {'id','version'}:
+                if set(payload) not in ({'id','version'}, {'id','version','source'}):
                     self.api_result(400, {'error': 'invalid asset'})
                     return
                 try:
-                    model = download_free_model(payload.get('id'), payload.get('version'))
+                    source = payload.get('source', '3dassets')
+                    if source == '3dassets': model = download_free_model(payload.get('id'), payload.get('version'))
+                    elif source == 'gobkit': model = download_gobkit_model(payload.get('id'), payload.get('version'))
+                    else: raise ValueError('invalid source')
                 except ValueError:
                     self.api_result(400, {'error': 'invalid asset'})
                     return

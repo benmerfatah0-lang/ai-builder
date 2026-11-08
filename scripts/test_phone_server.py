@@ -408,11 +408,15 @@ class PhoneServerTests(unittest.TestCase):
         self.assertEqual(self.request('/api/asset-library/search', origin='https://evil.example',body=search)[0],403)
         self.assertEqual(self.request('/api/asset-library/search',body=b'{"query":"tree","url":"http://bad"}')[0],400)
         self.assertEqual(self.request('/api/asset-library/search',body=json.dumps({'query':'x'*201}).encode())[0],400)
-        with patch.object(phone_server,'search_free_models',return_value={'results': []}) as searcher:
+        with patch.object(phone_server,'search_all_models',return_value={'results': [], 'warnings': []}) as searcher:
             self.assertEqual(self.request('/api/asset-library/search',body=search)[0],200)
             searcher.assert_called_once_with('tree')
         self.assertEqual(self.request('/api/asset-library/model',body=b'{"id":"../x","version":"1"}')[0],400)
         self.assertEqual(self.request('/api/asset-library/model',body=b'{"id":"1","version":"1","url":"x"}')[0],400)
+        self.assertEqual(self.request('/api/asset-library/model',body=b'{"id":"1","version":"1","source":"https://evil.example"}')[0],400)
+        with patch.object(phone_server,'download_gobkit_model',return_value=b'glTF'+bytes(24)) as gobkit:
+            self.assertEqual(self.request('/api/asset-library/model',body=b'{"id":"TreeLow004","version":"1","source":"gobkit"}')[1],b'glTF'+bytes(24))
+            gobkit.assert_called_once_with('TreeLow004','1')
         with patch.object(phone_server,'download_free_model',return_value=b'glTF'+bytes(24)) as loader:
             self.assertEqual(self.request('/api/asset-library/model',body=b'{"id":"1","version":"2"}')[1],b'glTF'+bytes(24))
             loader.assert_called_once_with('1','2')
@@ -475,6 +479,40 @@ class FreeModelTests(unittest.TestCase):
         self.assertEqual(results['results'],[{'id':'123','version':'1','slug':'red-tree','title':'Red tree','triangles':200}])
         self.assertTrue(get.call_args.args[0].full_url.startswith(phone_server.ASSET_SEARCH_URL+'?'))
         self.assertIn('tree+%26+rock',get.call_args.args[0].full_url)
+
+    def test_gobkit_catalogue_and_download_are_restricted(self):
+        import io
+        good={'id':'TreeLow004','name':'TreeLow 004','url':'https://gobkit.com/freebies/environment/TreeLow004.glb','format':'glb','rigged':False,'animations':[],'lowPoly':True,'license':'CC0 1.0 (public domain)'}
+        malicious=dict(good,id='Evil',url='https://evil.example/test.glb')
+        animated=dict(good,id='Animated',rigged=True)
+        manifest={'packs':[{'id':'gobkit-nature-kit','rigged':False,'license':'CC0 1.0 (public domain)','models':[good, malicious, animated]}]}
+        class Opener:
+            def open(self, req, timeout):
+                self.url=req.full_url
+                return io.BytesIO(b'glTF'+bytes(24))
+        opener=Opener()
+        with patch.object(phone_server,'get_json',return_value=manifest), patch.object(phone_server,'build_opener',return_value=opener):
+            result=phone_server.search_gobkit_models('tree')
+            self.assertEqual([i['id'] for i in result],['TreeLow004'])
+            self.assertEqual(phone_server.search_gobkit_models('car'),[])
+            self.assertEqual(phone_server.download_gobkit_model('TreeLow004','1'),b'glTF'+bytes(24))
+            self.assertEqual(opener.url,good['url'])
+            with self.assertRaises(ValueError): phone_server.download_gobkit_model('Evil','1')
+            with self.assertRaises(ValueError): phone_server.download_gobkit_model('../x','1')
+
+    def test_multiple_sources_and_partial_failures(self):
+        first={'id':'123','version':'1','slug':'red-tree','title':'Red tree','triangles':200}
+        second={'source':'gobkit','id':'TreeLow004','version':'1','slug':'nature-kit','title':'TreeLow 004','triangles':None}
+        with patch.object(phone_server,'search_free_models',return_value={'results':[first]}), patch.object(phone_server,'search_gobkit_models',return_value=[second]):
+            data=phone_server.search_all_models('tree')
+            self.assertEqual([r['source'] for r in data['results']],['3dassets','gobkit'])
+            self.assertEqual(data['warnings'],[])
+        with patch.object(phone_server,'search_free_models',side_effect=URLError('offline')), patch.object(phone_server,'search_gobkit_models',return_value=[second]):
+            data=phone_server.search_all_models('tree')
+            self.assertEqual(data['warnings'],['3DAssets.dev'])
+            self.assertEqual(data['results'],[second])
+        with patch.object(phone_server,'search_free_models',side_effect=URLError('offline')), patch.object(phone_server,'search_gobkit_models',side_effect=URLError('offline')):
+            with self.assertRaises(ValueError):phone_server.search_all_models('tree')
 
     def test_download_constructs_fixed_url_and_limits_response(self):
         import io

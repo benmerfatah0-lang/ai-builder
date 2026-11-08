@@ -102,7 +102,7 @@ export function AssetsPanel({
 
       <div className="callout" dir="rtl"><div>
         <strong>مجسمات مجانية من الإنترنت</strong>
-        <p>ابحث في 3DAssets.dev وأضف مجسمات جاهزة إلى العالم الحالي.</p>
+        <p>أدخل اسم المجسم ليبحث الخادم في 3DAssets.dev وGobkit ويضيفه إلى العالم الحالي.</p>
         {!onlinePlan && <button type="button" className="btn btn-small" onClick={()=>setOnlinePlan(state.plan)}>إضافة مجسمات مجانية للعالم</button>}
         {onlinePlan && <LibraryWorldComposer initialItems={[{id:createId('model'),prompt:'',x:0,z:0,size:5,height:0}]} initialPlan={onlinePlan} description="إضافة مجسمات جاهزة" mode="append" onClose={()=>setOnlinePlan(null)} />}
       </div></div>

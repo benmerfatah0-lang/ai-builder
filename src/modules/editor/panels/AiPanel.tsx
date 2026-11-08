@@ -211,8 +211,8 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
 
       <div className="callout" dir="rtl"><div>
         <strong>خريطة من مجسمات جاهزة مجانية</strong>
-        <p>اختر عناصر جاهزة من مكتبة 3DAssets.dev المجانية وأضفها إلى الخريطة، بدلاً من توليدها بالذكاء الاصطناعي.</p>
-        {!libraryDraft && <button type="button" className="btn btn-primary" disabled={!prompt.trim() || prompt.trim().length>400 || generating || batchBusy} onClick={()=>{setCloudDraft(null);setLibraryDraft({items:textToCloudItems(prompt),prompt:prompt.trim(),plan:state.plan,id:++libraryDraftId.current});}}>تخطيط خريطة بمجسمات جاهزة</button>}
+        <p>يبحث الخادم تلقائياً في 3DAssets.dev وGobkit عن مجسمات مجانية جاهزة ويضعها في الخريطة؛ ليست توليداً بالذكاء الاصطناعي.</p>
+        {!libraryDraft && <button type="button" className="btn btn-primary" disabled={!prompt.trim() || prompt.trim().length>400 || generating || batchBusy} onClick={()=>{setCloudDraft(null);setLibraryDraft({items:textToCloudItems(prompt),prompt:prompt.trim(),plan:state.plan,id:++libraryDraftId.current});}}>بناء خريطة بمجسمات جاهزة</button>}
       </div></div>
       {libraryDraft && <LibraryWorldComposer key={libraryDraft.id} initialItems={libraryDraft.items} initialPlan={libraryDraft.plan} description={libraryDraft.prompt} mode="text" canApply={()=>currentPrompt.current.trim()===libraryDraft.prompt} onBusyChange={setBatchBusy} onClose={()=>setLibraryDraft(null)} onOpenStudio={onOpenStudio} />}
       {referenceFlow && <ReferenceSceneWorkflow key={referenceFlow.id} prompt={referenceFlow.prompt} basePlan={referenceFlow.plan} mode="create" canApply={()=>currentPrompt.current.trim()===referenceFlow.prompt} onCancel={()=>setReferenceFlow(null)} onApplied={()=>{setReferenceFlow(null);notify('أُنشئ المشهد؛ يمكن التراجع بـ Undo.','success');}} onOpenStudio={onOpenStudio}/>}
