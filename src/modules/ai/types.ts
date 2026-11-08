@@ -42,6 +42,12 @@ export interface WorldIntent {
   scale: WorldScale;
   settlement: boolean;
   water: boolean;
+  /** A named landscape, so explicit assets can retain their surroundings. */
+  landscape?: boolean;
+  /** Forest vegetation on mountainous terrain. */
+  mountainousForest?: boolean;
+  /** Decorative terrain-following river; not a simulated watercourse. */
+  river?: boolean;
   /** A narrow request for a river through the center of a village. */
   villageRiver?: boolean;
   /** Explicit catalog assets and relative placements recognised in the prompt. */

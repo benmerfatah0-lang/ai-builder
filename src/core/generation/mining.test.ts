@@ -16,7 +16,8 @@ describe('desert mining example', () => {
     const report = generateWorldPlanWithReport(intent);
     expect(report.plan.objects.filter((object) => object.kind === 'building').every((object) => object.meta.desertHouse)).toBe(true);
     expect(report.validation.valid).toBe(true);
-    expect(report.plan.objects).toHaveLength(16);
+    expect(report.plan.objects.filter((object) => object.kind === 'primitive' || object.kind === 'building')).toHaveLength(16);
+    expect(report.plan.objects.some((object) => object.kind === 'rock')).toBe(true);
     const mine = report.plan.objects.find((o) => o.kind === 'primitive' && o.primitive === 'mine-entrance')!;
     for (const object of report.plan.objects.filter((o) => o.kind === 'primitive' && o.id !== mine.id)) {
       expect(Math.hypot(object.transform.position[0] - mine.transform.position[0], object.transform.position[2] - mine.transform.position[2])).toBeLessThan(30);
@@ -46,7 +47,7 @@ describe('desert mining example', () => {
     }
     const glb = await exportWorldToGlb(plan);
     expect(new DataView(glb.buffer).getUint32(0, true)).toBe(0x46546c67);
-    expect(glb.objectCount).toBe(16);
+    expect(glb.objectCount).toBe(plan.objects.length);
     disposeObject3D(scene);
   }, 20000);
 });

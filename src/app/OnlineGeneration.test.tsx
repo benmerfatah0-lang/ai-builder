@@ -5,68 +5,6 @@ import App from './App';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.localStorage.clear(); });
 describe('lightweight local planning interface', () => {
-  it('generates without a model server and shows Wikipedia sources when requested', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(new Response('{"online":true}'))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ version: 1, cursor: 0, status: 'starting', classes: { desert: {docs:0,tokens:{}}, forest: {docs:0,tokens:{}}, mountains: {docs:0,tokens:{}}, island: {docs:0,tokens:{}} }, sources: [] })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ version: 1, cursor: 0, status: 'starting', samples: 0, last_loss: null, sources: [], profiles: Object.fromEntries(['default', 'small', 'tall', 'wide'].map(key => [key, {count: 0, mean: [1, 1, 1, 1]}])) })))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [{ url: 'https://ar.wikipedia.org/wiki/صحراء', title: 'مصدر', content: 'صحراء' }] })));
-    vi.stubGlobal('fetch', fetchMock);
-    render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'ابحث عن بيت في الصحراء' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
-    expect(await screen.findByText('تم البحث في ويكيبيديا في هذا الطلب.')).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'مصدر ↗' }).getAttribute('href')).toContain('ar.wikipedia.org/wiki/');
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/online', '/api/knowledge', '/api/house-learning', '/api/search']);
-  }, 20000);
-  it('automatically researches a missing thing beside a known asset in both sources', async () => {
-    const image = { title: 'File:Elephant.jpg', url: 'https://commons.wikimedia.org/wiki/File:Elephant.jpg', thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Elephant.jpg/240px-Elephant.jpg', author: 'Alice', license_url: 'https://creativecommons.org/licenses/by-sa/4.0/', license_name: 'CC BY-SA 4.0' };
-    const fetchMock = vi.fn(async (url: string, options: RequestInit) => {
-      if (url === '/api/online') return new Response('{"online":true}');
-      if (url === '/api/search' || url === '/api/image-search') {
-        expect(JSON.parse(options.body as string).query).toBe('فيل');
-        return new Response(JSON.stringify({ results: url === '/api/search' ? [{ title: 'فيل', url: 'https://ar.wikipedia.org/wiki/فيل', content: 'حيوان يعيش في الغابة' }] : [image] }));
-      }
-      return new Response('{}');
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت وفيل' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
-    const results = await screen.findByRole('region', { name: 'نتائج البحث التلقائي' });
-    expect(within(results).getByText('البحث عن: فيل')).toBeTruthy();
-    expect(within(results).getByRole('link', { name: 'فيل ↗' }).getAttribute('href')).toBe('https://ar.wikipedia.org/wiki/فيل');
-    expect(within(results).getByRole('img', { name: 'صورة مرجعية: File:Elephant.jpg' })).toBeTruthy();
-    expect(await screen.findByText('biome: meadow')).toBeTruthy(); // The animal's habitat is not a request to change the world biome.
-    expect(screen.getByText(/سنحاول بناء العناصر المجهولة من الصور/)).toBeTruthy();
-    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/search')).toHaveLength(1);
-    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/image-search')).toHaveLength(1);
-    expect(window.localStorage.getItem('worldforge-wiki-notebook-v1')).toBeNull();
-    expect(window.localStorage.getItem('worldforge-image-references-v1')).toBeNull();
-  }, 20000);
-  it('uses an exact article definition and thumbnail color to build an approximate house', async () => {
-    const image = { title: 'File:Hut.jpg', url: 'https://commons.wikimedia.org/wiki/File:Hut.jpg', thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Hut.jpg/240px-Hut.jpg', author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' };
-    const mock = vi.fn(async (url: string) => {
-      if (url === '/api/online') return new Response('{"online":true}');
-      if (url === '/api/search') return new Response(JSON.stringify({results: [{ title: 'كوخ', url: 'https://ar.wikipedia.org/wiki/كوخ', content: 'الكوخ هو منزل صغير.' }]}));
-      if (url === '/api/image-search') return new Response(JSON.stringify({ results: [image] }));
-      if (url === '/api/image-analyze') return new Response('{"center_color":"#a04020"}');
-      return new Response('{}');
-    });
-    vi.stubGlobal('fetch', mock);
-    render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'كوخ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
-    expect(await screen.findByText(/استُخدم كلون البيت/)).toBeTruthy();
-    expect(screen.getByText('#a04020')).toBeTruthy();
-    expect(screen.getByText(/ممثّل ببيت تقريبي|ممثل ببيت تقريبي/)).toBeTruthy();
-    expect(mock.mock.calls.some(([url]) => url === '/api/image-analyze')).toBe(true);
-    fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
-    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
-    expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
-  }, 20000);
   it('adds an inferred house by text and keeps the addition undoable', async () => {
     const image = { title: 'File:Hut.jpg', url: 'https://commons.wikimedia.org/wiki/File:Hut.jpg', thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Hut.jpg/240px-Hut.jpg', author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' };
     const mock = vi.fn(async (url: string) => {
@@ -88,22 +26,6 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: /Undo \(Ctrl\/Cmd\+Z\)/ }));
-    expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
-  }, 20000);
-  it('uses a single dictionary sense while generating a world', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (url === '/api/online') return new Response('{"online":true}');
-      if (url === '/api/search' || url === '/api/image-search') return new Response('{"results":[]}');
-      if (url === '/api/dictionary') return new Response('{"entries":[{"language":"fr","partOfSpeech":"Noun","definition":"house"}],"complete":true}');
-      return new Response('{}');
-    }));
-    render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'cabane' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
-    expect(await screen.findByText(/وفق تعريف معجمي محدود/)).toBeTruthy();
-    fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
-    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
   }, 20000);
   it('uses a single dictionary sense for a limited, undoable addition', async () => {
@@ -133,30 +55,6 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(screen.getByRole('button', { name: /Undo \(Ctrl\/Cmd\+Z\)/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
   }, 20000);
-  it('does not overwrite a world changed while an image is being analyzed', async () => {
-    const image = { title: 'File:Hut.jpg', url: 'https://commons.wikimedia.org/wiki/File:Hut.jpg', thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Hut.jpg/240px-Hut.jpg', author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' };
-    let finish: ((response: Response) => void) | undefined;
-    const delayed = new Promise<Response>((resolve) => { finish = resolve; });
-    const mock = vi.fn(async (url: string) => {
-      if (url === '/api/online') return new Response('{"online":true}');
-      if (url === '/api/search') return new Response(JSON.stringify({ results: [{ title: 'كوخ', url: 'https://ar.wikipedia.org/wiki/كوخ', content: 'الكوخ هو منزل.' }] }));
-      if (url === '/api/image-search') return new Response(JSON.stringify({ results: [image] }));
-      if (url === '/api/image-analyze') return delayed;
-      return new Response('{}');
-    });
-    vi.stubGlobal('fetch', mock);
-    render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'كوخ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
-    await waitFor(() => expect(mock.mock.calls.some(([url]) => url === '/api/image-analyze')).toBe(true));
-    fireEvent.change(screen.getByLabelText('World name'), { target: { value: 'Preserve my edit' } });
-    fireEvent.blur(screen.getByLabelText('World name'));
-    finish!(new Response('{"center_color":"#a04020"}'));
-    expect((await screen.findByRole('alert')).textContent).toContain('تغيّر العالم أثناء البحث');
-    expect((screen.getByLabelText('World name') as HTMLInputElement).value).toBe('Preserve my edit');
-    expect(screen.queryByText('World generated')).toBeNull();
-  }, 20000);
   it('does not apply a delayed approximation after the edit command changes', async () => {
     const image = { title: 'File:Hut.jpg', url: 'https://commons.wikimedia.org/wiki/File:Hut.jpg', thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Hut.jpg/240px-Hut.jpg', author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' };
     let finish: ((response: Response) => void) | undefined;
@@ -182,21 +80,6 @@ describe('lightweight local planning interface', () => {
     expect(await screen.findByText(/تغيّر العالم أو الأمر أثناء البحث/)).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
-  }, 20000);
-  it('shows failures from both lookup services instead of claiming success', async () => {
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url === '/api/online') return new Response('{"online":true}');
-      if (url === '/api/search' || url === '/api/image-search') return new Response('', { status: 502 });
-      return new Response('{}');
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'قلعة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
-    expect(await screen.findByText(/تعذّر البحث عن الصور في Wikimedia Commons/)).toBeTruthy();
-    expect(screen.getByText(/تعذّر البحث في ويكيبيديا؛ لم تُستخدم نتائج منها/)).toBeTruthy();
-    expect(await screen.findByText('World generated')).toBeTruthy();
   }, 20000);
   it('searches after an unsupported text edit without changing the world', async () => {
     const fetchMock = vi.fn(async (url: string) => {
@@ -302,16 +185,7 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(screen.getByText('أمثلة جاهزة للإلهام'));
     fireEvent.click(screen.getByRole('button', { name: /مدينة صحراوية قديمة فيها منجم/ }));
     fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
-    expect(await screen.findByText(/المنجم مدخل زخرفي يوحي بالعمق فقط/)).toBeTruthy();
-  }, 20000);
-  it('shows an internet error without silently generating offline', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 502 })); vi.stubGlobal('fetch', fetchMock);
-    render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
-    expect((await screen.findByRole('alert')).textContent).toContain('ويكيبيديا');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/المنجم مدخل زخرفي/)).toBeTruthy();
   }, 20000);
   it('learns an explicitly selected house and can delete personal training', async () => {
     render(<App />);
@@ -386,86 +260,6 @@ describe('lightweight local planning interface', () => {
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
   }, 20000);
 
-  it('builds a single-image model after the user selects it', async () => {
-    const image = { title: 'File:Elephant.png', url: 'https://commons.wikimedia.org/wiki/File:Elephant.png', thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Elephant.png/240px-Elephant.png', author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' };
-    const bytes = new Uint8Array(12*12*4);
-    for (let y=0;y<12;y++) for (let x=0;x<12;x++) bytes.set(x>=3&&x<=8&&y>=2&&y<=9 ? [120,40,30,255] : [255,255,255,255], (y*12+x)*4);
-    const mock = vi.fn(async (url: string) => {
-      if (url === '/api/online') return new Response('{"online":true}');
-      if (url === '/api/search') return new Response('{"results":[]}');
-      if (url === '/api/image-search') return new Response(JSON.stringify({results:[image]}));
-      if (url === '/api/image-pixels') return new Response(JSON.stringify({width:12,height:12,rgba:btoa(String.fromCharCode(...bytes))}));
-      return new Response('{}');
-    });
-    vi.stubGlobal('fetch', mock);
-    render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'عالم فيه فيل' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
-    const candidate = await screen.findByRole('button', { name:/File:Elephant.png/ });
-    expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(0);
-    const thumb = within(candidate).getByRole('img', { name:'File:Elephant.png' }) as HTMLImageElement;
-    expect(thumb.getAttribute('src')).toContain('/api/image-thumbnail?url=');
-    fireEvent.click(candidate);
-    expect(await screen.findByText(/أُضيف مجسم الصورة التقريبي؛/)).toBeTruthy();
-    expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', { name: 'فتح العالم في المحرر ←' }));
-    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
-    expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getByText('فيل')).toBeTruthy();
-  }, 20000);
-
-  it('cancels an ongoing multi-source search without replacing the world', async () => {
-    const mock = vi.fn((url: string, options: RequestInit) => {
-      if (url === '/api/online') return Promise.resolve(new Response('{"online":true}'));
-      if (url === '/api/search') return new Promise<Response>((_resolve, reject) => options.signal?.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once:true }));
-      if (url === '/api/image-search') return Promise.resolve(new Response('{"results":[]}'));
-      if (url === '/api/dictionary') return Promise.resolve(new Response('{"entries":[],"complete":true}'));
-      return Promise.resolve(new Response('{}'));
-    });
-    vi.stubGlobal('fetch', mock);
-    render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'عالم فيه فيل' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'إيقاف البحث' }));
-    expect((await screen.findByRole('alert')).textContent).toContain('أُوقف البحث؛ لم يُنشأ العالم');
-    expect(screen.queryByText('World generated')).toBeNull();
-  }, 20000);
-
-  it('generates multiple researched shapes and explicit copies into one map', async () => {
-    const image = (name: string) => ({ title: `File:${name}.png`, url: `https://commons.wikimedia.org/wiki/File:${name}.png`, thumbnail: `https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/${name}.png/240px-${name}.png`, author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' });
-    const bytes = new Uint8Array(12*12*4);
-    for (let y=0;y<12;y++) for (let x=0;x<12;x++) bytes.set(x>=3&&x<=8&&y>=2&&y<=9 ? [120,40,30,255] : [255,255,255,255], (y*12+x)*4);
-    const mock=vi.fn(async (url: string, options: RequestInit) => {
-      if(url === '/api/online') return new Response('{"online":true}');
-      if(url === '/api/search') return new Response('{"results":[]}');
-      if(url === '/api/image-search') return new Response(JSON.stringify({results:[image(JSON.parse(options.body as string).query === 'فيل' ? 'Elephant' : 'Giraffe')]}));
-      if(url === '/api/image-pixels') return new Response(JSON.stringify({width:12,height:12,rgba:btoa(String.fromCharCode(...bytes))}));
-      if(url === '/api/dictionary') return new Response('{"entries":[],"complete":true}');
-      return new Response('{}');
-    });
-    vi.stubGlobal('fetch', mock);
-    render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت و2 فيل وزرافة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
-    fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
-    expect(await screen.findByText(/أُضيف 2 من «فيل»/)).toBeTruthy();
-    fireEvent.click(await screen.findByRole('button', { name:/File:Giraffe.png/ }));
-    expect(await screen.findByText(/أُضيف مجسم الصورة التقريبي؛ «زرافة»/)).toBeTruthy();
-    expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(2);
-    fireEvent.click(screen.getByRole('button', { name: 'فتح العالم في المحرر ←' }));
-    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
-    const tree=screen.getByRole('tree', {name:'Scene hierarchy'});
-    expect(within(tree).getAllByRole('treeitem')).toHaveLength(4);
-    expect(within(tree).getByText('فيل 1')).toBeTruthy();
-    expect(within(tree).getByText('فيل 2')).toBeTruthy();
-    expect(within(tree).getByText('زرافة')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /Undo \(Ctrl\/Cmd\+Z\)/ }));
-    expect(within(tree).getAllByRole('treeitem')).toHaveLength(3);
-    fireEvent.click(screen.getByRole('button', { name: /Undo \(Ctrl\/Cmd\+Z\)/ }));
-    expect(within(tree).getAllByRole('treeitem')).toHaveLength(1);
-  }, 20000);
   it('adds multiple photo models in one atomic edit and undoes the entire edit', async () => {
     const image = (name: string) => ({ title: `File:${name}.png`, url: `https://commons.wikimedia.org/wiki/File:${name}.png`, thumbnail: `https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/${name}.png/240px-${name}.png`, author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' });
     const bytes=new Uint8Array(12*12*4);
@@ -548,62 +342,6 @@ describe('lightweight local planning interface', () => {
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).getAllByRole('treeitem')).toHaveLength(2);
   }, 20000);
 
-  it('continues a selected Forge image in the real map after navigating to Builder', async () => {
-    const image = (name: string) => ({ title: `File:${name}.png`, url: `https://commons.wikimedia.org/wiki/File:${name}.png`, thumbnail: `https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/${name}.png/240px-${name}.png`, author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' });
-    const bytes = new Uint8Array(12*12*4);
-    for (let y=0;y<12;y++) for (let x=0;x<12;x++) bytes.set(x>=3&&x<=8&&y>=2&&y<=9 ? [120,40,30,255] : [255,255,255,255], (y*12+x)*4);
-    const mock = vi.fn(async (url: string) => {
-      if (url === '/api/online') return new Response('{"online":true}');
-      if (url === '/api/search') return new Response('{"results":[]}');
-      if (url === '/api/image-search') return new Response(JSON.stringify({ results:[image('Elephant'), image('Animal')] }));
-      if (url === '/api/image-pixels') return new Response(JSON.stringify({width:12,height:12,rgba:btoa(String.fromCharCode(...bytes))}));
-      return new Response('{}');
-    });
-    vi.stubGlobal('fetch', mock); render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value:'عالم فيه فيل' } });
-    fireEvent.click(screen.getByRole('button', { name:'إنشاء بالوصف فقط' }));
-    const studio = await screen.findByRole('region', { name:'استوديو تقريب الصورة' });
-    expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(0);
-    fireEvent.click(within(studio).getByRole('button', { name:/File:Elephant.png/ }));
-    await screen.findByText(/بناء طبقات الشكل/);
-    expect(screen.getByLabelText('معاينة البناء داخل الماب')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name:'المحرر' }));
-    await waitFor(() => expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy());
-    fireEvent.click(screen.getByRole('tab', { name:/^العناصر$/ }));
-    const tree = screen.getByRole('tree', { name:'Scene hierarchy' });
-    expect(within(tree).queryByText('فيل')).toBeNull();
-    await waitFor(() => expect(within(tree).getByText('فيل')).toBeTruthy(), {timeout:5000});
-    fireEvent.click(screen.getByRole('button', { name:/Undo \(Ctrl\/Cmd\+Z\)/ }));
-    expect(within(tree).queryByText('فيل')).toBeNull();
-  }, 20000);
-
-  it('reports complex images and only creates a whole-image slab after explicit consent', async () => {
-    const image = { title:'File:Elephant.png', url:'https://commons.wikimedia.org/wiki/File:Elephant.png', thumbnail:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Elephant.png/240px-Elephant.png', author:'Alice', license_url:'https://creativecommons.org/licenses/by/4.0/', license_name:'CC BY 4.0' };
-    const bytes = new Uint8Array(12*12*4);
-    for (let y=0;y<12;y++) for (let x=0;x<12;x++) { const bg=(x+y)%2 ? 0 : 255; bytes.set([bg,bg,bg,255], (y*12+x)*4); }
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (url === '/api/online') return new Response('{"online":true}');
-      if (url === '/api/search') return new Response('{"results":[]}');
-      if (url === '/api/image-search') return new Response(JSON.stringify({results:[image]}));
-      if (url === '/api/image-pixels') return new Response(JSON.stringify({width:12,height:12,rgba:btoa(String.fromCharCode(...bytes))}));
-      return new Response('{}');
-    }));
-    render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), {target:{value:'عالم فيه فيل'}});
-    fireEvent.click(screen.getByRole('button', {name:'إنشاء بالوصف فقط'}));
-    fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
-    expect((await screen.findByRole('alert')).textContent).toContain('لم يُضف مجسم');
-    expect(screen.getByText(/بما فيها الخلفية/)).toBeTruthy();
-    expect(screen.queryByText(/أُضيف مجسم الصورة/)).toBeNull();
-    fireEvent.click(screen.getByRole('button', {name:'استخدم الصورة كاملة كلوح تقريبي'}));
-    expect(await screen.findByText(/أُضيف 1 من «فيل»: لوح الصورة كاملة بما فيها الخلفية/, {}, {timeout:5000})).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', {name:'فتح العالم في المحرر ←'}));
-    fireEvent.click(screen.getByRole('tab', {name:/^العناصر$/}));
-    expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).getByText('فيل')).toBeTruthy();
-  }, 20000);
-
   it('keeps the mobile edit running when its AI sheet is closed', async () => {
     const browser = window as unknown as { happyDOM: { setViewport: (viewport: {width:number; height:number}) => void } };
     browser.happyDOM.setViewport({width:390, height:844});
@@ -663,29 +401,6 @@ describe('lightweight local planning interface', () => {
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).queryByText('فيل')).toBeNull();
   }, 20000);
 
-  it('uses an exact Wikipedia definition without images to add an approximate catalog tree', async () => {
-    const article = {title:'باوباب', url:'https://ar.wikipedia.org/wiki/باوباب', content:'الباوباب هي شجرة كبيرة.'};
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (url === '/api/online') return new Response('{"online":true}');
-      if (url === '/api/search') return new Response(JSON.stringify({results:[article]}));
-      if (url === '/api/wiki-article') return new Response(JSON.stringify({article}));
-      if (url === '/api/image-search') return new Response('{"results":[],"next":15}');
-      if (url === '/api/translate-en') return new Response('{"title":null}');
-      if (url === '/api/dictionary') return new Response('{"entries":[],"complete":true}');
-      return new Response('{}');
-    }));
-    render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), {target:{value:'عالم فيه باوباب'}});
-    fireEvent.click(screen.getByRole('button', {name:'إنشاء بالوصف فقط'}));
-    expect(await screen.findByText(/مقتطف المقالة صنّف «باوباب» كشجرة/)).toBeTruthy();
-    expect(screen.getByText(/لم تُستخدم صورة؛ الشكل من مكتبة التطبيق/)).toBeTruthy();
-    expect(screen.queryByRole('region', {name:'استوديو تقريب الصورة'})).toBeNull();
-    fireEvent.click(await screen.findByRole('button', {name:'فتح العالم في المحرر ←'}));
-    fireEvent.click(screen.getByRole('tab', {name:/^العناصر$/}));
-    expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).getAllByRole('treeitem')).toHaveLength(1);
-  }, 20000);
-
   it('uses an exact Wikipedia definition for a safe undoable edit when images fail', async () => {
     const article = {title:'باوباب', url:'https://ar.wikipedia.org/wiki/باوباب', content:'الباوباب هي شجرة ضخمة.'};
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -712,34 +427,6 @@ describe('lightweight local planning interface', () => {
     expect(within(tree).getAllByRole('treeitem')).toHaveLength(1);
   }, 20000);
 
-  it('displays and builds from a modern Commons imageinfo thumbnail after selection', async () => {
-    // The path, size and metadata correspond to a current Commons API result,
-    // with its tracking query stripped by the phone server.
-    const image = {title:'File:Elephant running.jpg',url:'https://commons.wikimedia.org/wiki/File:Elephant_running.jpg',thumbnail:'https://thumb.wikimedia.org/wikipedia/commons/thumb/8/83/Elephant_running.jpg/250px-Elephant_running.jpg',author:'Byrdyak',license_url:'https://creativecommons.org/licenses/by-sa/4.0/',license_name:'CC BY-SA 4.0'};
-    const bytes = new Uint8Array(12*12*4);
-    for (let y=0;y<12;y++) for (let x=0;x<12;x++) bytes.set(x>=3&&x<=8&&y>=2&&y<=9 ? [120,40,30,255] : [255,255,255,255], (y*12+x)*4);
-    const mock = vi.fn(async (url: string, opts: RequestInit) => {
-      if (url === '/api/online') return new Response('{"online":true}');
-      if (url === '/api/search') return new Response('{"results":[]}');
-      if (url === '/api/image-search') return new Response(JSON.stringify({results:[image]}));
-      if (url === '/api/image-pixels') { expect(JSON.parse(opts.body as string).url).toBe(image.thumbnail); return new Response(JSON.stringify({width:12,height:12,rgba:btoa(String.fromCharCode(...bytes))})); }
-      return new Response('{}');
-    });
-    vi.stubGlobal('fetch', mock); render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'), {target:{value:'عالم فيه فيل'}});
-    fireEvent.click(screen.getByRole('button', {name:'إنشاء بالوصف فقط'}));
-    const candidate = await screen.findByRole('button', {name:/File:Elephant running.jpg/});
-    const thumbnail = within(candidate).getByRole('img', {name:image.title});
-    expect(thumbnail.getAttribute('src')).toBe('/api/image-thumbnail?url=' + encodeURIComponent(image.thumbnail));
-    expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(0);
-    fireEvent.click(candidate);
-    expect(await screen.findByText(/أُضيف مجسم الصورة التقريبي/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', {name:'فتح العالم في المحرر ←'}));
-    fireEvent.click(screen.getByRole('tab', {name:/^العناصر$/}));
-    expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).getByText('فيل')).toBeTruthy();
-  }, 20000);
-
   it('shows the article but refuses to invent an unsupported animal when no photo exists', async () => {
     const article = {title:'فيل', url:'https://ar.wikipedia.org/wiki/فيل', content:'الفيل حيوان يعيش في الغابات.'};
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -761,25 +448,6 @@ describe('lightweight local planning interface', () => {
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).queryByText('فيل')).toBeNull();
   }, 20000);
 
-  it('routes a Wikipedia landform to terrain rather than a photo model', async () => {
-    const article={title:'بركان',url:'https://ar.wikipedia.org/wiki/بركان',content:'البركان هو فتحة في القشرة الأرضية.'};
-    const image={title:'File:Volcano.jpg',url:'https://commons.wikimedia.org/wiki/File:Volcano.jpg',thumbnail:'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Volcano.jpg/250px-Volcano.jpg',author:'A',license_url:'https://creativecommons.org/licenses/by/4.0/',license_name:'CC BY 4.0'};
-    vi.stubGlobal('fetch',vi.fn(async (url:string) => {
-      if(url==='/api/online') return new Response('{"online":true}');
-      if(url==='/api/search') return new Response(JSON.stringify({results:[article]}));
-      if(url==='/api/wiki-article') return new Response(JSON.stringify({article}));
-      if(url==='/api/image-search') return new Response(JSON.stringify({results:[image]}));
-      if(url==='/api/dictionary') return new Response('{"entries":[],"complete":true}');
-      return new Response('{}');
-    }));
-    render(<App />);
-    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'),{target:{value:'عالم فيه بركان'}});
-    fireEvent.click(screen.getByRole('button',{name:'إنشاء بالوصف فقط'}));
-    expect(await screen.findByText(/صُنّف تضاريس، وليس جسماً منفرداً/)).toBeTruthy();
-    expect(screen.getByText('biome: mountains')).toBeTruthy();
-    expect(screen.queryByRole('region',{name:'استوديو تقريب الصورة'})).toBeNull();
-  },20000);
   it('refuses to insert a terrain photograph into an existing map', async () => {
     const article={title:'فوهة بركانية',url:'https://ar.wikipedia.org/wiki/فوهة_بركانية',content:'الفوهة البركانية هي تضاريس.'};
     const image={title:'File:Crater.jpg',url:'https://commons.wikimedia.org/wiki/File:Crater.jpg',thumbnail:'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Crater.jpg/250px-Crater.jpg',author:'A',license_url:'https://creativecommons.org/licenses/by/4.0/',license_name:'CC BY 4.0'};
@@ -799,52 +467,49 @@ describe('lightweight local planning interface', () => {
     expect(screen.queryByRole('region',{name:'استوديو تقريب الصورة'})).toBeNull();
   },20000);
 
-  it('uses a generic standing-water approximation for an exact lake definition', async () => {
-    const article={title:'تانا',url:'https://ar.wikipedia.org/wiki/تانا',content:'تانا هي بحيرة في أفريقيا.'};
-    const image={title:'File:Lake.jpg',url:'https://commons.wikimedia.org/wiki/File:Lake.jpg',thumbnail:'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Lake.jpg/250px-Lake.jpg',author:'A',license_url:'https://creativecommons.org/licenses/by/4.0/',license_name:'CC BY 4.0'};
-    vi.stubGlobal('fetch',vi.fn(async (url:string) => {
-      if(url==='/api/online') return new Response('{"online":true}');
-      if(url==='/api/search') return new Response(JSON.stringify({results:[article]}));
-      if(url==='/api/wiki-article') return new Response(JSON.stringify({article}));
-      if(url==='/api/image-search') return new Response(JSON.stringify({results:[image]}));
-      if(url==='/api/dictionary') return new Response('{"entries":[],"complete":true}');
-      return new Response('{}');
-    }));
+
+  it('builds locally with no network requests even when asked to search and warns about unsupported terms', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('offline'));
+    vi.stubGlobal('fetch', fetchMock);
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'),{target:{value:'عالم فيه تانا'}});
-    fireEvent.click(screen.getByRole('button',{name:'إنشاء بالوصف فقط'}));
-    expect(await screen.findByText(/أُضيف ماء عام تقريبي/)).toBeTruthy();
-    expect(screen.queryByRole('region',{name:'استوديو تقريب الصورة'})).toBeNull();
-    expect(screen.getByText('Wikipedia approximate standing water')).toBeTruthy();
-  },20000);
-
-  it('follows a pixel-style description and can smooth the resulting model with undo', async () => {
-    const image={title:'File:Elephant.jpg',url:'https://commons.wikimedia.org/wiki/File:Elephant.jpg',thumbnail:'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Elephant.jpg/250px-Elephant.jpg',author:'A',license_url:'https://creativecommons.org/licenses/by/4.0/',license_name:'CC BY 4.0'};
-    const bytes=new Uint8Array(12*12*4);
-    for(let y=0;y<12;y++) for(let x=0;x<12;x++) bytes.set(x>=3&&x<=8&&y>=2&&y<=9?[120,40,30,255]:[255,255,255,255],(y*12+x)*4);
-    vi.stubGlobal('fetch',vi.fn(async (url:string,opts:RequestInit) => {
-      if(url==='/api/online') return new Response('{"online":true}');
-      if(url==='/api/search') { expect(JSON.parse(opts.body as string).query).toBe('فيل'); return new Response('{"results":[]}'); }
-      if(url==='/api/image-search') return new Response(JSON.stringify({results:[image]}));
-      if(url==='/api/image-pixels') return new Response(JSON.stringify({width:12,height:12,rgba:btoa(String.fromCharCode(...bytes))}));
-      return new Response('{}');
-    }));
+    fetchMock.mockClear();
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'ابحث عن غابة فيها بيت وفيل' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    expect(await screen.findByText('World generated')).toBeTruthy();
+    expect(screen.getByText(/قد لا يفهم البناء النصي.*فيل/)).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'نتائج البحث التلقائي' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'استوديو تقريب الصورة' })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  }, 20000);
+  it('does not show an unsupported-word warning for normal supported Arabic and remains usable offline', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('offline'));
+    vi.stubGlobal('fetch', fetchMock);
     render(<App />);
-    await waitFor(()=>expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
-    fireEvent.change(screen.getByLabelText('وصف العالم'),{target:{value:'عالم فيه فيل بكسلي'}});
-    fireEvent.click(screen.getByRole('button',{name:'إنشاء بالوصف فقط'}));
-    const studio=await screen.findByRole('region',{name:'استوديو تقريب الصورة'});
-    expect((within(studio).getByLabelText('أسلوب المجسم') as HTMLSelectElement).value).toBe('blocky');
-    fireEvent.click(within(studio).getByRole('button',{name:/File:Elephant.jpg/}));
-    expect(await screen.findByText(/أُضيف مجسم الصورة التقريبي/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button',{name:'فتح العالم في المحرر ←'}));
-    const surface=await screen.findByLabelText('شكل سطح المجسم') as HTMLSelectElement;
-    expect(surface.value).toBe('blocky');
-    fireEvent.change(surface,{target:{value:'smooth'}});
-    expect(surface.value).toBe('smooth');
-    fireEvent.click(screen.getByRole('button',{name:/Undo \(Ctrl\/Cmd\+Z\)/}));
-    expect((screen.getByLabelText('شكل سطح المجسم') as HTMLSelectElement).value).toBe('blocky');
-  },20000);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fetchMock.mockClear();
+    fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'غابة فيها بيت و3 أشجار' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    expect(await screen.findByText('World generated')).toBeTruthy();
+    expect(screen.queryByText(/قد لا يفهم البناء النصي/)).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'فتح العالم في المحرر ←' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
+    expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem').length).toBeGreaterThan(4);
+  }, 20000);
+
+  it('does not replace the world when the prompt changes before local generation finishes', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    const name = (screen.getByLabelText('World name') as HTMLInputElement).value;
+    const prompt = screen.getByLabelText('وصف العالم');
+    fireEvent.change(prompt, { target: { value: 'غابة فيها بيت' } });
+    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    fireEvent.change(prompt, { target: { value: 'صحراء' } });
+    expect((await screen.findByRole('alert')).textContent).toContain('تغيّر العالم أو الوصف');
+    expect(screen.queryByText('World generated')).toBeNull();
+    expect((screen.getByLabelText('World name') as HTMLInputElement).value).toBe(name);
+  }, 20000);
 
 });

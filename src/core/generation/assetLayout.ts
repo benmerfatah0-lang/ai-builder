@@ -75,11 +75,14 @@ export function buildAssetLayout(
         const shaped = intent.shapeModel ? applyShapeModel(themed, intent.shapeModel, rng) : themed;
         const factors = request.size === 'small' ? [0.7, 0.7, 0.7] : request.size === 'large' ? [1.4, 1.4, 1.4] : request.size === 'tall' ? [1, 1.4, 1] : request.size === 'wide' ? [1.4, 1, 1.4] : [1, 1, 1];
         const colored = shaped.kind === 'building' && shaped.variant === 'house' && request.referenceColor && /^#[0-9a-f]{6}$/i.test(request.referenceColor) ? { ...shaped, color: request.referenceColor } : shaped;
-        const object: WorldObject = { ...colored, transform: { ...shaped.transform, scale: shaped.transform.scale.map((value, axis) => value * factors[axis]!) as [number, number, number] } };
+        const object: WorldObject = { ...colored, transform: { ...shaped.transform, ...(intent.river && shaped.kind === 'bridge' ? { rotation: [0, 90, 0] as [number, number, number] } : {}), scale: shaped.transform.scale.map((value, axis) => value * factors[axis]!) as [number, number, number] } };
         let position: [number, number, number] | undefined;
         for (let attempt = 0; attempt < 120; attempt += 1) {
           if (request.relation?.direction === 'near' && attempt >= 48) break;
-          const [x, z] = candidate(request.relation?.direction, anchor, attempt);
+          let [x, z] = candidate(request.relation?.direction, anchor, attempt);
+          if (intent.river && object.kind === 'bridge') x = 0;
+          // Reserve the whole central strip for the decorative river.
+          if (intent.river && object.kind !== 'bridge' && object.kind !== 'path' && Math.abs(x) < 7 + object.meta.dimensions[0] * object.transform.scale[0] / 2) continue;
           if (Math.abs(x) > shell.terrain.size / 2 - 5 || Math.abs(z) > shell.terrain.size / 2 - 5) continue;
           const y = sampler.heightAt(x, z);
           if (shell.terrain.waterLevel !== null && y < shell.terrain.waterLevel + 0.35) continue;

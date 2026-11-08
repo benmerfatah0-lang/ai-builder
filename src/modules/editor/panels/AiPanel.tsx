@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { correctBuildSpelling } from '../../ai/spelling';
-import { applyHouseKnowledge } from '../../ai/houseKnowledge';
-import { applyMapTraining } from '../../ai/mapTrainer';
 import type { MapTrainer } from '../useMapTrainer';
-import { interpretOnline } from '../../ai/onlineInterpreter';
 import { initialShapeModel, readShapeModel, saveShapeModel, resetShapeModel, trainShapeModel } from '../../ai/shapeLearner';
 import { generateWorldPlanWithReport } from '../../../core/generation/generateWorld';
 import type { PromptInterpretation } from '../../ai/types';
@@ -11,17 +7,12 @@ import { useEditor } from '../store';
 import { Icon } from '../../../ui/Icon';
 import { NumberField, SelectField } from '../../../ui/controls';
 import { TextEditPanel } from './TextEditPanel';
-import { ResearchResults } from './ResearchResults';
-import { PhotoStudio } from './PhotoStudio';
 import { ReferenceSceneWorkflow } from './ReferenceSceneWorkflow';
-import { addPhotoModels } from '../../ai/photoModel';
-import { planPhotoRequests, type PhotoRequest } from '../../ai/photoRequests';
 import { type WorldPlan } from '../../../core/world-plan/schema';
-import { normalizeAssetText, parseAssetRequests } from '../../ai/assetRequests';
-import { classifyTopic, isLandscapeKind } from '../../ai/topicClassification';
-import { analyzeApproximation, hasExplicitColor, matchReferenceApproximation, containsApproximation, type Approximation } from '../../ai/referenceUnderstanding';
-import { applyWikiArticleHint } from '../../ai/wikiReference';
-import { researchUnknown, unknownTopics, type ResearchReport } from '../../ai/unknownResearch';
+import { correctBuildSpelling } from '../../ai/spelling';
+import { unknownTopics } from '../../ai/unknownResearch';
+import { interpretPromptLocally } from '../../ai/promptInterpreter';
+import { seedFromPrompt } from '../../../core/world-plan/factory';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
 
 const EXAMPLES = [
@@ -38,40 +29,20 @@ function randomSeed(): number {
   return Math.floor(Math.random() * 0xffffffff);
 }
 
-export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, active = true }: {
+export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }: {
   mapTrainer: MapTrainer;
   variant?: 'panel' | 'forge';
   active?: boolean;
   onOpenStudio?: () => void;
   notify: (message: string, tone?: 'neutral' | 'success' | 'danger') => void;
 }) {
-  const { state, dispatch, setConstructionPreview } = useEditor();
+  const { state, dispatch } = useEditor();
   const currentPlan = useRef(state.plan); currentPlan.current = state.plan;
   const [shapeModel, setShapeModel] = useState(() => {
     try { return readShapeModel(window.localStorage); } catch { return initialShapeModel(); }
   });
-  const [studioPending, setStudioPending] = useState(false);
-  const [studio, setStudio] = useState<{ requests: PhotoRequest[]; index: number; plan: WorldPlan; text: string } | null>(null);
-  const [research, setResearch] = useState<ResearchReport | null>(null);
-  const [researchBusy, setResearchBusy] = useState(false);
-  const researchSequence = useRef(0);
-  const researchAbort = useRef<AbortController | null>(null);
   const alive = useRef(true);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; researchSequence.current++; researchAbort.current?.abort(); }; }, []);
-  const researchFor = async (text: string) => {
-    researchAbort.current?.abort();
-    const controller = new AbortController(); researchAbort.current = controller;
-    const id = ++researchSequence.current;
-    setResearch(null); setProgress(null);
-    if (!unknownTopics(text).terms.length) { setResearchBusy(false); return { topics: [], truncated: false }; }
-    setResearchBusy(true);
-    const report = await researchUnknown(text, { signal: controller.signal, onProgress: (partial, done, total) => {
-      if (id === researchSequence.current) { setResearch(partial); setProgress({ done, total }); }
-    } });
-    if (id === researchSequence.current) { setResearch(report); setResearchBusy(false); }
-    return report;
-  };
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [trainingMessage, setTrainingMessage] = useState('');
   const learnSelected = () => {
     try {
@@ -81,7 +52,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
       const updated = trainShapeModel(shapeModel, object);
       saveShapeModel(window.localStorage, updated);
       setShapeModel(updated);
-      setTrainingMessage('تم التدريب على أبعاد العنصر المحدد وحفظ النموذج على هذا المتصفح. أنشئ مشهداً جديداً لرؤية تأثيره.');
+      setTrainingMessage('تم التدريب على أبعاد العنصر المحدد وحفظ النموذج محلياً. يُستخدم في بعض التعديلات، وليس في إنشاء الوصف فقط.');
     } catch (error) { setTrainingMessage(error instanceof Error ? error.message : 'تعذّر حفظ التدريب على الهاتف.'); }
   };
   const resetTraining = () => {
@@ -93,7 +64,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
   const [worldName, setWorldName] = useState('');
   const [referenceFlow,setReferenceFlow]=useState<{prompt:string;plan:WorldPlan;id:number}|null>(null);
   const referenceSequence=useRef(0);
-  const [seed, setSeed] = useState<number>(() => randomSeed());
+  const [seed, setSeed] = useState<number | null>(null);
   const [style, setStyle] = useState<WorldStyle | 'auto'>('auto');
   const [scale, setScale] = useState<WorldScale | 'auto'>('auto');
   const [density, setDensity] = useState<WorldDensity | 'auto'>('auto');
@@ -105,147 +76,50 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
   const generate = async (useReference = false) => {
     const text = prompt.trim();
     if (!text || generating) return;
-    if(useReference) { researchSequence.current++;researchAbort.current?.abort();setResearch(null);setStudio(null);setStudioPending(false);setResearchBusy(false);setResult(null);setNotes([]);setStats(null);setReferenceFlow({prompt:text,plan:state.plan,id:++referenceSequence.current});setGenerationError('');return; }
+    if (useReference) {
+      setResult(null);setNotes([]);setStats(null);
+      setReferenceFlow({prompt:text,plan:state.plan,id:++referenceSequence.current});setGenerationError('');return;
+    }
     setReferenceFlow(null);
     const originalPlan = state.plan;
-    const correctedText = correctBuildSpelling(text).text;
-    setGenerationError('');
-    researchSequence.current++;
-    setResearch(null); setStudio(null); setStudioPending(false); setResearchBusy(false);
-    setResult(null);
-    setNotes([]);
-    setStats(null);
-    setGenerating(true);
+    setGenerationError('');setResult(null);setNotes([]);setStats(null);setGenerating(true);
     try {
-      // Yield one frame so the button's busy state paints on slower phones.
+      // Give the phone a frame to display progress before procedural generation.
       await new Promise((resolve) => window.setTimeout(resolve, 16));
-      const interpretation = await interpretOnline(text, {
-        seed,
+      if (!alive.current) return;
+      if (currentPlan.current !== originalPlan || currentPrompt.current.trim() !== text) throw new Error('تغيّر العالم أو الوصف؛ لم يُنشأ شيء. أعد المحاولة.');
+      const interpretation = interpretPromptLocally(text, {
+        ...(seed !== null ? { seed } : {}),
         ...(style !== 'auto' ? { style } : {}),
         ...(scale !== 'auto' ? { scale } : {}),
         ...(density !== 'auto' ? { density } : {}),
-      }, false, unknownTopics(correctedText).terms.length > 0);
-      if (!alive.current) return;
-      const discovered = await researchFor(correctedText);
-      const singleTopic = discovered.topics.length === 1 && !discovered.truncated ? discovered.topics[0] : undefined;
-      const ambiguousPhoto = singleTopic && (singleTopic.images.length > 1 || (singleTopic.images.length > 0 && singleTopic.imageNext != null)) && planPhotoRequests(correctedText, [singleTopic]).requests.length > 0;
-      const match = !interpretation.intent.features?.farm && !ambiguousPhoto && !(singleTopic && isLandscapeKind(classifyTopic(singleTopic).kind)) ? matchReferenceApproximation(correctedText, discovered) : null;
-      let approximate: Approximation | null = match;
-      if (match) {
-        setResearchBusy(true);
-        approximate = await analyzeApproximation(match);
-        setResearchBusy(false);
-        setResearch({ ...discovered, approximation: approximate });
-        const assets = parseAssetRequests(approximate.rewritten, true)!;
-        interpretation.intent.assets = assets.map((item) => item.assetId === 'house' && approximate?.color && !hasExplicitColor(text) ? { ...item, referenceColor: approximate.color } : item);
-        interpretation.intent.cues = [...interpretation.intent.cues.filter((cue) => !cue.startsWith('default counts')), `${match.sourceKind === 'dictionary' ? 'Wiktionary' : 'Wikipedia'} approximate ${match.assetLabel ?? 'house'}: ${match.term}`];
-        interpretation.intent.summary += ` · ${match.term}: approximate ${match.assetLabel ?? 'house'}`;
-        interpretation.notes = [`«${match.term}» ممثل ب${match.assetLabel ?? 'بيت'} تقريبي وفق ${match.sourceKind === 'dictionary' ? 'تعريف معجمي محدود' : 'مقتطف ويكيبيديا'}؛ لا يتم استنتاج شكل 3D من الصورة.${approximate.color && !hasExplicitColor(text) ? ' لُوّن البيت بمتوسط مركز الصورة، وقد يكون لون الخلفية.' : hasExplicitColor(text) ? ' لم يُستخدم لون الصورة؛ لون الوصف لا يُطبّق تلقائياً هنا ويمكن تغييره في Inspect.' : ' لم يُستخدم لون الصورة.'}`, ...(interpretation.notes ?? [])];
-      }
-      if (discovered.topics.length) {
-        const names = discovered.topics.map((topic) => `«${topic.term}»`).join('، ');
-        interpretation.notes = [`بحثت عن ${names}؛ ${match ? 'استُخدم تقريب من أصل موجود، وليس بناءً مطابقاً.' : 'سنحاول بناء العناصر المجهولة من الصور عندما يكون الطلب مناسباً؛ راجع التنبيهات للعناصر التي لم تُبنَ.'}`, ...(interpretation.notes ?? [])];
-        // Use only an exact article-title match, only for a single candidate, and only
-        // the fixed terrain vocabulary. Search results are untrusted and not 3D data.
-        const topic = discovered.topics.length === 1 && !discovered.truncated ? discovered.topics[0] : undefined;
-        const clean = (value: string) => normalizeAssetText(value).trim().replace(/^ال/u, '').replace(/\s+/g, ' ');
-        const article = topic?.articles.find((item) => clean(item.title) === clean(topic.term));
-        if (article && topic && classifyTopic(topic).biome && ['terrain', 'biome'].includes(classifyTopic(topic).kind)) {
-          const biome = classifyTopic(topic).biome;
-          const applied = applyWikiArticleHint(interpretation.intent, article, biome === 'desert' || biome === 'forest' || biome === 'mountains' || biome === 'island' ? biome : undefined);
-          interpretation.intent = applied.intent;
-          interpretation.notes = [applied.hint, ...interpretation.notes];
-        }
-        const classification = topic ? classifyTopic(topic) : undefined;
-        if (classification?.kind === 'water' && classification.water === 'standing' && !interpretation.intent.features?.farm && !/(?:بدون|دون|بلا|without|\bno\b)/iu.test(normalizeAssetText(text))) {
-          interpretation.intent.water = true;
-          interpretation.intent.cues.push('Wikipedia approximate standing water');
-          interpretation.notes = ['أُضيف ماء عام تقريبي إلى العالم بناءً على تعريف المسطح المائي؛ ليس شكلاً مطابقاً أو خريطة للموقع.', ...interpretation.notes];
-        }
-      }
-      interpretation.intent = applyMapTraining(interpretation.intent, mapTrainer.model);
-      interpretation.intent.shapeModel = interpretation.houseLearning ? applyHouseKnowledge(shapeModel, interpretation.houseLearning, text) : shapeModel;
+      });
       const report = generateWorldPlanWithReport(interpretation.intent);
-      if (!report.validation.valid) {
-        const first = report.validation.errors[0]?.message ?? 'Unknown validation error.';
-        throw new Error(`The generated plan is invalid: ${first}`);
-      }
-      if (!alive.current || researchAbort.current?.signal.aborted) throw new DOMException('أُوقف البحث؛ لم يُنشأ العالم.', 'AbortError');
-      if (currentPlan.current !== originalPlan || currentPrompt.current.trim() !== text) throw new Error('تغيّر العالم أثناء البحث أو تغيّر الوصف؛ لم نستبدله. أعد الإنشاء إذا أردت.');
+      if (!report.validation.valid) throw new Error(`تعذّر بناء العالم: ${report.validation.errors[0]?.message ?? 'خطة غير صالحة'}`);
+      if (!alive.current || currentPlan.current !== originalPlan || currentPrompt.current.trim() !== text) throw new Error('تغيّر العالم أو الوصف؛ لم يُنشأ شيء. أعد المحاولة.');
       const plan = variant === 'forge' && worldName.trim() ? { ...report.plan, name: worldName.trim() } : report.plan;
-      if (approximate && !containsApproximation(plan, approximate)) {
-        interpretation.notes = [
-          `صُنّف «${approximate.term}» كتقريب لـ${approximate.assetLabel ?? 'بيت'}، لكن لم يوضع نموذج له في الماب. راجع تنبيهات الموضع والسعة.`,
-          ...(interpretation.notes ?? []).filter((note) => !note.includes('ممثل ب') && !note.includes('استُخدم تقريب من أصل موجود')),
-        ];
-      }
-      dispatch({ type: 'replacePlan', plan });
-      const photos = match ? { requests: [], warnings: [] } : planPhotoRequests(correctedText, discovered.topics);
-      if (photos.requests.length) {
-        setStudio({ requests: photos.requests, index: 0, plan, text }); setStudioPending(true);
-      }
-      if (approximate) setResearch({ ...discovered, approximation: { ...approximate,
-        applied: containsApproximation(plan, approximate),
-        colorApplied: Boolean(approximate.color && !hasExplicitColor(text) && plan.objects.some((object) => object.kind === 'building' && object.variant === 'house')) } });
+      const unknown = unknownTopics(correctBuildSpelling(text).text).terms;
+      const hasMine = plan.objects.some((object) => object.kind === 'primitive' && object.primitive === 'mine-entrance');
+      dispatch({ type:'replacePlan', plan });
       setResult(interpretation);
-      const learnedCount = report.plan.objects.filter((object) => object.meta.learnedShape).length;
-      const hasMine = report.plan.objects.some((object) => object.kind === 'primitive' && object.primitive === 'mine-entrance');
-      setNotes([...photos.warnings, ...report.warnings, ...(interpretation.notes ?? []),
-        ...(hasMine ? ['المنجم مدخل زخرفي يوحي بالعمق فقط؛ لا توجد أنفاق محفورة أو قابلة للدخول، والأدوات والحفارات ثابتة.'] : []),
-        learnedCount ? `تم توليد ${learnedCount} من أشكال البيت أو الشجرة عريضة الأوراق أو الصخرة من النموذج الصغير.` :
-          'لم يُستخدم تدريب الأشكال لهذا الوصف؛ جرّب وصفاً مثل: بيت وشجرة وصخرة. المزارع تحتفظ بقالبها الخاص.',
-        ]);
-      setStats({ objects: report.plan.objects.length, groups: report.plan.groups.length });
-      notify(
-        report.warnings.length > 0
-          ? `World generated with ${report.warnings.length} warning(s). Undo restores the previous world.`
-          : 'New world generated. Undo restores the previous world.',
-        'success',
-      );
+      setNotes([
+        ...report.warnings,
+        ...(interpretation.notes ?? []),
+        ...(unknown.length ? [`قد لا يفهم البناء النصي هذه الكلمات أو الأسماء: ${unknown.slice(0,10).map(term=>`«${term}»`).join('، ')}${unknown.length>10?' وغيرها':''}. لم تُستخدم صور لتخمينها.`] : []),
+        ...(/بكسل|فوكسل|ناعم|pixel|voxel|smooth/i.test(text) ? ['لا يغيّر منشئ الوصف حالياً سطح كل الأصول إلى بكسلي أو ناعم؛ راجع النتيجة وعدّلها في المحرر.'] : []),
+        ...(hasMine ? ['المنجم مدخل زخرفي؛ لا توجد أنفاق محفورة أو قابلة للدخول.'] : []),
+      ]);
+      setStats({objects:plan.objects.length,groups:plan.groups.length});
+      notify('أُنشئ العالم محلياً من الوصف؛ يمكن التراجع عنه.', 'success');
     } catch (error) {
-      const message = error instanceof Error && error.name === 'AbortError' ? 'أُوقف البحث؛ لم يُنشأ العالم.' : error instanceof Error ? error.message : 'تعذّر إنشاء العالم. حاول مجدداً.';
-      setGenerationError(message);
-      notify(message, 'danger');
-    } finally {
-      setResearchBusy(false);
-      setGenerating(false);
-    }
+      const message = error instanceof Error ? error.message : 'تعذّر إنشاء العالم. حاول مجدداً.';
+      setGenerationError(message);notify(message,'danger');
+    } finally {if(alive.current)setGenerating(false);}
   };
 
   return (
     <div className={`panel-scroll ${variant === 'forge' ? 'forge-ai' : ''}`}>
       {variant === 'panel' && <TextEditPanel shapeModel={shapeModel} onOpenStudio={onOpenStudio} />}
-      {studio && <div dir="rtl">
-        <p role="status">العنصر {studio.index + 1} من {studio.requests.length} · العدد المطلوب: {studio.requests[studio.index]!.count}</p>
-        <PhotoStudio key={`${studio.index}:${studio.requests[studio.index]!.topic.term}`} topic={studio.requests[studio.index]!.topic} initialMeshStyle={studio.requests[studio.index]!.meshStyle}
-          cancelLabel="تخطّي هذا العنصر" onCancel={() => {
-            const item = studio.requests[studio.index]!;
-            setNotes((old) => [`تم تخطي «${item.topic.term}» دون إضافته.`, ...old]);
-            if (studio.index + 1 < studio.requests.length) setStudio({ ...studio, index: studio.index + 1 });
-            else { setStudio(null); setStudioPending(false); }
-          }} onPreview={setConstructionPreview} showMapPreview={variant === 'forge' && active}
-          onPrepare={(model) => {
-            if (currentPlan.current !== studio.plan || currentPrompt.current.trim() !== studio.text) throw new Error('تغيّر العالم أو الوصف؛ أوقف البناء وأعد المحاولة.');
-            const item = studio.requests[studio.index]!;
-            return { base: studio.plan, before: studio.plan, after: addPhotoModels(studio.plan, model, item.topic.term, item.count, item.relation) };
-          }} onComplete={(model, prepared) => {
-            const item = studio.requests[studio.index]!;
-            if (!prepared || currentPlan.current !== studio.plan || currentPrompt.current.trim() !== studio.text) {
-              setGenerationError('تغيّر العالم أو الوصف أثناء البناء؛ أُوقفت بقية الإضافات.'); setStudio(null); setStudioPending(false); return;
-            }
-            const next = prepared.after;
-            dispatch({ type: 'replacePlan', plan: next });
-            const added = next.objects.filter((object) => !prepared.base.objects.some((old) => old.id === object.id));
-            if (added.length) dispatch({ type: 'select', ids: [added[added.length - 1]!.id], mode: 'replace' });
-            setStats({ objects: next.objects.length, groups: next.groups.length });
-            setNotes((old) => [model.mode === 'full-image-slab' ? `أُضيف ${item.count} من «${item.topic.term}»: لوح الصورة كاملة بما فيها الخلفية.` : item.count === 1 ? `أُضيف مجسم الصورة التقريبي؛ «${item.topic.term}»، الخلف والعمق افتراضيان.` : `أُضيف ${item.count} من «${item.topic.term}» من الصورة تقريبياً؛ الخلف والعمق افتراضيان.`, ...old]);
-            if (studio.index + 1 < studio.requests.length) setStudio({ ...studio, index: studio.index + 1, plan: next });
-            else { setStudio(null); setStudioPending(false); }
-          }} />
-        <button type="button" className="btn btn-small" onClick={() => { setNotes((old) => ['أُوقف بناء بقية العناصر؛ احتفظنا بما أُضيف سابقاً.', ...old]); setStudio(null); setStudioPending(false); }}>إيقاف بناء البقية</button>
-      </div>}
-      {researchBusy && <button type="button" className="btn btn-small" onClick={() => researchAbort.current?.abort()}>إيقاف البحث</button>}
-      <ResearchResults report={research} busy={researchBusy} progress={progress} />
       {variant !== 'forge' && <div className="create-intro" dir="rtl">
         <div className="create-eyebrow"><span>✦</span> استوديو العوالم</div>
         <h2>خيالك، أصبح عالماً.</h2>
@@ -281,7 +155,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
           {generating ? 'جاري إنشاء العالم…' : 'إنشاء بالوصف فقط'}
         </button>
       </div>
-      <p className="create-actions-hint" dir="rtl">للصورة: اكتب وصفك، ثم اختر صورة وحلّلها لبناء المشهد.</p>
+      <p className="create-actions-hint" dir="rtl">«الوصف فقط» يبني محلياً دون بحث أو صور؛ اختر زر الصورة إذا أردت استعمالها.</p>
       {referenceFlow && <ReferenceSceneWorkflow key={referenceFlow.id} prompt={referenceFlow.prompt} basePlan={referenceFlow.plan} mode="create" canApply={()=>currentPrompt.current.trim()===referenceFlow.prompt} onCancel={()=>setReferenceFlow(null)} onApplied={()=>{setReferenceFlow(null);notify('أُنشئ المشهد؛ يمكن التراجع بـ Undo.','success');}} onOpenStudio={onOpenStudio}/>}
       {result && (
         <div className="ai-result">
@@ -291,7 +165,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
             </span>
             <strong>World generated</strong>
           </div>
-          {onOpenStudio && <button type="button" className="btn btn-primary open-studio-btn" onClick={onOpenStudio} disabled={studioPending} title={studioPending ? 'انتظر بناء المجسم أو أغلق الاستوديو' : undefined}>فتح العالم في المحرر ←</button>}
+          {onOpenStudio && <button type="button" className="btn btn-primary open-studio-btn" onClick={onOpenStudio} >فتح العالم في المحرر ←</button>}
           <p className="ai-summary">{result.intent.summary}{result.sources?.map((source, index) => (
             <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" aria-label={`المصدر ${index + 1}: ${source.title}`}> [{index + 1}]</a>
           ))}</p>
@@ -357,7 +231,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
       <div className="seed-row">
         <NumberField
           label="Seed"
-          value={seed}
+          value={seed ?? seedFromPrompt(prompt)}
           min={0}
           max={4294967295}
           step={1}
@@ -403,7 +277,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
         />
       </div>
       <p className="hint-text">
-        نفس الوصف والبذرة وبيانات التدريب تعيد الشكل والتوزيع؛ التدريب التلقائي أو نتائج البحث قد تغيّر النتيجة لاحقاً.
+        نفس الوصف والإعدادات والبذرة تعيد شكل العالم وتوزيعه؛ البذرة الافتراضية مشتقة من الوصف.
       </p>
 
 
@@ -412,8 +286,8 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
         <summary>التعلّم والتدريب وحالة المصادر</summary>
       <div className="online-settings" dir="rtl">
         <div className="online-heading"><span className="online-dot" /> المساعد الخفيف + ويكيبيديا</div>
-        <p>يفهم كلمات محدودة ويصنع أشكالاً إجرائية للبيوت والأشجار عريضة الأوراق والصخور المستديرة. ليس نموذج لغة أو مولّد نماذج عام. يحتاج اتصالاً بالإنترنت قبل كل إنشاء.</p>
-        <p>يمكنه البحث أيضاً عند ذكر «ابحث» أو «ويكيبيديا». يقرأ كلمات محدودة من النتائج لتقدير البيئة فقط؛ بحث المقالات يقتصر على ويكيبيديا؛ البحث التلقائي عن الصور وتدريب صور البيوت يستخدمان Wikimedia Commons.</p>
+        <p>يفهم البناء النصي مفردات محدودة ويستخدم أشكالاً إجرائية محلياً دون بحث أو صور. ليس نموذج لغة أو مولّداً عاماً.</p>
+        <p>البحث عن المراجع متاح في مسار الصورة أو التعديل، وليس في زر «إنشاء بالوصف فقط».</p>
       </div>
       <div className="online-settings" dir="rtl">
         <div className="online-heading">التعلّم التلقائي من ويكيبيديا</div>
@@ -421,7 +295,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
         {result?.wikiLearning ? <>
           <p>المقالات المستخدمة: {result.wikiLearning.documents} · الحالة: {result.wikiLearning.status === 'unavailable' ? 'تعذّر آخر تحديث (الإنترنت أو التخزين)' : result.wikiLearning.status === 'capacity' ? 'بلغ حد التخزين' : result.wikiLearning.status === 'no_new_articles' ? 'لا توجد مقالات جديدة في آخر بحث' : result.wikiLearning.status === 'starting' ? 'يبدأ' : 'يعمل'}.</p>
           {result.wikiLearning.sources.length > 0 && <div className="online-sources"><strong>أحدث مصادر التعلّم</strong>{result.wikiLearning.sources.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer">{source.title} ↗</a>)}</div>}
-        </> : <p>تظهر حالة التعلّم ومصادره بعد إنشاء عالم.</p>}
+        </> : <p>لا يستخدم زر الوصف نتائج هذا التعلّم.</p>}
       </div>
       <div className="online-settings" dir="rtl">
         <div className="online-heading">تجربة تعلّم البيوت من الصور</div>
@@ -430,12 +304,12 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
         {result?.houseLearning ? <>
           <p>الصور المقبولة: {result.houseLearning.samples} · الحالة: {result.houseLearning.status === 'missing_pillow' ? 'ثبّت python-pillow' : result.houseLearning.status === 'unavailable' ? 'تعذّر الاتصال أو قراءة الصورة أو الحفظ' : result.houseLearning.status === 'no_new_images' ? 'لم توجد صور مناسبة جديدة' : result.houseLearning.status === 'no_improvement' ? 'لم تتحسن التجربة الأخيرة' : result.houseLearning.status === 'starting' ? 'يبدأ' : 'يتعلّم'}.</p>
           {result.houseLearning.sources.length > 0 && <details><summary>مصادر الصور والتراخيص</summary><div className="online-sources">{result.houseLearning.sources.slice().reverse().map((source) => <span key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a> · {source.author} · <a href={source.license_url} target="_blank" rel="noopener noreferrer">الترخيص</a></span>)}</div></details>}
-        </> : <p>تظهر الحالة بعد إنشاء عالم.</p>}
+        </> : <p>لا يستخدم زر الوصف نتائج تدريب الصور.</p>}
       </div>
       <div className="online-settings" dir="rtl">
         <div className="online-heading">تعلّم تلقائي للخرائط</div>
         <p>يجرب التطبيق خرائط صغيرة ويقارن التوزيع وعدد الأنواع والتحذيرات، ثم يحتفظ أحياناً بإعداد أفضل وفق هذه المعايير البسيطة. التدريب يجري على الجهاز عندما تكون الصفحة ظاهرة، مرة تقريباً كل 45 ثانية؛ وهذا التدريب المحلي منفصل عن تعلّم كلمات ويكيبيديا ولا يختبر متعة اللعب.</p>
-        <p>التجارب: {mapTrainer.model.attempts} · التغييرات المقبولة: {mapTrainer.model.accepted}. تؤثر النتائج في كثافة العناصر للمناظر العامة فقط، ولا تغيّر الأعداد الصريحة أو المزرعة.</p>
+        <p>التجارب: {mapTrainer.model.attempts} · التغييرات المقبولة: {mapTrainer.model.accepted}. تجارب مستقلة؛ لا تغيّر نتيجة زر الوصف فقط.</p>
         <button type="button" className="btn btn-small" onClick={() => mapTrainer.setEnabled(!mapTrainer.model.enabled)}>
           {mapTrainer.model.enabled ? 'إيقاف التعلّم التلقائي' : 'تشغيل التعلّم التلقائي'}
         </button>{' '}
@@ -454,7 +328,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
       </details>
       <div className="callout callout-info" dir="rtl">
         <Icon name="info" size={16} />
-        <span>الأشكال تُبنى محلياً بقواعد بسيطة وفق الأبعاد المتعلَّمة؛ لا تُستورد نماذج من المواقع، ولا تتعلم أوزان الأشكال من نص ويكيبيديا. قد لا تكون النتيجة نسخة دقيقة من مكان حقيقي.</span>
+        <span>الأشكال في مسار الوصف تُبنى محلياً بقواعد بسيطة دون الرجوع إلى الصور أو بيانات التدريب. قد لا تكون النتيجة نسخة دقيقة من مكان حقيقي.</span>
       </div>
       </details>
     </div>

@@ -14,6 +14,7 @@ import { createBuilding, createLantern, createRock, createTree } from '../assets
 import { makeTerrainRiver } from './villageRiver';
 import { generateFarmPlan } from './farm';
 import { buildAssetLayout } from './assetLayout';
+import { footprintFromObject, footprintFromRect, PlacementLedger } from './placement';
 import { validateScenePlan, type SceneValidation } from '../world-plan/validateScene';
 
 interface TimeSettings {
@@ -70,6 +71,8 @@ interface PlacementOptions {
   waterLevel: number | null;
   avoidRiver?: boolean;
   side?: -1 | 1;
+  ledger?: PlacementLedger;
+  footprintSize?: number;
 }
 
 /** Rejection-sampled placement that keeps objects above water and apart. */
@@ -84,6 +87,8 @@ function findPlacement(rng: Rng, options: PlacementOptions): [number, number, nu
     waterLevel,
     avoidRiver,
     side,
+    ledger,
+    footprintSize = minSpacing,
   } = options;
   const spacingSq = minSpacing * minSpacing;
 
@@ -108,7 +113,7 @@ function findPlacement(rng: Rng, options: PlacementOptions): [number, number, nu
         break;
       }
     }
-    if (blocked) continue;
+    if (blocked || (ledger && !ledger.isFree(footprintFromRect(x, z, footprintSize, footprintSize), 0.5))) continue;
 
     return [x, y, z];
   }
@@ -160,7 +165,7 @@ function displayName(object: WorldObject): string {
           ? 'Broadleaf'
           : object.variant === 'palm'
             ? 'Palm'
-            : 'Cactus';
+            : object.variant === 'bush' ? 'Bush' : 'Cactus';
     case 'rock':
       return object.variant === 'crag' ? 'Crag' : 'Boulder';
     case 'building':
@@ -208,7 +213,7 @@ function buildPlanShell(intent: WorldIntent): WorldPlan {
   const profile = BIOME_PROFILES[intent.biome];
   const scale = SCALE_SETTINGS[intent.scale];
   const now = new Date().toISOString();
-  const terrainStyle = profile.terrainStyle;
+  const terrainStyle = intent.mountainousForest ? 'mountains' : profile.terrainStyle;
 
   return {
     schemaVersion: WORLD_PLAN_SCHEMA_VERSION,
@@ -223,7 +228,7 @@ function buildPlanShell(intent: WorldIntent): WorldPlan {
       style: terrainStyle,
       size: scale.size,
       resolution: scale.resolution,
-      heightScale: profile.heightScale * (intent.scale === 'large' ? 1.15 : 1),
+      heightScale: (intent.mountainousForest ? BIOME_PROFILES.mountains.heightScale : profile.heightScale) * (intent.scale === 'large' ? 1.15 : 1),
       waterLevel: null,
       palette: { ...profile.palette },
     },
@@ -286,27 +291,38 @@ export function generateWorldPlanWithReport(intent: WorldIntent): GenerationRepo
   }
 
   if (intent.assets?.length) {
-    // Reuse the normal terrain/environment setup, but do not add unrelated
-    // scatter objects to an explicit asset composition.
-    const shell = generateWorldPlanScatter({
-      ...intent,
-      settlement: false,
-      counts: { trees: 0, rocks: 0, buildings: 0, lanterns: 0 },
-    });
+    const shell = generateWorldPlanScatter({ ...intent, river: false, villageRiver: false,
+      settlement: false, counts: { trees: 0, rocks: 0, buildings: 0, lanterns: 0 } });
     const result = buildAssetLayout(shell, intent, intent.assets);
+    const warnings = [...result.warnings];
+    if (intent.river) {
+      const river = makeTerrainRiver(result.plan, 'z', 0, -shell.terrain.size * .36, shell.terrain.size * .36);
+      // The central strip was reserved before placing the named objects.
+      if (shell.terrain.waterLevel === null || river.points.every((p) => p[1] + river.transform.position[1] > shell.terrain.waterLevel! + .2)) {
+        result.plan.objects.push({ ...river, id: `obj_${intent.seed.toString(36)}_river` });
+        warnings.push('النهر سطح زخرفي يتبع التضاريس؛ لا يحفر مجرى ولا يحاكي تدفق الماء.');
+        if (intent.villageRiver) warnings.push('لم يُضمن مرور النهر وسط تجمع البيوت عند تحديد عناصر مستقلة.');
+      } else warnings.push('تعذّر إضافة النهر فوق سطح الماء الآخر.');
+    }
+    if (intent.landscape) addLandscapeBackground(result.plan, intent, warnings);
     const validation = validateScenePlan(result.plan);
-    return {
-      plan: result.plan,
-      warnings: [...result.warnings, ...(intent.villageRiver ? ['تعذّر إنشاء نهر وسط القرية مع طلب عناصر منفصلة؛ جرّب إنشاء القرية والنهر أولاً ثم أضف العناصر.'] : []), ...validation.warnings.map((issue) => issue.message)],
-      validation,
-    };
+    return { plan: result.plan, warnings: [...warnings, ...validation.warnings.map((issue) => issue.message)], validation };
   }
 
   const plan = generateWorldPlanScatter(intent);
   const validation = validateScenePlan(plan);
+  const actual = {
+    trees: plan.objects.filter((object) => object.kind === 'tree').length,
+    rocks: plan.objects.filter((object) => object.kind === 'rock').length,
+    buildings: plan.objects.filter((object) => object.kind === 'building').length,
+    lanterns: plan.objects.filter((object) => object.kind === 'lantern').length,
+  };
+  const placementWarnings = (Object.keys(actual) as (keyof typeof actual)[])
+    .filter((key) => actual[key] < intent.counts[key])
+    .map((key) => `وُضع ${actual[key]} من ${intent.counts[key]} ${key} بسبب المساحة أو الماء.`);
   return {
     plan,
-    warnings: [...(intent.villageRiver && !plan.objects.some((o) => o.kind === 'river') ? ['تعذّر إضافة النهر: ربما لم تتوفر بيوت على جانبيه أو غمر مستوى الماء مساره.'] : []), ...(intent.villageRiver && plan.objects.some((o) => o.kind === 'river') ? ['النهر سطح زخرفي فوق التضاريس، لا يحفر مجرى ولا يحاكي تدفق الماء.'] : []), ...validation.warnings.map((issue) => issue.message)],
+    warnings: [...placementWarnings, ...(intent.river && !plan.objects.some((o) => o.kind === 'river') ? ['تعذّر إضافة النهر: ربما لم تتوفر بيوت على جانبيه أو غمر مستوى الماء مساره.'] : []), ...(intent.river && plan.objects.some((o) => o.kind === 'river') ? ['النهر سطح زخرفي فوق التضاريس، لا يحفر مجرى ولا يحاكي تدفق الماء.'] : []), ...validation.warnings.map((issue) => issue.message)],
     validation,
   };
 }
@@ -315,10 +331,59 @@ export function generateWorldPlan(intent: WorldIntent): WorldPlan {
   return generateWorldPlanWithReport(intent).plan;
 }
 
+/** Populate the named biome after explicit objects, never adding a second copy
+ * of a requested category. All candidates are checked against existing footprints. */
+function addLandscapeBackground(plan: WorldPlan, intent: WorldIntent, warnings: string[]): void {
+  const requested = new Set(intent.assets?.map((request) => request.assetId));
+  const hasTrees = ['tree','pine','palm','broadleaf','cactus'].some((id) => requested.has(id));
+  const hasRocks = ['boulder','crag'].some((id) => requested.has(id));
+  const hasBuildings = ['house','tower','ruin'].some((id) => requested.has(id));
+  const rng = mulberry32((intent.seed ^ 0x9e3779b9) >>> 0);
+  const sampler = createTerrainSampler(plan.terrain, intent.seed);
+  const ledger = new PlacementLedger();
+  for (const object of plan.objects) {
+    if (object.kind === 'river' || object.kind === 'path') continue;
+    const box = footprintFromObject(object);
+    if (box) ledger.add(box, object.name);
+  }
+  const profile = BIOME_PROFILES[intent.biome];
+  const place = (count: number, factory: (position: [number, number, number]) => WorldObject) => {
+    let placed = 0;
+    for (let index = 0; index < count && plan.objects.length < MAX_WORLD_OBJECTS; index++) {
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const angle = range(rng, 0, Math.PI * 2), distance = Math.sqrt(rng()) * plan.terrain.size * .44;
+        const x = Math.cos(angle) * distance, z = Math.sin(angle) * distance;
+        if (intent.river && Math.abs(x) < 9) continue;
+        const y = sampler.heightAt(x,z);
+        if (plan.terrain.waterLevel !== null && y < plan.terrain.waterLevel + .35) continue;
+        const object = factory([x,y,z]);
+        const box = footprintFromObject(object);
+        if (box && !ledger.isFree(box, .75)) continue;
+        if (box) ledger.add(box, object.name);
+        plan.objects.push({ ...object, name: `${displayName(object)} background ${plan.objects.length + 1}`, id: `obj_${intent.seed.toString(36)}_bg_${plan.objects.length.toString(36)}` });
+        placed++;
+        break;
+      }
+    }
+    return placed;
+  };
+  // Buildings are intentionally only added for settlements, not a lone house in a forest.
+  const tasks: [number, (position: [number, number, number]) => WorldObject][] = [
+    [hasBuildings || !intent.settlement ? 0 : intent.counts.buildings, (pos) => createBuilding('house', pos, rng, profile.buildingColors)],
+    [hasTrees ? 0 : intent.counts.trees, (pos) => createTree(treeVariantForBiome(intent,rng), pos, rng)],
+    [hasRocks ? 0 : intent.counts.rocks, (pos) => createRock(rng() < .35 ? 'crag' : 'boulder', pos, rng, profile.rockColor)],
+    [requested.has('lantern') ? 0 : intent.counts.lanterns, (pos) => createLantern(pos)],
+  ];
+  for (const [count, factory] of tasks) {
+    const placed = place(count, factory);
+    if (placed < count) warnings.push(`وُضع ${placed} من ${count} عناصر الخلفية بسبب المساحة أو الماء.`);
+  }
+}
+
 function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
   let plan = buildPlanShell(intent);
   const profile = BIOME_PROFILES[intent.biome];
-  const reserveRiver = Boolean(intent.villageRiver && intent.counts.buildings >= 2);
+  const reserveRiver = Boolean(intent.river && (!intent.villageRiver || intent.counts.buildings >= 2));
   const rng = mulberry32(intent.seed);
   const sampler = createTerrainSampler(plan.terrain, intent.seed);
 
@@ -329,6 +394,7 @@ function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
   }
 
   const occupied: [number, number][] = [];
+  const ledger = new PlacementLedger();
   const objects: WorldObject[] = [];
   const radius = plan.terrain.size * 0.44;
   const waterLevel = plan.terrain.waterLevel;
@@ -336,6 +402,8 @@ function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
   const add = (object: WorldObject) => {
     if (objects.length >= MAX_WORLD_OBJECTS) return;
     objects.push(object);
+    const footprint = footprintFromObject(object);
+    if (footprint) ledger.add(footprint, object.name);
     occupied.push([object.transform.position[0], object.transform.position[2]]);
   };
 
@@ -357,12 +425,13 @@ function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
     const position = findPlacement(rng, {
       radius: intent.settlement ? plan.terrain.size * 0.26 : radius,
       minSpacing: 8,
+      footprintSize: 9, ledger,
       occupied,
       sampler,
       waterLevel,
       attempts: reserveRiver ? 100 : 60,
       avoidRiver: reserveRiver,
-      ...(reserveRiver ? { side: (index % 2 ? 1 : -1) as -1 | 1 } : {}),
+      ...(reserveRiver && intent.villageRiver ? { side: (index % 2 ? 1 : -1) as -1 | 1 } : {}),
     });
     if (!position) break;
     const variant = buildingVariant();
@@ -384,12 +453,13 @@ function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
       const x = bx + Math.cos(angle) * distance;
       const z = bz + Math.sin(angle) * distance;
       const y = sampler.heightAt(x, z);
-      if ((!reserveRiver || Math.abs(x) >= 7) && (waterLevel === null || y > waterLevel + 0.35)) position = [x, y, z];
+      if ((!reserveRiver || Math.abs(x) >= 7) && ledger.isFree(footprintFromRect(x, z, 1.5, 1.5), .5) && (waterLevel === null || y > waterLevel + 0.35)) position = [x, y, z];
     }
     if (!position) {
       position = findPlacement(rng, {
         radius: radius * 0.8,
         minSpacing: 1.5,
+        footprintSize: 1.5, ledger,
         occupied,
         sampler,
         waterLevel,
@@ -405,6 +475,7 @@ function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
     const position = findPlacement(rng, {
       radius,
       minSpacing: 2.6,
+      footprintSize: 4.5, ledger,
       occupied,
       sampler,
       waterLevel,
@@ -420,6 +491,7 @@ function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
     const position = findPlacement(rng, {
       radius,
       minSpacing: 1.9,
+      footprintSize: 5, ledger,
       occupied,
       sampler,
       waterLevel,
@@ -429,7 +501,7 @@ function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
     add(createRock(variant, position, rng, profile.rockColor));
   }
 
-  if (reserveRiver && objects.some((o) => o.kind === 'building' && o.transform.position[0] < 0) && objects.some((o) => o.kind === 'building' && o.transform.position[0] > 0) && objects.length < MAX_WORLD_OBJECTS) {
+  if (reserveRiver && (!intent.villageRiver || (objects.some((o) => o.kind === 'building' && o.transform.position[0] < 0) && objects.some((o) => o.kind === 'building' && o.transform.position[0] > 0))) && objects.length < MAX_WORLD_OBJECTS) {
     const river = makeTerrainRiver(plan, 'z', 0, -plan.terrain.size * 0.32, plan.terrain.size * 0.32);
     const level = plan.terrain.waterLevel;
     if (level === null || river.points.every((p) => p[1] + river.transform.position[1] > level + .2)) objects.push(river);

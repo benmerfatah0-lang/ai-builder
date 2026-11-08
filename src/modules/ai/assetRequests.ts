@@ -111,19 +111,12 @@ export function findAssetMentions(text: string): AssetMatch[] {
 }
 
 /** Parse a limited set of asset names, quantities and pairwise relations. */
-export function parseAssetRequests(prompt: string, forceExplicit = false): AssetRequest[] | undefined {
+export function parseAssetRequests(prompt: string, _forceExplicit = false): AssetRequest[] | undefined {
   const text = normalizeAssetText(prompt);
-  const selected = findAssetMentions(text);
+  const selected = findAssetMentions(text).filter((match) =>
+    // "pine forest" names the biome, not one separately requested pine.
+    !(match.id === 'pine' && /^(?:pine|pines)$/.test(match.text) && /^\s+(?:forest|woods|woodland)\b/.test(text.slice(match.end))));
   if (!selected.length) return undefined;
-
-  // Keep the established landscape planner for general English descriptions.
-  // Explicit spatial instructions, Arabic asset descriptions and primitive
-  // requests use this asset layout instead.
-  const hasArabic = /[\u0600-\u06ff]/.test(text);
-  const hasRelation = selected.some((m, i) => i > 0 && directionBetween(text.slice(selected[i - 1]!.end, m.start)));
-  const hasSpecial = selected.some((m) => ['box', 'sphere', 'cylinder', 'cone', 'torus', 'wood-fence', 'dirt-path', 'mine-entrance', 'mine-cart', 'pickaxe', 'excavator', 'chest'].includes(m.id));
-  const hasAssetSize = selected.some((m, i) => sizeFor(text.slice(i ? selected[i - 1]!.end : 0, m.start), text.slice(m.end, selected[i + 1]?.start ?? text.length), i > 0) !== undefined);
-  if (!forceExplicit && !hasArabic && !hasRelation && !hasSpecial && !hasAssetSize) return undefined;
 
   const requests: AssetRequest[] = [];
   const kept: { match: AssetMatch; request: number }[] = [];
@@ -152,7 +145,7 @@ export function parseAssetRequests(prompt: string, forceExplicit = false): Asset
     } else {
       const after = text.slice(match.end, selected[index + 1]?.start ?? text.length);
       const number = countBefore(between) ?? countAfter(after);
-      const plural = /(?:trees|rocks|houses|towers|lanterns|palms|cubes|spheres|اشجار|شجرات|بيوت|منازل|صخور|صخرات|فوانيس|نخيل|مكعبات|شجيرات|عربات|معاول|حفارات|صناديق|مناجم|حظائر|جسور|barns|bridges|carts|pickaxes|excavators|chests|mines)$/.test(match.text);
+      const plural = /(?:trees|pines|boulders|stones|rocks|houses|towers|lanterns|palms|cubes|spheres|اشجار|شجرات|بيوت|منازل|صخور|صخرات|فوانيس|نخيل|مكعبات|شجيرات|عربات|معاول|حفارات|صناديق|مناجم|حظائر|جسور|barns|bridges|carts|pickaxes|excavators|chests|mines)$/.test(match.text);
       const dual = /(?:تين|تان|لين|لان|جين|جان|يتين|يتان)$/.test(match.text);
       requestIndex = requests.length;
       requests.push({ assetId: match.id, count: number ?? (dual ? 2 : plural ? 3 : 1), size: sizeFor(between, after, index > 0) });
