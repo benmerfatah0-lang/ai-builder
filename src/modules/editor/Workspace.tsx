@@ -28,6 +28,7 @@ import {
   type TransformTool,
 } from './Viewport';
 import { ViewportToolbar } from './ViewportToolbar';
+import { ForgeHome } from './ForgeHome';
 import { WorldPanel } from './panels/WorldPanel';
 import { HierarchyPanel } from './panels/HierarchyPanel';
 import { AssetsPanel } from './panels/AssetsPanel';
@@ -72,6 +73,7 @@ export function Workspace() {
   const [ready, setReady] = useState(false);
   const [worlds, setWorlds] = useState<WorldSummary[]>([]);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [view, setView] = useState<'forge' | 'studio'>('forge');
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<DesktopTab>('ai');
   const [mobilePanel, setMobilePanel] = useState<MobilePanel | null>('ai');
@@ -185,6 +187,7 @@ export function Workspace() {
     const plan = createEmptyWorldPlan({ name: 'Untitled World' });
     dispatch({ type: 'replacePlan', plan });
     setLibraryOpen(false);
+    setView('studio');
     setMobilePanel(null);
     notify('Blank world created.', 'success');
   }, [dispatch, notify]);
@@ -199,6 +202,7 @@ export function Workspace() {
       }
       dispatch({ type: 'replacePlan', plan });
       setLibraryOpen(false);
+      setView('studio');
       setMobilePanel(null);
       notify(`Opened “${plan.name}”.`, 'success');
     } catch (error) {
@@ -258,6 +262,7 @@ export function Workspace() {
       const plan = await readWorldFile(file);
       dispatch({ type: 'replacePlan', plan });
       setLibraryOpen(false);
+      setView('studio');
       setMobilePanel(null);
       notify(`Imported “${plan.name}”.`, 'success');
     } catch (error) {
@@ -266,6 +271,7 @@ export function Workspace() {
         const repaired = await readWorldFileLenient(file);
         dispatch({ type: 'replacePlan', plan: repaired.plan });
         setLibraryOpen(false);
+        setView('studio');
         setMobilePanel(null);
         notify(
           repaired.warnings.length > 0
@@ -453,6 +459,13 @@ export function Workspace() {
         notify={notify}
       />
 
+      <nav className="forge-navigation" aria-label="WorldForge navigation">
+        <button type="button" className={view === 'forge' ? 'is-active' : ''} onClick={() => setView('forge')} aria-current={view === 'forge' ? 'page' : undefined}><Icon name="sparkles" size={16} /><span>Forge</span><small>الإنشاء</small></button>
+        <button type="button" onClick={openLibrary}><Icon name="folder" size={16} /><span>Grimoire</span><small>المكتبة</small></button>
+        <button type="button" className={view === 'studio' ? 'is-active' : ''} onClick={() => setView('studio')} aria-current={view === 'studio' ? 'page' : undefined}><Icon name="cube" size={16} /><span>Builder</span><small>المحرر</small></button>
+      </nav>
+
+      {view === 'forge' ? <ForgeHome worlds={worlds} mapTrainer={mapTrainer} storageKind={storageKind} notify={notify} onOpenStudio={() => { setView('studio'); setMobilePanel(null); }} onOpenLibrary={openLibrary} onOpenWorld={(id) => void openWorld(id)} /> : <>
       <main className={`workspace ${isMobile && mobilePanel ? 'has-sheet' : ''}`}>
         <aside className="sidebar desktop-only" aria-label="Editor panels">
           <nav className="panel-tabs" role="tablist">
@@ -541,6 +554,8 @@ export function Workspace() {
           ))}
         </nav>
       )}
+
+      </>}
 
       <WorldLibraryDialog
         open={libraryOpen}

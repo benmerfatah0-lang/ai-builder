@@ -20,6 +20,7 @@ function worldNameValue(): string {
 async function bootDesktop() {
   render(<App />);
   await waitFor(() => expect(worldNameValue()).not.toBe('Loading…'), { timeout: 10000 });
+  fireEvent.click(screen.getByRole('button', { name: /Builder/ }));
   await waitFor(() => expect(screen.getByText(/3D viewport unavailable/i)).toBeTruthy(), {
     timeout: 8000,
   });
@@ -368,6 +369,7 @@ describe('application runtime', () => {
       { timeout: 10000 },
     );
     // The hierarchy was restored from IndexedDB, not regenerated.
+    fireEvent.click(screen.getByRole('button', { name: /Builder/ }));
     fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
     const tree = await screen.findByRole('tree', { name: 'Scene hierarchy' });
     expect(within(tree).getAllByRole('treeitem').length).toBeGreaterThan(3);
@@ -382,6 +384,7 @@ describe('application runtime', () => {
     render(<App />);
     await waitFor(() => expect(worldNameValue()).not.toBe('Loading…'), { timeout: 10000 });
 
+    fireEvent.click(screen.getByRole('button', { name: /Builder/ }));
     const dock = await screen.findByRole('navigation', { name: 'Editor panels' });
     fireEvent.click(within(dock).getByRole('button', { name: /^Scene$/ }));
 
