@@ -13,7 +13,7 @@ import { NumberField, SelectField } from '../../../ui/controls';
 import { TextEditPanel } from './TextEditPanel';
 import { ResearchResults } from './ResearchResults';
 import { PhotoStudio } from './PhotoStudio';
-import { ImageSceneStudio } from './ImageSceneStudio';
+import { ReferenceSceneWorkflow } from './ReferenceSceneWorkflow';
 import { addPhotoModels } from '../../ai/photoModel';
 import { planPhotoRequests, type PhotoRequest } from '../../ai/photoRequests';
 import { type WorldPlan } from '../../../core/world-plan/schema';
@@ -91,6 +91,9 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
   const [prompt, setPrompt] = useState('');
   const currentPrompt = useRef(prompt); currentPrompt.current = prompt;
   const [worldName, setWorldName] = useState('');
+  const [useReference,setUseReference]=useState(false);
+  const [referenceFlow,setReferenceFlow]=useState<{prompt:string;plan:WorldPlan;id:number}|null>(null);
+  const referenceSequence=useRef(0);
   const [seed, setSeed] = useState<number>(() => randomSeed());
   const [style, setStyle] = useState<WorldStyle | 'auto'>('auto');
   const [scale, setScale] = useState<WorldScale | 'auto'>('auto');
@@ -103,6 +106,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
   const generate = async () => {
     const text = prompt.trim();
     if (!text || generating) return;
+    if(useReference) { researchSequence.current++;researchAbort.current?.abort();setResearch(null);setStudio(null);setStudioPending(false);setResearchBusy(false);setResult(null);setNotes([]);setStats(null);setReferenceFlow({prompt:text,plan:state.plan,id:++referenceSequence.current});setGenerationError('');return; }
     const originalPlan = state.plan;
     const correctedText = correctBuildSpelling(text).text;
     setGenerationError('');
@@ -211,7 +215,6 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
   return (
     <div className={`panel-scroll ${variant === 'forge' ? 'forge-ai' : ''}`}>
       {variant === 'panel' && <TextEditPanel shapeModel={shapeModel} />}
-      <ImageSceneStudio onOpenStudio={onOpenStudio} />
       {studio && <div dir="rtl">
         <p role="status">العنصر {studio.index + 1} من {studio.requests.length} · العدد المطلوب: {studio.requests[studio.index]!.count}</p>
         <PhotoStudio key={`${studio.index}:${studio.requests[studio.index]!.topic.term}`} topic={studio.requests[studio.index]!.topic} initialMeshStyle={studio.requests[studio.index]!.meshStyle}
@@ -274,6 +277,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
         <input className="input" aria-label="اسم العالم (اختياري)" value={worldName} onChange={(event) => setWorldName(event.target.value)} maxLength={80} placeholder="مثلاً: أرض الأحلام" />
       </label>}
 
+      <label dir="rtl"><input type="checkbox" checked={useReference} onChange={(event)=>{setUseReference(event.target.checked);setReferenceFlow(null);}} /> استخدم صورة مرجعية ووصف ويكيبيديا ضمن إنشاء العالم</label>
       <p className="generate-caption" dir="rtl">يبحث المساعد تلقائياً عن كلمات قد لا يعرفها في ويكيبيديا وWikimedia Commons؛ تُرسل هذه الكلمات إلى الموقعين. التعرّف تقريبي؛ قد نستخدم صوراً ذات خلفية بسيطة لبناء أحجام تقديرية متناظرة لعناصر متعددة.</p>
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
 
@@ -288,6 +292,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
         {generating ? 'جاري تحليل الوصف وبناء العالم…' : 'أنشئ العالم'} <span className="generate-arrow">←</span>
       </button>
       <p className="generate-caption" dir="rtl">✦ يتطلب الإنترنت وخادم الهاتف في Termux، دون تنزيل نموذج كبير</p>
+      {referenceFlow && <ReferenceSceneWorkflow key={referenceFlow.id} prompt={referenceFlow.prompt} basePlan={referenceFlow.plan} mode="create" canApply={()=>currentPrompt.current.trim()===referenceFlow.prompt} onCancel={()=>setReferenceFlow(null)} onApplied={()=>{setReferenceFlow(null);notify('أُنشئ المشهد من العناصر المحددة؛ يمكن التراجع بـ Undo.','success');}} onOpenStudio={onOpenStudio}/>}
       {result && (
         <div className="ai-result">
           <div className="ai-result-head">

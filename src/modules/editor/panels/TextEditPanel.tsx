@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { researchUnknown, unknownTopics, type ResearchReport } from '../../ai/unknownResearch';
 import { ResearchResults } from './ResearchResults';
 import { PhotoStudio } from './PhotoStudio';
+import { ReferenceSceneWorkflow } from './ReferenceSceneWorkflow';
 import { addPhotoModels } from '../../ai/photoModel';
 import { planPhotoRequests, type PhotoRequest } from '../../ai/photoRequests';
 import { findAssetMentions, normalizeAssetText } from '../../ai/assetRequests';
@@ -16,6 +17,9 @@ import { Icon } from '../../../ui/Icon';
 export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
   const { state, dispatch, setConstructionPreview } = useEditor();
   const [command, setCommand] = useState('');
+  const [useReference,setUseReference]=useState(false);
+  const [referenceFlow,setReferenceFlow]=useState<{command:string;plan:WorldPlan;selection:string;id:number}|null>(null);
+  const referenceSequence=useRef(0);
   const [feedback, setFeedback] = useState<{ text: string; error: boolean } | null>(null);
   const [research, setResearch] = useState<ResearchReport | null>(null);
   const [busy, setBusy] = useState(false);
@@ -78,6 +82,11 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
     } catch (error) { setFeedback({ text: error instanceof Error ? error.message : 'تعذّر تطبيق التقريب؛ لم يتغير العالم.', error: true }); }
   };
   const apply = () => {
+    if(useReference) {
+      if(!/^(?:اضف|اضيف|ضع|اصنع|انشئ|ابني|اعمل|صمم|add|ajoute|ajouter)\s/iu.test(command.trim().replace(/[أإآ]/g,'ا'))) {setFeedback({text:'استخدم صورة مرجعية لأمر إضافة فقط؛ لا تُستخدم للحذف أو التحريك.',error:true});return;}
+      sequence.current++;researchAbort.current?.abort();setStudio(null);setResearch(null);setBusy(false);setFeedback(null);
+      setReferenceFlow({command:command.trim(),plan:state.plan,selection:state.selection.join('\0'),id:++referenceSequence.current});return;
+    }
     try {
       const result = editWorldByText(state.plan, state.selection, command, shapeModel);
       dispatch({ type: 'replacePlan', plan: result.plan });
@@ -96,9 +105,11 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
         <span className="field-label">اكتب التعديل</span>
         <textarea className="prompt-input text-edit-input" aria-label="تعديل العالم بالكتابة" value={command} onChange={(event) => setCommand(event.target.value)} dir="auto" maxLength={400} rows={3} placeholder="مثلاً: أضف شجرتين على يمين البيت" />
       </label>
+      <label><input type="checkbox" checked={useReference} onChange={(event)=>{setUseReference(event.target.checked);setReferenceFlow(null);}} /> استخدم صورة مرجعية ووصف ويكيبيديا للإضافة</label>
       <button type="button" className="btn btn-primary text-edit-button" onClick={apply} disabled={!command.trim()}>
         <Icon name="sparkles" size={16} /> تطبيق التعديل
       </button>
+      {referenceFlow && <ReferenceSceneWorkflow key={referenceFlow.id} prompt={referenceFlow.command} basePlan={referenceFlow.plan} mode="edit" canApply={()=>currentCommand.current.trim()===referenceFlow.command && currentEditor.current.selection.join('\0')===referenceFlow.selection} onCancel={()=>setReferenceFlow(null)} onApplied={()=>{setReferenceFlow(null);setCommand('');setFeedback({text:'أُضيفت العناصر المحددة إلى العالم الحالي؛ يمكن التراجع بـ Undo.',error:false});}} />}
       {feedback && <p className={feedback.error ? 'online-error' : 'text-edit-success'} role={feedback.error ? 'alert' : 'status'}>{feedback.text}</p>}
       {studio && <div dir="rtl">
         <p role="status">العنصر {studio.index + 1} من {studio.requests.length} · العدد المطلوب: {studio.requests[studio.index]!.count}</p>

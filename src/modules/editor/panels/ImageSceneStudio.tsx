@@ -3,20 +3,21 @@ import { useEditor } from '../store';
 import { createId } from '../../../core/utils/id';
 import { findAssetMentions, normalizeAssetText } from '../../ai/assetRequests';
 import { unknownTopics } from '../../ai/unknownResearch';
-import { colorRegions, createImageScene, SCENE_TYPES, type SceneMark, type SceneType } from '../../ai/imageScene';
+import { appendImageScene, colorRegions, createImageScene, SCENE_TYPES, type SceneMark, type SceneType } from '../../ai/imageScene';
 import { photoToModel, type TinyImage } from '../../ai/photoModel';
 import { photoStyleForTopic, type PhotoMeshStyle } from '../../ai/photoStyle';
 import { scenePhotoCrop } from '../../ai/scenePhotoCrop';
-import type { PhotoModel } from '../../../core/world-plan/schema';
+import type { PhotoModel, WorldPlan } from '../../../core/world-plan/schema';
+import type { ImageReference } from '../../ai/imageReferences';
 import { PhotoOutline } from './PhotoOutline';
 import { PhotoModelPreview } from './PhotoStudio';
 
-interface LocalImage { url:string; title:string; pixels:TinyImage; source:HTMLImageElement }
+interface LocalImage { url:string; title:string; pixels:TinyImage; source:HTMLImageElement; reference?:ImageReference }
 
 /** On-device guided scene assembly. Image colours are not object recognition. */
-export function ImageSceneStudio({ onOpenStudio }: { onOpenStudio?: () => void }) {
+export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescription='', articleText='', initialFile, reference, mode='create', basePlan, canApply, onApplied }: { onOpenStudio?: () => void; embedded?:boolean; initialDescription?:string; articleText?:string; initialFile?:File; reference?:ImageReference; mode?:'create'|'edit'; basePlan?:WorldPlan; canApply?:()=>boolean; onApplied?:()=>void }) {
   const { state, dispatch }=useEditor();
-  const [picture,setPicture]=useState<LocalImage|null>(null), [description,setDescription]=useState('');
+  const [picture,setPicture]=useState<LocalImage|null>(null), [description,setDescription]=useState(initialDescription);
   const [marks,setMarks]=useState<SceneMark[]>([]), [type,setType]=useState<SceneType>('broadleaf');
   const [name,setName]=useState('شجرة'), [depth,setDepth]=useState(.5), [size,setSize]=useState(1), [height,setHeight]=useState(0), [thickness,setThickness]=useState(1);
   const [point,setPoint]=useState<{x:number;y:number}|null>(null), [model,setModel]=useState<PhotoModel|null>(null);
@@ -26,8 +27,7 @@ export function ImageSceneStudio({ onOpenStudio }: { onOpenStudio?: () => void }
   const pending=useRef(new Set<string>()), currentUrl=useRef(''), generation=useRef(0);
   const release=(url:string) => { if(pending.current.delete(url)) URL.revokeObjectURL(url); };
   useEffect(()=>()=>{ generation.current++; for(const url of pending.current) URL.revokeObjectURL(url); pending.current.clear(); },[]);
-  const load = (event:ChangeEvent<HTMLInputElement>) => {
-    const file=event.target.files?.[0]; event.target.value=''; if(!file) return;
+  const loadFile = (file:File, imageReference?:ImageReference) => {
     const id=++generation.current;
     if(!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size>12*1024*1024 || !file.size) { setLoading(false); setError('اختر JPEG أو PNG أو WebP بحجم لا يتجاوز 12 ميغابايت.'); return; } const url=URL.createObjectURL(file); pending.current.add(url); setLoading(true);setError('');
     const image=new Image();
@@ -43,7 +43,7 @@ export function ImageSceneStudio({ onOpenStudio }: { onOpenStudio?: () => void }
         context.drawImage(image,0,0,width,height);
         const rgba=new Uint8Array(context.getImageData(0,0,width,height).data);
         if(currentUrl.current) release(currentUrl.current); currentUrl.current=url;
-        setPicture({url,title:(file.name||'صورة محلية').slice(0,120),pixels:{width,height,rgba},source:image});
+        setPicture({url,title:(file.name||'صورة محلية').slice(0,120),pixels:{width,height,rgba},source:image,...(imageReference?{reference:imageReference}:{})});
         setMarks([]);setPoint(null);setModel(null);setShowPreview(false);setMessage('');
       } catch(reason) { release(url);setError(reason instanceof Error ? reason.message : 'تعذّر قراءة الصورة.'); }
       setLoading(false);
@@ -51,6 +51,8 @@ export function ImageSceneStudio({ onOpenStudio }: { onOpenStudio?: () => void }
     image.onerror=()=>{ release(url); if(id===generation.current){setLoading(false);setError('تعذّر فتح الصورة.');} };
     image.src=url;
   };
+  useEffect(()=>{if(initialFile) loadFile(initialFile,reference);},[initialFile,reference]);
+  const load = (event:ChangeEvent<HTMLInputElement>) => { const file=event.target.files?.[0]; event.target.value=''; if(file) loadFile(file); };
   const selectType=(id:SceneType,label?:string)=>{setType(id);setName(label??SCENE_TYPES.find((entry)=>entry.id===id)!.label);setPoint(null);setModel(null);setShowPreview(false);setError(''); if(id==='photo') { const style=photoStyleForTopic(description,label??'',unknownTopics(description).terms.length || 1); setMeshStyle(style==='conflict'?'smooth':style); }};
   const tap = (event:MouseEvent<SVGSVGElement>) => {
     const rect=event.currentTarget.getBoundingClientRect(); if(!rect.width||!rect.height) return;
@@ -64,8 +66,9 @@ export function ImageSceneStudio({ onOpenStudio }: { onOpenStudio?: () => void }
   };
   const build=()=>{
     try {
-      const plan=createImageScene(description || 'مشهد مستوحى من الصورة', marks, (state.plan.seed^0x51ca7e)>>>0);
-      dispatch({type:'replacePlan',plan});setMessage('أُنشئ مشهد تقريبي من العناصر المحددة فقط. استخدم التجول ويمكن التراجع من Undo.');setError('');onOpenStudio?.();
+      if ((basePlan && state.plan!==basePlan) || (canApply && !canApply())) throw new Error('تغيّر العالم أو الوصف أثناء العمل؛ ألغِ وأعد المحاولة.');
+      const plan=mode==='edit' ? appendImageScene(state.plan,marks) : createImageScene(description || 'مشهد مستوحى من الصورة', marks, (state.plan.seed^0x51ca7e)>>>0);
+      dispatch({type:'replacePlan',plan});setMessage('طُبّقت العناصر المحددة فقط. استخدم التجول ويمكن التراجع من Undo.');setError('');onApplied?.();onOpenStudio?.();
     } catch(reason) {setError(reason instanceof Error ? reason.message : 'تعذّر إنشاء المشهد.');}
   };
   const normalizedDescription=normalizeAssetText(description);
@@ -77,13 +80,21 @@ export function ImageSceneStudio({ onOpenStudio }: { onOpenStudio?: () => void }
     const normalizedTerm=normalizeAssetText(term); const index=normalizedDescription.indexOf(normalizedTerm);
     return index<0 || !negatedAt(index);
   }):[];
+  const normalizedArticle=normalizeAssetText(articleText);
+  const articleNegated=(index:number)=>/(?:^|\s)(?:بدون|دون|بلا|لا|ليس|ليست|without|no|not)\s+(?:ال)?$/iu.test(normalizedArticle.slice(0,index));
+  const articleSuggestions=[...new Set([
+    ...findAssetMentions(normalizedArticle).filter((item)=>!articleNegated(item.start)).map((item)=>({tree:'broadleaf',broadleaf:'broadleaf',boulder:'boulder',house:'house',tower:'tower',bridge:'bridge','wood-fence':'wood-fence',sphere:'sphere',box:'box'} as Record<string,SceneType>)[item.id]).filter((item):item is SceneType=>!!item),
+    ...(Array.from(normalizedArticle.matchAll(/بحير|نهر|ماء|مياه|بحر|water|river|lake|sea/giu)).some((match)=>!articleNegated(match.index))?['water' as const]:[]),
+  ])];
   const regions=picture ? colorRegions(picture.pixels) : [];
-  return <details className="wiki-library" dir="rtl">
-    <summary>إنشاء مشهد تقريبي من صورة ووصف</summary>
-    <p>الصورة تبقى على الجهاز. قسّمها إلى عناصر تختارها وتحدد قربها أو بعدها؛ سيتم إنشاء أجسام منفصلة في عالم جديد، وليس تحويل الصورة كلها إلى لوح. التعرف على الكائنات والعمق غير تلقائيين في النسخة الخفيفة.</p>
-    <label className="field"><span>اختر صورة من الجهاز (JPEG أو PNG أو WebP)</span><input aria-label="صورة المشهد" type="file" accept="image/jpeg,image/png,image/webp" onChange={load}/></label>
+  const Wrapper=embedded?'div':'details';
+  return <Wrapper className="wiki-library" dir="rtl">
+    {!embedded && <summary>إنشاء مشهد تقريبي من صورة ووصف</summary>}
+    <p>الصورة تبقى على الجهاز. قسّمها إلى عناصر تختارها وتحدد قربها أو بعدها؛ سيتم إنشاء أجسام منفصلة، وليس تحويل الصورة كلها إلى لوح. التعرف على الكائنات والعمق غير تلقائيين في النسخة الخفيفة.</p>
+    {!embedded && <label className="field"><span>اختر صورة من الجهاز (JPEG أو PNG أو WebP)</span><input aria-label="صورة المشهد" type="file" accept="image/jpeg,image/png,image/webp" onChange={load}/></label>}
     {loading && <p role="status">أقرأ الصورة محلياً…</p>}
-    <label className="field"><span>صف العناصر الموجودة في الصورة (اختياري)</span><textarea aria-label="وصف عناصر الصورة" maxLength={400} value={description} onChange={(event)=>setDescription(event.target.value)} rows={2}/></label>
+    {!embedded && <label className="field"><span>صف العناصر الموجودة في الصورة (اختياري)</span><textarea aria-label="وصف عناصر الصورة" maxLength={400} value={description} onChange={(event)=>setDescription(event.target.value)} rows={2}/></label>}
+    {!!articleSuggestions.length && <div><p>كلمات مدعومة وردت في المقالة؛ لا يعني ذلك أنها موجودة في الصورة. اختر ما تراه فقط:</p>{articleSuggestions.map((id)=><button type="button" key={id} className="btn btn-small" onClick={()=>selectType(id)}>{SCENE_TYPES.find((entry)=>entry.id===id)!.label}</button>)}</div>}
     {!!unique.length && <div><p>عناصر تعرّف عليها الوصف؛ اختر نوعاً ثم حدّد مكانه:</p>{unique.map((id)=><button type="button" key={id} className="btn btn-small" onClick={()=>selectType(id)}>{SCENE_TYPES.find((entry)=>entry.id===id)!.label}</button>)}</div>}
     {!!unknown.length && <div><p>كلمات غير مفهومة تلقائياً؛ يمكنك تحديد شكلها من الصورة إذا كانت ظاهرة:</p>{unknown.slice(0,10).map((term)=><button type="button" key={term} className="btn btn-small" onClick={()=>selectType('photo',term)}>{term}</button>)}</div>}
     {picture && <>
@@ -107,7 +118,7 @@ export function ImageSceneStudio({ onOpenStudio }: { onOpenStudio?: () => void }
           if(!context) throw new Error('تعذّر قراءة القصاصة على هذا المتصفح.');
           context.drawImage(picture.source,crop.x,crop.y,crop.width,crop.height,0,0,crop.pixelWidth,crop.pixelHeight);
           const pixels={width:crop.pixelWidth,height:crop.pixelHeight,rgba:new Uint8Array(context.getImageData(0,0,crop.pixelWidth,crop.pixelHeight).data)};
-          const built=photoToModel(pixels,{kind:'local',title:picture.title,author:'صورة من الجهاز',license_name:'غير محدد'},false,crop.mask,meshStyle);
+          const built=photoToModel(pixels,picture.reference ?? {kind:'local',title:picture.title,author:'صورة من الجهاز',license_name:'غير محدد'},false,crop.mask,meshStyle);
           const indexes=Array.from(crop.mask, (v,i)=>v && pixels.rgba[i*4+3]!>=128?i:-1).filter((i)=>i>=0);
           const cx=indexes.reduce((sum,i)=>sum+(i%crop.pixelWidth)+.5,0)/indexes.length/crop.pixelWidth;
           const cy=indexes.reduce((sum,i)=>sum+Math.floor(i/crop.pixelWidth)+.5,0)/indexes.length/crop.pixelHeight;
@@ -117,10 +128,10 @@ export function ImageSceneStudio({ onOpenStudio }: { onOpenStudio?: () => void }
       }}/>{model && <><p>تم تحديد الشكل؛ راجع العمق والحجم ثم أضفه للقائمة.</p><button type="button" className="btn btn-small" onClick={()=>setShowPreview((old)=>!old)}>{showPreview?'إغلاق معاينة الشكل':'معاينة الشكل ثلاثي الأبعاد'}</button>{showPreview && <PhotoModelPreview model={model} rows={model.height} depthScale={thickness}/>}</>}</>}
       <button type="button" className="btn btn-small" onClick={add} disabled={!point || (type==='photo'&&!model)}>أضف العنصر إلى المراجعة</button>
       <div><strong>العناصر التي ستُنشأ: {marks.length}</strong>{marks.map((item,i)=><p key={item.id}>{i+1}. {item.name} · {SCENE_TYPES.find((entry)=>entry.id===item.type)?.label} · عمق {item.depth.toFixed(2)} · ارتفاع {item.height?.toFixed(1) ?? "0.0"} <button type="button" className="btn btn-small" onClick={()=>{setMarks((old)=>old.filter((entry)=>entry.id!==item.id));setPoint(null);setModel(null);setShowPreview(false);}}>إزالة {item.name}</button></p>)}</div>
-      <p>ينشئ أرضاً مستوية وماءً زخرفياً إن اخترته؛ لا يحفر وادياً ولا يستنتج الجدران والأجزاء المخفية. قد تتداخل العناصر. راجعها في المحرر بعد الإنشاء.</p>
-      <button type="button" className="btn btn-primary" disabled={!marks.length} onClick={build}>إنشاء عالم جديد من العناصر المحددة</button>
-      <p>هذا يستبدل العالم المعروض ويمكن التراجع عنه بـ Undo. الألوان والشكل المشتقان من القصاصة واسم الملف يحفظان في المشروع؛ لا تحفظ الصورة الأصلية. تحقق من حقك في استخدام الصورة قبل مشاركة الناتج.</p>
+      <p>{mode==='create'?'ينشئ أرضاً مستوية':'يحافظ على الأرض الحالية ويضع العناصر قرب مركزها'} وماءً زخرفياً إن اخترته؛ لا يحفر وادياً ولا يستنتج الجدران والأجزاء المخفية. قد تتداخل العناصر أو تظهر تحت الماء. راجعها في المحرر بعد التطبيق.</p>
+      <button type="button" className="btn btn-primary" disabled={!marks.length} onClick={build}>{mode==='edit'?'إضافة العناصر المحددة إلى العالم':'إنشاء عالم جديد من العناصر المحددة'}</button>
+      <p>{mode==='edit'?'تُضاف العناصر إلى العالم الحالي':'هذا يستبدل العالم المعروض'} ويمكن التراجع عنه بـ Undo. الألوان والشكل المشتقان من القصاصة واسم الملف يحفظان في المشروع، ومع صورة Commons تحفظ بيانات مصدرها وترخيصها للمجسم المشتق؛ لا تحفظ الصورة الأصلية. تحقق من حقك في استخدام الصورة قبل مشاركة الناتج.</p>
     </>}
     {error && <p className="online-error" role="alert">{error}</p>}{message && <p role="status">{message}</p>}
-  </details>;
+  </Wrapper>;
 }

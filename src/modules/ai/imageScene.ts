@@ -1,4 +1,5 @@
 import { ASSET_LIBRARY } from '../../core/assets/catalog';
+import { createTerrainSampler } from '../../core/generation/terrain';
 import { createEmptyWorldPlan, createTransform } from '../../core/world-plan/factory';
 import { createMeta } from '../../core/world-plan/objectMeta';
 import { MAX_PHOTO_CELLS, photoModelSchema, validateWorldPlan, type PhotoModel, type WorldObject, type WorldPlan } from '../../core/world-plan/schema';
@@ -71,5 +72,19 @@ export function createImageScene(name:string, marks:SceneMark[], seed:number):Wo
   }
   const result={...plan,objects};
   if(!validateWorldPlan(result).success) throw new Error('تعذّر التحقق من المشهد؛ لم يُطبّق.');
+  return result;
+}
+
+/** Add confirmed scene objects to an existing world without changing its terrain or existing nodes. */
+export function appendImageScene(base:WorldPlan, marks:SceneMark[]):WorldPlan {
+  const generated=createImageScene('reference',marks,(base.seed^0x51ca7e)>>>0);
+  const terrain=createTerrainSampler(base.terrain,base.seed);
+  const scale=Math.min(1,(base.terrain.size-4)/28);
+  const added=generated.objects.map((object)=>{
+    const [x,y,z]=object.transform.position; const xx=x*scale,zz=z*scale;
+    return {...object,transform:{...object.transform,position:[xx,y+terrain.heightAt(xx,zz),zz] as [number,number,number]}};
+  });
+  const result={...base,objects:[...base.objects,...added]};
+  if(!validateWorldPlan(result).success) throw new Error('تتجاوز الإضافة سعة العالم؛ لم يُطبّق التعديل.');
   return result;
 }

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { colorRegions, createImageScene, type SceneMark } from './imageScene';
+import { appendImageScene, colorRegions, createImageScene, type SceneMark } from './imageScene';
 import { photoToModel } from './photoModel';
 import { serializeWorldPlan, deserializeWorldPlan } from '../../core/world-plan/migrate';
+import { createEmptyWorldPlan } from '../../core/world-plan/factory';
+import { createBuilding } from '../../core/assets/catalog';
 import { buildWorldScene, findNodeObject, disposeObject3D } from '../../core/scene/sceneBuilder';
 import { exportWorldToGlb } from '../../core/export/gltf';
 const image=()=>{const width=12,height=12,rgba=new Uint8Array(576);for(let y=0;y<12;y++)for(let x=0;x<12;x++)rgba.set(x<6?[20,90,30,255]:[30,100,190,255],4*(y*12+x));return {width,height,rgba};};
@@ -29,6 +31,12 @@ describe('guided scene assembly from a local image',()=>{
     const exported=gltf.nodes.find((n:{extras?:{imageSource?:{kind?:string;title?:string}}})=>n.extras?.imageSource?.kind==='local'&&n.extras?.imageSource?.title==='photo.jpg');
     expect(exported).toBeTruthy(); expect(exported.scale).toEqual([1,1,2]);
   },20000);
+  it('rejects an addition exceeding world capacity without mutating the original',()=>{
+    const base=createEmptyWorldPlan({seed:1});const house=createBuilding('house',[0,0,0],()=>.5);
+    const full={...base,objects:Array.from({length:1500},(_,i)=>({...house,id:`obj-full-${i}`}))};
+    expect(()=>appendImageScene(full,[mark('broadleaf',.5,.5)])).toThrow(/سعة العالم/);
+    expect(full.objects).toHaveLength(1500);expect(full.terrain).toEqual(base.terrain);
+  });
   it('rejects malformed coordinates, whole-image slabs, zero annotations and excessive photo cells',()=>{
     expect(()=>createImageScene('',[],1)).toThrow();
     expect(()=>createImageScene('',[{...mark('box',.5,.5),depth:2}],1)).toThrow();
