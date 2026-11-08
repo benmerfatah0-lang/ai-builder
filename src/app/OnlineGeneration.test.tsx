@@ -250,6 +250,34 @@ describe('lightweight local planning interface', () => {
       expect(screen.getByLabelText('Description')).toBeTruthy();
     } finally { browser.happyDOM.setViewport({ width: 1024, height: 768 }); }
   }, 20000);
+  it('adds a misspelled river through an existing village and undoes the actual map change', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === '/api/online') return new Response('{"online":true}');
+      return new Response('{}');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Seed'), { target: { value: '7' } });
+    fireEvent.blur(screen.getByLabelText('Seed'));
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'قرية' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    const tree = screen.getByRole('tree', { name: 'Scene hierarchy' });
+    const before = within(tree).getAllByRole('treeitem').length;
+    fireEvent.click(screen.getByRole('tab', { name: /^AI$/ }));
+    fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'اصنع لي نهرر يمر وسط القريية' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
+    expect(await screen.findByText(/تصحيح إملائي محدود/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    const updatedTree = screen.getByRole('tree', { name: 'Scene hierarchy' });
+    expect(within(updatedTree).getAllByRole('treeitem')).toHaveLength(before + 1);
+    expect(within(updatedTree).getByText('Village river')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Undo \(Ctrl\/Cmd\+Z\)/ }));
+    expect(within(updatedTree).getAllByRole('treeitem')).toHaveLength(before);
+    expect(within(updatedTree).queryByText('Village river')).toBeNull();
+  }, 20000);
   it('edits the generated world by text and undo restores it', async () => {
     const data = [new Response('{"online":true}'), new Response(JSON.stringify({ version: 1, cursor: 0, status: 'starting', classes: { desert: {docs:0,tokens:{}}, forest: {docs:0,tokens:{}}, mountains: {docs:0,tokens:{}}, island: {docs:0,tokens:{}} }, sources: [] })), new Response(JSON.stringify({ version: 1, cursor: 0, status: 'starting', samples: 0, last_loss: null, sources: [], profiles: Object.fromEntries(['default', 'small', 'tall', 'wide'].map(key => [key, {count: 0, mean: [1, 1, 1, 1]}])) }))];
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(data[0]).mockResolvedValueOnce(data[1]).mockResolvedValueOnce(data[2]));

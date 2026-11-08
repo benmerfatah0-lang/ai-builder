@@ -27,6 +27,7 @@ describe('atomic editing with a small, explicit vocabulary', () => {
     expect(result.objects.slice(2).every((object) => object.transform.position[0] > 0)).toBe(true);
     expect(result.objects.slice(2).every((object) => object.meta.status === 'edited')).toBe(true);
     expect(message).toContain('2');
+    expect(editWorldByText(plan, [], 'اصنع لي شجرتين على يمين البيت').plan.objects).toHaveLength(4);
     expect(validateWorldPlan(result).success).toBe(true);
   });
   it('uses a validated thumbnail-derived color only on the newly added house', () => {

@@ -82,7 +82,7 @@ export async function interpretOnline(prompt: string, options: InterpretOptions 
     usedKnowledge = adjusted.used;
   }
   const searched = forceSearch || (!suppressImplicitSearch && /ابحث|بحث|ويكيبيديا|معلم حقيقي|مكان حقيقي|landmark|wikipedia|search/i.test(prompt));
-  const notes = ['المساعد يفهم كلمات محدودة فقط، وليس نموذج لغة عاماً. قد يتجاهل تفاصيل غير معروفة؛ راجع العناصر والتحذيرات. الأشكال إجرائية وليست نموذجاً عاماً لتحويل الصور إلى 3D.'];
+  const notes = [...(result.notes ?? []), 'المساعد يفهم كلمات محدودة فقط، وليس نموذج لغة عاماً. قد يتجاهل تفاصيل غير معروفة؛ راجع العناصر والتحذيرات. الأشكال إجرائية وليست نموذجاً عاماً لتحويل الصور إلى 3D.'];
   if (result.intent.assets?.some((asset) => asset.relation)) notes.push('الاتجاهات حسب محاور العالم، وليس اتجاه الكاميرا.');
   if (!houseLearning) notes.push('تعذّر قراءة حالة التدريب التجريبي لصور البيوت.');
   else if (houseLearning.status === 'missing_pillow') notes.push('تدريب الصور غير متاح؛ ثبّت python-pillow في Termux.');

@@ -8,13 +8,13 @@ import type { Approximation } from './referenceUnderstanding';
 // These are grammar words, supported modifiers and existing environment cues, not a general language model.
 const canonical = (word: string) => word.replace(/ة/g, 'ه');
 const known = new Set(`و او ثم مع في من علي الي عن ل ب امام قدام خلف وراء يمين يسار شمال بالقرب قرب بجانب بجوار
-اصنع انشئ ابن ابني ابناء اريد اريدك صمم اعمل ضع اضف حرك لون كبر صغر احذف انقل اجعل غير
+اصنع انشئ ابن ابني ابناء اريد اريدك صمم اعمل ضع اضف اضيف حرك لون كبر صغر احذف انقل اجعل غير
 عالم عالما خريطه مشهد مكان بيئه مجسم العنصر المحدد المختار
 صغير صغيره كبير كبيره ضخم ضخمه طويل طويله عريض عريضه واسع واسعه مرتفع مرتفعه قديم قديمه حديث حديثه جميل جميله
 احمر حمراء ازرق زرقاء اخضر خضراء اصفر صفراء ابيض بيضاء اسود سوداء بني بنفسجي برتقالي
 صحراء صحراوي صحراويه غابه غابات جبل جبال جزيره جزر استوائي استوائيه بحر بحيره نهر انهار وادي وديان واحة واحات رمال
 مرج مروج سهل سهول مزرعه مزارع مدينه مدن قريه قري قرية حضاره اثار اطلال منجم ذهب عميق عميقه
-نهار يوم ليل ليله صباح مساء غروب شروق شمس كثيف كثيفه قليل قليله عدد بدون دون بلا تحتوي تحتويه يوجد فيها فيه لها
+يمر يمتد منتصف نهارا لي نهار يوم ليل ليله صباح مساء غروب شروق شمس كثيف كثيفه قليل قليله عدد بدون دون بلا تحتوي تحتويه يوجد فيها فيه لها
 ابحث بحث ويكيبيديا عند حول وسط علي سطح حقيقي حقيقيه عن شكل صور صورة صوره
 create make build add put place move delete remove paint color colour enlarge shrink change a an the and or with in on at of to for from near next beside right left behind front above below
 world map scene area landscape terrain small tiny little large big huge tall wide old new beautiful red blue green yellow white black brown purple orange

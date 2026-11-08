@@ -1,4 +1,6 @@
 /** Small, explicit and atomic text edits. This is not a general language model. */
+import { addRiverThroughVillage } from '../../core/generation/villageRiver';
+import { correctBuildSpelling, spellingNotice } from './spelling';
 import { ASSET_LIBRARY } from '../../core/assets/catalog';
 import { footprintFromObject, footprintFromRect, PlacementLedger } from '../../core/generation/placement';
 import { mulberry32, range } from '../../core/generation/rng';
@@ -103,7 +105,7 @@ const COLORS: [RegExp, string, string][] = [
   [/بنفسجي|purple/i, '#9463bc', 'بنفسجي'],
 ];
 
-const COMMON_WORDS = new Set(('علي الي من عن في بجانب بجوار بالقرب قرب امام قدام خلف وراء يمين يسار شمال لليمين لليسار العنصر المحدد المختار واحد واحدة واحده اثنين اثنان اثنتين ثلاث ثلاثة ثلاثه اربع اربعة اربعه خمس خمسة خمسه ست ستة سته سبع سبعة سبعه ثمان ثمانية ثمانيه تسع تسعة تسعه عشر عشرة عشره one two three four five six seven eight nine ten the a an to of on at next near beside left right behind front in selected object item un une le la les').split(' '));
+const COMMON_WORDS = new Set(('علي الي من عن في بجانب بجوار بالقرب قرب امام قدام خلف وراء يمين يسار شمال لي لليمين لليسار العنصر المحدد المختار واحد واحدة واحده اثنين اثنان اثنتين ثلاث ثلاثة ثلاثه اربع اربعة اربعه خمس خمسة خمسه ست ستة سته سبع سبعة سبعه ثمان ثمانية ثمانيه تسع تسعة تسعه عشر عشرة عشره one two three four five six seven eight nine ten the a an to of on at next near beside left right behind front in selected object item un une le la les').split(' '));
 const SIZE_WORDS = /^(?:صغير(?:ه|ة)?|كبير(?:ه|ة)?|ضخم(?:ه|ة)?|طويل(?:ه|ة)?|عريض(?:ه|ة)?|واسع(?:ه|ة)?|small|tiny|little|large|big|huge|tall|wide|broad)$/u;
 function validateCommandWords(text: string, verb: RegExp, action: string): number[] {
   const numbers: number[] = [];
@@ -128,17 +130,26 @@ function validateCommandWords(text: string, verb: RegExp, action: string): numbe
 
 /** Apply one supported command, or throw without changing the original world. */
 export function editWorldByText(plan: WorldPlan, selection: string[], command: string, shapeModel?: ShapeModel, referenceColor?: string): WorldEditResult {
-  const text = normalizeAssetText(command.trim().replace(/\s+/g, ' '));
+  const raw = normalizeAssetText(command.trim().replace(/\s+/g, ' '));
+  // Only additions are auto-corrected; never guess words in destructive edits.
+  const spelling = /^(?:اضف|اضيف|ضع|add|ajoute|ajouter|اصنع|انشئ|ابني|اعمل|صمم)\s/u.test(raw) ? correctBuildSpelling(raw) : { text: raw, changes: [] };
+  const text = spelling.text;
   if (!text || text.length > 400) throw new Error('اكتب أمراً واحداً لا يتجاوز 400 حرف.');
+  const riverCommand = /^(?:اضف|اضيف|ضع|اصنع|انشئ|ابني|اعمل|صمم)\s+(?:لي\s+)?(?:نهر|نهرا|النهر)\s+(?:(?:يمر|يمتد)\s+)?(?:(?:في|عبر)\s+)?(?:وسط|منتصف)\s+(?:ال)?(?:قريه|قرية)[.!؟]?$/u.test(text);
+  if (riverCommand) {
+    const result = addRiverThroughVillage(plan, selection);
+    if (!validateWorldPlan(result.plan).success) throw new Error('لم يجتز النهر فحص العالم؛ لم يُطبّق.');
+    return { ...result, message: `${result.message}${spelling.changes.length ? ` ${spellingNotice(spelling.changes)}` : ''}` };
+  }
   const verbs: [RegExp, 'add' | 'delete' | 'grow' | 'shrink' | 'color' | 'move'][] = [
-    [/^(?:اضف|ضع|add|ajoute|ajouter)\s/u, 'add'], [/^(?:احذف|ازل|امسح|delete|remove)\s/u, 'delete'],
+    [/^(?:اضف|اضيف|ضع|اصنع|انشئ|ابني|اعمل|صمم|add|ajoute|ajouter)\s/u, 'add'], [/^(?:احذف|ازل|امسح|delete|remove)\s/u, 'delete'],
     [/^(?:كبر|كبّر|زد حجم|enlarge)\s/u, 'grow'], [/^(?:صغر|صغّر|قلل حجم|shrink)\s/u, 'shrink'],
     [/^(?:لون|لوّن|غير لون|color|colour)\s/u, 'color'], [/^(?:حرك|حرّك|انقل|move)\s/u, 'move'],
   ];
   const action = verbs.find(([pattern]) => pattern.test(text))?.[1];
   if (!action) throw new Error('أمر غير مدعوم. ابدأ بـ: أضف، احذف، كبّر، صغّر، لوّن أو حرّك.');
   const remainder = text.replace(verbs.find(([pattern]) => pattern.test(text))![0], '');
-  if (/(?:^|\s|و)(?:ثم|اضف|احذف|ازل|امسح|حرك|انقل|لون|كبر|صغر|add|ajoute|ajouter|delete|remove|move|color|colour|enlarge|shrink|and then)/u.test(remainder)) throw new Error('اكتب تعديلاً واحداً في كل مرة.');
+  if (/(?:^|\s|و)(?:ثم|اضف|اضيف|اصنع|انشئ|ابني|اعمل|صمم|احذف|ازل|امسح|حرك|انقل|لون|كبر|صغر|add|ajoute|ajouter|delete|remove|move|color|colour|enlarge|shrink|and then)/u.test(remainder)) throw new Error('اكتب تعديلاً واحداً في كل مرة.');
   if (/(?:بدون|دون|بلا|except|without|جميع|كافه|كل|all|سقف|باب|نافذ|داخل|فوق|بين)/u.test(text)) throw new Error('هذا التفصيل غير مدعوم في التعديل النصي؛ لم يتغير العالم.');
   const numbers = validateCommandWords(text, verbs.find(([pattern]) => pattern.test(text))![0], action);
   if (action !== 'color' && COLORS.some(([pattern]) => pattern.test(text))) throw new Error('الألوان في أمر منفصل فقط، مثل «لوّن البيت أحمر».');
@@ -238,5 +249,5 @@ export function editWorldByText(plan: WorldPlan, selection: string[], command: s
   }
   next = { ...next, updatedAt: new Date().toISOString() };
   if (!validateWorldPlan(next).success) throw new Error('لم يجتز التعديل فحص العالم؛ لم يُطبّق.');
-  return { plan: next, message };
+  return { plan: next, message: `${message}${spelling.changes.length ? ` ${spellingNotice(spelling.changes)}` : ''}` };
 }

@@ -11,6 +11,7 @@ import { BIOME_PROFILES, SCALE_SETTINGS } from './biomes';
 import { mulberry32, range, pickWeighted, type Rng } from './rng';
 import { createTerrainSampler, type TerrainSampler } from './terrain';
 import { createBuilding, createLantern, createRock, createTree } from '../assets/catalog';
+import { makeTerrainRiver } from './villageRiver';
 import { generateFarmPlan } from './farm';
 import { buildAssetLayout } from './assetLayout';
 import { validateScenePlan, type SceneValidation } from '../world-plan/validateScene';
@@ -67,6 +68,8 @@ interface PlacementOptions {
   occupied: [number, number][];
   sampler: TerrainSampler;
   waterLevel: number | null;
+  avoidRiver?: boolean;
+  side?: -1 | 1;
 }
 
 /** Rejection-sampled placement that keeps objects above water and apart. */
@@ -79,6 +82,8 @@ function findPlacement(rng: Rng, options: PlacementOptions): [number, number, nu
     occupied,
     sampler,
     waterLevel,
+    avoidRiver,
+    side,
   } = options;
   const spacingSq = minSpacing * minSpacing;
 
@@ -88,6 +93,7 @@ function findPlacement(rng: Rng, options: PlacementOptions): [number, number, nu
     const x = Math.cos(angle) * distance;
     const z = Math.sin(angle) * distance;
 
+    if ((avoidRiver && Math.abs(x) < 7) || (side && x * side < 7)) continue;
     if (Math.abs(x) > sampler.size / 2 - 2 || Math.abs(z) > sampler.size / 2 - 2) continue;
 
     const y = sampler.heightAt(x, z);
@@ -161,6 +167,8 @@ function displayName(object: WorldObject): string {
       return object.variant === 'tower' ? 'Tower' : object.variant === 'ruin' ? 'Ruin' : 'House';
     case 'lantern':
       return 'Lantern';
+    case 'river':
+      return 'Village river';
     case 'primitive':
       return object.primitive.charAt(0).toUpperCase() + object.primitive.slice(1);
     default:
@@ -272,7 +280,7 @@ export function generateWorldPlanWithReport(intent: WorldIntent): GenerationRepo
     const validation = validateScenePlan(farm.plan);
     return {
       plan: farm.plan,
-      warnings: [...farm.warnings, ...validation.warnings.map((issue) => issue.message)],
+      warnings: [...farm.warnings, ...(intent.villageRiver ? ['نهر المزرعة ليس مضموناً أن يمر وسط القرية في قالب المزرعة.'] : []), ...validation.warnings.map((issue) => issue.message)],
       validation,
     };
   }
@@ -289,7 +297,7 @@ export function generateWorldPlanWithReport(intent: WorldIntent): GenerationRepo
     const validation = validateScenePlan(result.plan);
     return {
       plan: result.plan,
-      warnings: [...result.warnings, ...validation.warnings.map((issue) => issue.message)],
+      warnings: [...result.warnings, ...(intent.villageRiver ? ['تعذّر إنشاء نهر وسط القرية مع طلب عناصر منفصلة؛ جرّب إنشاء القرية والنهر أولاً ثم أضف العناصر.'] : []), ...validation.warnings.map((issue) => issue.message)],
       validation,
     };
   }
@@ -298,7 +306,7 @@ export function generateWorldPlanWithReport(intent: WorldIntent): GenerationRepo
   const validation = validateScenePlan(plan);
   return {
     plan,
-    warnings: validation.warnings.map((issue) => issue.message),
+    warnings: [...(intent.villageRiver && !plan.objects.some((o) => o.kind === 'river') ? ['تعذّر إضافة النهر: ربما لم تتوفر بيوت على جانبيه أو غمر مستوى الماء مساره.'] : []), ...(intent.villageRiver && plan.objects.some((o) => o.kind === 'river') ? ['النهر سطح زخرفي فوق التضاريس، لا يحفر مجرى ولا يحاكي تدفق الماء.'] : []), ...validation.warnings.map((issue) => issue.message)],
     validation,
   };
 }
@@ -310,6 +318,7 @@ export function generateWorldPlan(intent: WorldIntent): WorldPlan {
 function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
   let plan = buildPlanShell(intent);
   const profile = BIOME_PROFILES[intent.biome];
+  const reserveRiver = Boolean(intent.villageRiver && intent.counts.buildings >= 2);
   const rng = mulberry32(intent.seed);
   const sampler = createTerrainSampler(plan.terrain, intent.seed);
 
@@ -351,7 +360,9 @@ function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
       occupied,
       sampler,
       waterLevel,
-      attempts: 60,
+      attempts: reserveRiver ? 100 : 60,
+      avoidRiver: reserveRiver,
+      ...(reserveRiver ? { side: (index % 2 ? 1 : -1) as -1 | 1 } : {}),
     });
     if (!position) break;
     const variant = buildingVariant();
@@ -373,7 +384,7 @@ function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
       const x = bx + Math.cos(angle) * distance;
       const z = bz + Math.sin(angle) * distance;
       const y = sampler.heightAt(x, z);
-      if (waterLevel === null || y > waterLevel + 0.35) position = [x, y, z];
+      if ((!reserveRiver || Math.abs(x) >= 7) && (waterLevel === null || y > waterLevel + 0.35)) position = [x, y, z];
     }
     if (!position) {
       position = findPlacement(rng, {
@@ -382,6 +393,7 @@ function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
         occupied,
         sampler,
         waterLevel,
+        avoidRiver: reserveRiver,
       });
     }
     if (!position) break;
@@ -396,6 +408,7 @@ function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
       occupied,
       sampler,
       waterLevel,
+      avoidRiver: reserveRiver,
     });
     if (!position) break;
     add(createTree(treeVariantForBiome(intent, rng), position, rng));
@@ -410,9 +423,16 @@ function generateWorldPlanScatter(intent: WorldIntent): WorldPlan {
       occupied,
       sampler,
       waterLevel,
+      avoidRiver: reserveRiver,
     });
     if (!position) break;
     add(createRock(variant, position, rng, profile.rockColor));
+  }
+
+  if (reserveRiver && objects.some((o) => o.kind === 'building' && o.transform.position[0] < 0) && objects.some((o) => o.kind === 'building' && o.transform.position[0] > 0) && objects.length < MAX_WORLD_OBJECTS) {
+    const river = makeTerrainRiver(plan, 'z', 0, -plan.terrain.size * 0.32, plan.terrain.size * 0.32);
+    const level = plan.terrain.waterLevel;
+    if (level === null || river.points.every((p) => p[1] + river.transform.position[1] > level + .2)) objects.push(river);
   }
 
   // Stable, seed-derived object IDs keep generated worlds diffable.

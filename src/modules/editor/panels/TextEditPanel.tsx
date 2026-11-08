@@ -26,7 +26,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
     const report = await researchUnknown(text);
     if (current !== sequence.current) return;
     // Only additions can be approximated: never reinterpret delete/move commands.
-    const isAdd = /^(?:اضف|ضع|add|ajoute|ajouter)\s/iu.test(text.trim().replace(/[أإآ]/g, 'ا'));
+    const isAdd = /^(?:اضف|اضيف|ضع|اصنع|انشئ|ابني|اعمل|صمم|add|ajoute|ajouter)\s/iu.test(text.trim().replace(/[أإآ]/g, 'ا'));
     const match = isAdd ? matchHouseApproximation(text, report) : null;
     if (!match) { setResearch(report); setBusy(false); return; }
     const approximation = await analyzeApproximation(match);
@@ -67,7 +67,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
       </button>
       {feedback && <p className={feedback.error ? 'online-error' : 'text-edit-success'} role={feedback.error ? 'alert' : 'status'}>{feedback.text}</p>}
       <ResearchResults report={research} busy={busy} />
-      <details className="text-edit-help"><summary>الأوامر المتاحة</summary><p>مثال: «أضف شجرتين على يمين البيت»، «لوّن البيت أحمر»، «كبّر البيت»، «احذف البيت»، أو «حرّك البيت إلى يسار الشجرة». إذا وُجد أكثر من عنصر مطابق، اختر واحداً في المشهد أولاً. يمكن كتابة «العنصر المحدد». الأوامر المحدودة تعمل محلياً؛ اليمين واليسار حسب محاور العالم، وليس اتجاه الكاميرا.</p></details>
+      <details className="text-edit-help"><summary>الأوامر المتاحة</summary><p>مثال: «اصنع لي نهراً يمر وسط القرية»، «أضف شجرتين على يمين البيت»، «لوّن البيت أحمر»، «كبّر البيت»، «احذف البيت»، أو «حرّك البيت إلى يسار الشجرة». إذا وُجد أكثر من عنصر مطابق، اختر واحداً في المشهد أولاً. يمكن كتابة «العنصر المحدد». النهر عنصر مرئي زخرفي لا يحفر التضاريس؛ يقدّر القرية من تجمع البيوت ويحاول تجنب العناصر، ويمكن التراجع عنه. يصحح التطبيق أخطاء إملائية محدودة ويعرض التصحيح، ولا يصحح أوامر الحذف والتحريك تلقائياً. الأوامر المحدودة تعمل محلياً؛ اليمين واليسار حسب محاور العالم، وليس اتجاه الكاميرا.</p></details>
     </section>
   );
 }

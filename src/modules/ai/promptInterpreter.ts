@@ -1,3 +1,4 @@
+import { correctBuildSpelling, spellingNotice } from './spelling';
 import { parseAssetRequests } from './assetRequests';
 import { clamp, titleFromPrompt } from '../../core/utils/id';
 import { seedFromPrompt } from '../../core/world-plan/factory';
@@ -343,6 +344,12 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
   const features = detectFarmFeatures(text, timeResult.timeOfDay);
   const farm = features !== undefined;
   const assets = farm ? undefined : parseAssetRequests(prompt);
+  const normalized = prompt.toLowerCase().replace(/[\u064b-\u065f\u0670]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي');
+  const villageRiver = !/(?:بدون|بلا|دون)\s+(?:ال)?(?:نهر|قريه|قرية)|\b(?:without|no)\s+(?:a\s+)?(?:river|village)/u.test(normalized) &&
+    /(?:قريه|قرية|\bvillage\b)/u.test(normalized) &&
+    (/(?:نهر(?:ا)?|النهر)\s+(?:(?:يمر|يمتد)\s+)?(?:(?:في|عبر)\s+)?(?:وسط|منتصف)\s+(?:ال)?(?:قريه|قرية)/u.test(normalized) ||
+     /(?:قريه|قرية).*?(?:نهر(?:ا)?|النهر)\s+(?:يمر|يمتد)\s+(?:في\s+)?(?:وسطها|منتصفها)/u.test(normalized) ||
+     /\briver\b.{0,40}\bthrough\s+(?:the\s+)?(?:center\s+of\s+|centre\s+of\s+)?(?:the\s+)?village\b/u.test(normalized));
   const settlementMatches = matches(text, SETTLEMENT_KEYWORDS);
   const settlement = settlementMatches.length > 0 || farm;
   const waterMatches = matches(text, WATER_KEYWORDS);
@@ -375,7 +382,8 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
     lanterns: countResult.counts.lanterns ?? lanterns,
   };
 
-  const water = farm
+  const separateWater = biome === 'island' || /بحير|بحر|محيط|\b(?:lake|sea|ocean|pond|oasis)\b/u.test(normalized);
+  const water = villageRiver && !farm && !separateWater ? false : farm
     ? Boolean(features?.river)
     : biome === 'island'
       ? true
@@ -391,6 +399,7 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
   }
   if (settlementMatches.length > 0) cues.push(`settlement: ${settlementMatches[0]}`);
   if (water) cues.push('water: enabled');
+  if (villageRiver) cues.push('river through village: requested');
   if (scale !== 'medium') cues.push(`scale: ${scale}`);
   if (options.scale) cues.push('size override');
   if (options.style) cues.push('style override');
@@ -438,6 +447,7 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
     scale,
     settlement,
     water,
+    ...(villageRiver ? { villageRiver: true } : {}),
     features,
     assets,
     style,
@@ -462,13 +472,7 @@ export const localPromptInterpreter: PromptInterpreter = {
   label: LOCAL_INTERPRETER_LABEL,
   offline: true,
   async interpret(prompt, options) {
-    const intent = buildIntent(prompt, options);
-    return {
-      intent,
-      providerId: LOCAL_INTERPRETER_ID,
-      providerLabel: LOCAL_INTERPRETER_LABEL,
-      offline: true,
-    };
+    return interpretPromptLocally(prompt, options);
   },
 };
 
@@ -476,8 +480,13 @@ export const promptInterpreters: PromptInterpreter[] = [localPromptInterpreter];
 
 /** Exported for tests and for future provider implementations. */
 export function interpretPromptLocally(prompt: string, options?: InterpretOptions): PromptInterpretation {
+  const correction = correctBuildSpelling(prompt);
+  const intent = buildIntent(correction.text, { ...options, seed: options?.seed ?? seedFromPrompt(prompt) });
+  intent.prompt = prompt;
+  intent.name = titleFromPrompt(prompt);
   return {
-    intent: buildIntent(prompt, options),
+    intent,
+    ...(correction.changes.length ? { notes: [spellingNotice(correction.changes)] } : {}),
     providerId: localPromptInterpreter.id,
     providerLabel: localPromptInterpreter.label,
     offline: true,

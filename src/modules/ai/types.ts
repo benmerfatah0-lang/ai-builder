@@ -42,6 +42,8 @@ export interface WorldIntent {
   scale: WorldScale;
   settlement: boolean;
   water: boolean;
+  /** A narrow request for a river through the center of a village. */
+  villageRiver?: boolean;
   /** Explicit catalog assets and relative placements recognised in the prompt. */
   assets?: AssetRequest[];
   /** Present when the prompt describes a structured farm scene. */

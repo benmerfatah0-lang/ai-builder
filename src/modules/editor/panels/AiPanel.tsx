@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { correctBuildSpelling } from '../../ai/spelling';
 import { applyHouseKnowledge } from '../../ai/houseKnowledge';
 import { applyMapTraining } from '../../ai/mapTrainer';
 import type { MapTrainer } from '../useMapTrainer';
@@ -85,6 +86,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
     const text = prompt.trim();
     if (!text || generating) return;
     const originalPlan = state.plan;
+    const correctedText = correctBuildSpelling(text).text;
     setGenerationError('');
     researchSequence.current++;
     setResearch(null); setResearchBusy(false);
@@ -100,9 +102,9 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         ...(style !== 'auto' ? { style } : {}),
         ...(scale !== 'auto' ? { scale } : {}),
         ...(density !== 'auto' ? { density } : {}),
-      }, false, unknownTopics(text).terms.length > 0);
-      const discovered = await researchFor(text);
-      const match = !interpretation.intent.features?.farm ? matchHouseApproximation(text, discovered) : null;
+      }, false, unknownTopics(correctedText).terms.length > 0);
+      const discovered = await researchFor(correctedText);
+      const match = !interpretation.intent.features?.farm ? matchHouseApproximation(correctedText, discovered) : null;
       let approximate: Approximation | null = match;
       if (match) {
         setResearchBusy(true);
