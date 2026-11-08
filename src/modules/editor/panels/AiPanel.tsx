@@ -17,6 +17,7 @@ import { addPhotoModels } from '../../ai/photoModel';
 import { planPhotoRequests, type PhotoRequest } from '../../ai/photoRequests';
 import { type WorldPlan } from '../../../core/world-plan/schema';
 import { normalizeAssetText, parseAssetRequests } from '../../ai/assetRequests';
+import { classifyTopic, isLandscapeKind } from '../../ai/topicClassification';
 import { analyzeApproximation, hasExplicitColor, matchReferenceApproximation, containsApproximation, type Approximation } from '../../ai/referenceUnderstanding';
 import { applyWikiArticleHint } from '../../ai/wikiReference';
 import { researchUnknown, unknownTopics, type ResearchReport } from '../../ai/unknownResearch';
@@ -123,7 +124,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
       const discovered = await researchFor(correctedText);
       const singleTopic = discovered.topics.length === 1 && !discovered.truncated ? discovered.topics[0] : undefined;
       const ambiguousPhoto = singleTopic && (singleTopic.images.length > 1 || (singleTopic.images.length > 0 && singleTopic.imageNext != null)) && planPhotoRequests(correctedText, [singleTopic]).requests.length > 0;
-      const match = !interpretation.intent.features?.farm && !ambiguousPhoto ? matchReferenceApproximation(correctedText, discovered) : null;
+      const match = !interpretation.intent.features?.farm && !ambiguousPhoto && !(singleTopic && isLandscapeKind(classifyTopic(singleTopic).kind)) ? matchReferenceApproximation(correctedText, discovered) : null;
       let approximate: Approximation | null = match;
       if (match) {
         setResearchBusy(true);
@@ -144,10 +145,17 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
         const topic = discovered.topics.length === 1 && !discovered.truncated ? discovered.topics[0] : undefined;
         const clean = (value: string) => normalizeAssetText(value).trim().replace(/^ال/u, '').replace(/\s+/g, ' ');
         const article = topic?.articles.find((item) => clean(item.title) === clean(topic.term));
-        if (article) {
-          const applied = applyWikiArticleHint(interpretation.intent, article);
+        if (article && topic && classifyTopic(topic).biome && ['terrain', 'biome'].includes(classifyTopic(topic).kind)) {
+          const biome = classifyTopic(topic).biome;
+          const applied = applyWikiArticleHint(interpretation.intent, article, biome === 'desert' || biome === 'forest' || biome === 'mountains' || biome === 'island' ? biome : undefined);
           interpretation.intent = applied.intent;
           interpretation.notes = [applied.hint, ...interpretation.notes];
+        }
+        const classification = topic ? classifyTopic(topic) : undefined;
+        if (classification?.kind === 'water' && classification.water === 'standing' && !interpretation.intent.features?.farm && !/(?:بدون|دون|بلا|without|\bno\b)/iu.test(normalizeAssetText(text))) {
+          interpretation.intent.water = true;
+          interpretation.intent.cues.push('Wikipedia approximate standing water');
+          interpretation.notes = ['أُضيف ماء عام تقريبي إلى العالم بناءً على تعريف المسطح المائي؛ ليس شكلاً مطابقاً أو خريطة للموقع.', ...interpretation.notes];
         }
       }
       interpretation.intent = applyMapTraining(interpretation.intent, mapTrainer.model);

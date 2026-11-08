@@ -89,4 +89,34 @@ describe('paged search UI', () => {
     expect(screen.queryByText(/يمكنك إعادة المحاولة/)).toBeNull();
   });
 
+  it('lets the user outline a complex background and builds only after confirmation', async () => {
+    const bytes=new Uint8Array(12*12*4);
+    for(let y=0;y<12;y++) for(let x=0;x<12;x++) bytes.set(x>=3&&x<=8&&y>=2&&y<=9 ? [120,40,30,255] : [(x+y)%2?0:255,255,0,255],(y*12+x)*4);
+    vi.stubGlobal('fetch',vi.fn(async () => new Response(JSON.stringify({width:12,height:12,rgba:btoa(String.fromCharCode(...bytes))}))));
+    const complete=vi.fn();
+    render(<PhotoStudio topic={{...topic,imageNext:null}} onComplete={complete} onCancel={() => {}} />);
+    fireEvent.click(screen.getByRole('button',{name:/File:One.png/}));
+    expect(await screen.findByText(/خلفية الصورة معقدة/)).toBeTruthy();
+    const picture=screen.getByRole('img',{name:'صورة لتحديد حدود الجسم'});
+    vi.spyOn(picture,'getBoundingClientRect').mockReturnValue({left:0,top:0,width:120,height:120,right:120,bottom:120,x:0,y:0,toJSON:()=>({})});
+    for (const [x,y] of [[30,20],[90,20],[90,100],[30,100]]) fireEvent.click(picture,{clientX:x,clientY:y});
+    expect(complete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button',{name:'بناء المحدد'}));
+    await waitFor(()=>expect(complete).toHaveBeenCalledOnce(),{timeout:4000});
+    expect(complete.mock.calls[0]![0].mode).toBe('manual-silhouette');
+    expect(complete.mock.calls[0]![0].cells).toHaveLength(48);
+  },10000);
+
+  it('lets the user select manual mode even if automatic extraction might succeed', async () => {
+    const bytes=new Uint8Array(12*12*4);
+    for(let y=0;y<12;y++) for(let x=0;x<12;x++) bytes.set(x>=3&&x<=8&&y>=2&&y<=9 ? [120,40,30,255] : [255,255,255,255],(y*12+x)*4);
+    vi.stubGlobal('fetch',vi.fn(async () => new Response(JSON.stringify({width:12,height:12,rgba:btoa(String.fromCharCode(...bytes))}))));
+    const complete=vi.fn(); render(<PhotoStudio topic={{...topic,imageNext:null}} onComplete={complete} onCancel={() => {}} />);
+    fireEvent.click(screen.getByRole('checkbox',{name:/أريد تحديد حدود الجسم يدوياً/}));
+    fireEvent.click(screen.getByRole('button',{name:/File:One.png/}));
+    expect(await screen.findByText('تحديد الجسم يدوياً')).toBeTruthy();
+    expect(complete).not.toHaveBeenCalled();
+    expect((screen.getByRole('button',{name:'بناء المحدد'}) as HTMLButtonElement).disabled).toBe(true);
+  });
+
 });

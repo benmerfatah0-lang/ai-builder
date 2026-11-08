@@ -1,3 +1,4 @@
+import { explicitTopicKind, type TopicKind } from './topicClassification';
 import { findAssetMentions, normalizeAssetText, parseCountToken } from './assetRequests';
 import { englishWikiTitle, lookupDictionary, readWikiArticle, searchImageReferencePage, searchWikiArticlePage } from './onlineInterpreter';
 import type { ImageReference } from './imageReferences';
@@ -9,7 +10,7 @@ import type { Approximation } from './referenceUnderstanding';
 const canonical = (word: string) => word.replace(/ة/g, 'ه');
 const known = new Set(`و او ثم مع في من علي الي عن ل ب امام قدام خلف وراء يمين يسار شمال بالقرب قرب بجانب بجوار
 اصنع انشئ ابن ابني ابناء اريد اريدك صمم اعمل ضع اضف اضيف حرك لون كبر صغر احذف انقل اجعل غير
-عالم عالما خريطه مشهد مكان بيئه مجسم العنصر المحدد المختار
+عالم عالما خريطه مشهد مكان بيئه مجسم العنصر المحدد المختار نوع نوعا انواع تضاريس تضاريسيه بايوم بايومات مسطح مسطحات مائي مائيه حيوان حيوانات منشاه منشات استركشر استركشرات structure structures
 صغير صغيره كبير كبيره ضخم ضخمه طويل طويله عريض عريضه واسع واسعه مرتفع مرتفعه قديم قديمه حديث حديثه جميل جميله
 احمر حمراء ازرق زرقاء اخضر خضراء اصفر صفراء ابيض بيضاء اسود سوداء بني بنفسجي برتقالي
 صحراء صحراوي صحراويه غابه غابات جبل جبال جزيره جزر استوائي استوائيه بحر بحيره نهر انهار وادي وديان واحة واحات رمال
@@ -62,6 +63,7 @@ export function unknownTopics(prompt: string): { terms: string[]; truncated: boo
 
 export interface TopicResearch {
   term: string;
+  explicitKind?: Exclude<TopicKind, 'unknown'>;
   articles: WikiArticle[];
   images: ImageReference[];
   wikiError: string | null;
@@ -124,7 +126,8 @@ export async function researchUnknown(prompt: string, options: { signal?: AbortS
           }
         }
       }
-      completed[index] = { term, articles, ...(articleNotice ? { articleNotice } : {}), images: imagePage?.results ?? [],
+      const explicitKind = explicitTopicKind(prompt, term, terms.length);
+      completed[index] = { term, ...(explicitKind ? { explicitKind } : {}), articles, ...(articleNotice ? { articleNotice } : {}), images: imagePage?.results ?? [],
         wikiError: wiki.status === 'rejected' ? message(wiki.reason) : null, imageError: images.status === 'rejected' ? message(images.reason) : null,
         articleNext: wiki.status === 'fulfilled' ? wiki.value.next : null, imageNext: imagePage?.next ?? null, imageQuery, ...(imageNotice ? { imageNotice } : {}),
         ...(dictionary.status === 'fulfilled' ? { dictionary: dictionary.value, dictionaryError: null } : { dictionaryError: message(dictionary.reason) }) };

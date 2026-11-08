@@ -395,7 +395,7 @@ export function InspectorPanel({
               {node.meta.source === 'procedural' ? 'Procedural' : node.meta.source === 'library' ? 'Library' : 'Manual'} · {node.meta.status}
             </strong>
           </div>
-          {node.meta.photoModel && <p dir="rtl">{node.meta.photoModel.mode === 'full-image-slab' ? 'لوح مشتق من الصورة كاملة بما فيها الخلفية:' : 'صورة مشتق منها شكل تقريبي، والعمق والخلف مفترضان:'} <a href={node.meta.photoModel.source.url} target="_blank" rel="noopener noreferrer">{node.meta.photoModel.source.title}</a> · {node.meta.photoModel.source.author} · <a href={node.meta.photoModel.source.license_url} target="_blank" rel="noopener noreferrer">{node.meta.photoModel.source.license_name}</a></p>}
+          {node.meta.photoModel && <p dir="rtl">{node.meta.photoModel.mode === 'full-image-slab' ? 'لوح مشتق من الصورة كاملة بما فيها الخلفية:' : node.meta.photoModel.mode === 'manual-silhouette' ? 'شكل محدد يدوياً من الصورة؛ العمق والخلف مفترضان:' : 'صورة مشتق منها شكل تقريبي، والعمق والخلف مفترضان:'} <a href={node.meta.photoModel.source.url} target="_blank" rel="noopener noreferrer">{node.meta.photoModel.source.title}</a> · {node.meta.photoModel.source.author} · <a href={node.meta.photoModel.source.license_url} target="_blank" rel="noopener noreferrer">{node.meta.photoModel.source.license_name}</a></p>}
           <div className="kv-row">
             <span>Region</span>
             <strong>{node.meta.region ?? '—'}</strong>

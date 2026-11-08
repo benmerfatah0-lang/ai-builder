@@ -6,6 +6,7 @@ import { addPhotoModels } from '../../ai/photoModel';
 import { planPhotoRequests, type PhotoRequest } from '../../ai/photoRequests';
 import { findAssetMentions, normalizeAssetText } from '../../ai/assetRequests';
 import type { WorldPlan } from '../../../core/world-plan/schema';
+import { classifyTopic, isLandscapeKind } from '../../ai/topicClassification';
 import { analyzeApproximation, hasExplicitColor, matchReferenceApproximation } from '../../ai/referenceUnderstanding';
 import { editWorldByText } from '../../ai/worldEdit';
 import type { ShapeModel } from '../../ai/shapeLearner';
@@ -48,7 +49,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
     const isAdd = /^(?:اضف|اضيف|ضع|اصنع|انشئ|ابني|اعمل|صمم|add|ajoute|ajouter)\s/iu.test(text.trim().replace(/[أإآ]/g, 'ا'));
     const singleTopic = report.topics.length === 1 && !report.truncated ? report.topics[0] : undefined;
     // If the images are ambiguous, ask before using one instead of coloring a house from the first hit.
-    const match = isAdd && !(singleTopic && (singleTopic.images.length > 1 || (singleTopic.images.length > 0 && singleTopic.imageNext != null)) && planPhotoRequests(text, [singleTopic]).requests.length > 0) ? matchReferenceApproximation(text, report) : null;
+    const match = isAdd && !(singleTopic && isLandscapeKind(classifyTopic(singleTopic).kind)) && !(singleTopic && (singleTopic.images.length > 1 || (singleTopic.images.length > 0 && singleTopic.imageNext != null)) && planPhotoRequests(text, [singleTopic]).requests.length > 0) ? matchReferenceApproximation(text, report) : null;
     if (!match) {
       setResearch(report); setBusy(false);
       const photos = planPhotoRequests(text, report.topics);

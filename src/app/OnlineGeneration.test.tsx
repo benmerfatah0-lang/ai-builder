@@ -38,7 +38,7 @@ describe('lightweight local planning interface', () => {
     expect(within(results).getByText('البحث عن: فيل')).toBeTruthy();
     expect(within(results).getByRole('link', { name: 'فيل ↗' }).getAttribute('href')).toBe('https://ar.wikipedia.org/wiki/فيل');
     expect(within(results).getByRole('img', { name: 'صورة مرجعية: File:Elephant.jpg' })).toBeTruthy();
-    expect(await screen.findByText('biome: forest')).toBeTruthy();
+    expect(await screen.findByText('biome: meadow')).toBeTruthy(); // The animal's habitat is not a request to change the world biome.
     expect(screen.getByText(/سنحاول بناء العناصر المجهولة من الصور/)).toBeTruthy();
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/search')).toHaveLength(1);
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/image-search')).toHaveLength(1);
@@ -350,7 +350,7 @@ describe('lightweight local planning interface', () => {
     expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(0);
     fireEvent.click(within(studio).getByRole('button', { name: /File:Elephant.png/ }));
     await screen.findByText(/بناء طبقات الشكل/);
-    expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy();
+    await waitFor(() => expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy());
     expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(1);
     // Switching panels must not cancel the running edit or put the draft in history.
     fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
@@ -569,7 +569,7 @@ describe('lightweight local planning interface', () => {
     await screen.findByText(/بناء طبقات الشكل/);
     expect(screen.getByLabelText('معاينة البناء داخل الماب')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name:/Builder/ }));
-    expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy();
+    await waitFor(() => expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy());
     fireEvent.click(screen.getByRole('tab', { name:/^Scene$/ }));
     const tree = screen.getByRole('tree', { name:'Scene hierarchy' });
     expect(within(tree).queryByText('فيل')).toBeNull();
@@ -627,7 +627,7 @@ describe('lightweight local planning interface', () => {
       fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
       await screen.findByText(/بناء طبقات الشكل/);
       fireEvent.click(within(sheet).getByRole('button', {name:'Close panel'}));
-      expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy();
+      await waitFor(() => expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy());
       fireEvent.click(within(screen.getByRole('navigation', {name:'Editor panels'})).getByRole('button', {name:'Scene'}));
       const tree = within(screen.getByRole('dialog', {name:'Scene'})).getByRole('tree', {name:'Scene hierarchy'});
       expect(within(tree).queryByText('فيل')).toBeNull();
@@ -653,7 +653,7 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(screen.getByRole('button', {name:'تطبيق التعديل'}));
     fireEvent.click(await screen.findByRole('button', { name:/File:Elephant.png/ }));
     await screen.findByText(/بناء طبقات الشكل/);
-    expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy();
+    await waitFor(() => expect(within(screen.getByLabelText('3D viewport')).getByText(/بناء «فيل».*معاينة مؤقتة/)).toBeTruthy());
     fireEvent.click(screen.getByRole('button', {name:'إلغاء التعديل'}));
     expect(screen.getByText(/أُلغي التعديل؛ لم يتغير العالم/)).toBeTruthy();
     expect(within(screen.getByLabelText('3D viewport')).queryByText(/بناء «فيل».*معاينة مؤقتة/)).toBeNull();
@@ -760,5 +760,63 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(screen.getByRole('tab', {name:/^Scene$/}));
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).queryByText('فيل')).toBeNull();
   }, 20000);
+
+  it('routes a Wikipedia landform to terrain rather than a photo model', async () => {
+    const article={title:'بركان',url:'https://ar.wikipedia.org/wiki/بركان',content:'البركان هو فتحة في القشرة الأرضية.'};
+    const image={title:'File:Volcano.jpg',url:'https://commons.wikimedia.org/wiki/File:Volcano.jpg',thumbnail:'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Volcano.jpg/250px-Volcano.jpg',author:'A',license_url:'https://creativecommons.org/licenses/by/4.0/',license_name:'CC BY 4.0'};
+    vi.stubGlobal('fetch',vi.fn(async (url:string) => {
+      if(url==='/api/online') return new Response('{"online":true}');
+      if(url==='/api/search') return new Response(JSON.stringify({results:[article]}));
+      if(url==='/api/wiki-article') return new Response(JSON.stringify({article}));
+      if(url==='/api/image-search') return new Response(JSON.stringify({results:[image]}));
+      if(url==='/api/dictionary') return new Response('{"entries":[],"complete":true}');
+      return new Response('{}');
+    }));
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Description'),{target:{value:'عالم فيه بركان'}});
+    fireEvent.click(screen.getByRole('button',{name:'Generate world'}));
+    expect(await screen.findByText(/صُنّف تضاريس، وليس جسماً منفرداً/)).toBeTruthy();
+    expect(screen.getByText('biome: mountains')).toBeTruthy();
+    expect(screen.queryByRole('region',{name:'استوديو تقريب الصورة'})).toBeNull();
+  },20000);
+  it('refuses to insert a terrain photograph into an existing map', async () => {
+    const article={title:'فوهة بركانية',url:'https://ar.wikipedia.org/wiki/فوهة_بركانية',content:'الفوهة البركانية هي تضاريس.'};
+    const image={title:'File:Crater.jpg',url:'https://commons.wikimedia.org/wiki/File:Crater.jpg',thumbnail:'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Crater.jpg/250px-Crater.jpg',author:'A',license_url:'https://creativecommons.org/licenses/by/4.0/',license_name:'CC BY 4.0'};
+    vi.stubGlobal('fetch',vi.fn(async (url:string) => {
+      if(url==='/api/search') return new Response(JSON.stringify({results:[article]}));
+      if(url==='/api/wiki-article') return new Response(JSON.stringify({article}));
+      if(url==='/api/image-search') return new Response(JSON.stringify({results:[image]}));
+      return new Response('{}');
+    }));
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.click(screen.getByRole('button',{name:/Builder/}));
+    fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'),{target:{value:'أضف تضاريس فوهة بركانية'}});
+    fireEvent.click(screen.getByRole('button',{name:'تطبيق التعديل'}));
+    expect(await screen.findByText(/صُنّف تضاريس، وليس جسماً منفرداً/)).toBeTruthy();
+    expect(screen.getByText(/لم يتغير العالم/)).toBeTruthy();
+    expect(screen.queryByRole('region',{name:'استوديو تقريب الصورة'})).toBeNull();
+  },20000);
+
+  it('uses a generic standing-water approximation for an exact lake definition', async () => {
+    const article={title:'تانا',url:'https://ar.wikipedia.org/wiki/تانا',content:'تانا هي بحيرة في أفريقيا.'};
+    const image={title:'File:Lake.jpg',url:'https://commons.wikimedia.org/wiki/File:Lake.jpg',thumbnail:'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/Lake.jpg/250px-Lake.jpg',author:'A',license_url:'https://creativecommons.org/licenses/by/4.0/',license_name:'CC BY 4.0'};
+    vi.stubGlobal('fetch',vi.fn(async (url:string) => {
+      if(url==='/api/online') return new Response('{"online":true}');
+      if(url==='/api/search') return new Response(JSON.stringify({results:[article]}));
+      if(url==='/api/wiki-article') return new Response(JSON.stringify({article}));
+      if(url==='/api/image-search') return new Response(JSON.stringify({results:[image]}));
+      if(url==='/api/dictionary') return new Response('{"entries":[],"complete":true}');
+      return new Response('{}');
+    }));
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Description'),{target:{value:'عالم فيه تانا'}});
+    fireEvent.click(screen.getByRole('button',{name:'Generate world'}));
+    expect(await screen.findByText(/أُضيف ماء عام تقريبي/)).toBeTruthy();
+    expect(screen.queryByRole('region',{name:'استوديو تقريب الصورة'})).toBeNull();
+    expect(screen.getByText('Wikipedia approximate standing water')).toBeTruthy();
+  },20000);
 
 });

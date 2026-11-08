@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { searchImageReferencePage, searchWikiArticlePage } from '../../ai/onlineInterpreter';
 import type { TopicResearch } from '../../ai/unknownResearch';
+import { classifyTopic, topicLabels, isLandscapeKind } from '../../ai/topicClassification';
 import { dictionaryPage } from '../../ai/dictionary';
 import { ReferenceThumbnail } from './ReferenceThumbnail';
 import type { ResearchReport } from '../../ai/unknownResearch';
@@ -24,6 +25,7 @@ export function ResearchResults({ report, busy, progress }: { report: ResearchRe
 }
 
 function ResearchTopic({ topic }: { topic: TopicResearch }) {
+  const classification = classifyTopic(topic);
   const [articles, setArticles] = useState(topic.articles);
   const [images, setImages] = useState(topic.images);
   const [thumbnailRetry, setThumbnailRetry] = useState(0);
@@ -55,6 +57,8 @@ function ResearchTopic({ topic }: { topic: TopicResearch }) {
   };
   return <article className="wiki-entry">
     <strong>البحث عن: {topic.term}</strong>
+    <p>التصنيف التقريبي: <b>{topicLabels[classification.kind]}</b>{classification.source ? <> · من <a href={classification.source.url} target="_blank" rel="noopener noreferrer">{classification.source.title}</a></> : topic.explicitKind ? ' · من وصفك' : ' · قواعد محلية أو غير كافية'}.
+      {isLandscapeKind(classification.kind) && ' الصور للمراجعة فقط، وليست مجسماً لهذا النوع.'}</p>
     {topic.articleNotice && <p>{topic.articleNotice}</p>}
     {topic.wikiError ? <p className="online-error">تعذّر البحث في ويكيبيديا؛ لم تُستخدم نتائج منها لهذا الموضوع. {topic.wikiError}</p> : <div className="wiki-list"><span>مقالات ويكيبيديا</span>
       {!articles.length && <p>لم تظهر نتائج في هذه الصفحات.</p>}

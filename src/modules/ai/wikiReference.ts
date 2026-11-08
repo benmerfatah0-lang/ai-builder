@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { WorldIntent } from './types';
+import type { BiomeId, WorldIntent } from './types';
 import { BIOME_PROFILES } from '../../core/generation/biomes';
 
 export const wikiArticleSchema = z.object({
@@ -19,7 +19,7 @@ export function safeWikiUrl(url: string): boolean {
 }
 
 /** Only unambiguous fixed terrain words are used. Wikipedia prose is not executable instructions. */
-export function applyWikiArticleHint(intent: WorldIntent, article: WikiArticle): { intent: WorldIntent; hint: string } {
+export function applyWikiArticleHint(intent: WorldIntent, article: WikiArticle, classifiedBiome?: Extract<BiomeId, 'desert' | 'forest' | 'mountains' | 'island'>): { intent: WorldIntent; hint: string } {
   if (intent.features?.farm || intent.biome !== 'meadow' || /مرج|مروج|سهل|meadow|grassland|plain|savanna/i.test(intent.prompt)) {
     return { intent, hint: 'لم تُغيّر بيئة الوصف الصريحة.' };
   }
@@ -30,10 +30,10 @@ export function applyWikiArticleHint(intent: WorldIntent, article: WikiArticle):
     { biome: 'mountains' as const, pattern: /جبل|جبال|جبلي|\bmountain\b|\bmountains\b/i },
     { biome: 'island' as const, pattern: /جزيرة|جزر|أرخبيل|\bisland\b|\barchipelago\b/i },
   ].filter(({ pattern }) => pattern.test(text));
-  if (matches.length !== 1) return { intent, hint: 'لم يستطع التطبيق استنتاج بيئة واحدة واضحة من المقتطف؛ لم تُغيّر بيئة الوصف.' };
-  const biome = matches[0]!.biome;
+  if (!classifiedBiome && matches.length !== 1) return { intent, hint: 'لم يستطع التطبيق استنتاج بيئة واحدة واضحة من المقتطف؛ لم تُغيّر بيئة الوصف.' };
+  const biome = classifiedBiome ?? matches[0]!.biome;
   return { intent: { ...intent, biome,
     summary: intent.summary.replace(/^Meadow/, BIOME_PROFILES[biome].label),
     cues: [...intent.cues.map((cue) => cue.startsWith('biome: ') ? `biome: ${biome}` : cue), `Wikipedia terrain hint: ${biome}`] },
-    hint: 'استُخدمت كلمة تضاريس من مقتطف ويكيبيديا لتقدير البيئة فقط؛ تحقق من المصدر فقد يخطئ التقدير.' };
+    hint: 'استُخدم تصنيف تقريبي لتقدير بيئة العالم فقط؛ الشكل ليس مطابقاً للموضوع وقد يخطئ التصنيف.' };
 }

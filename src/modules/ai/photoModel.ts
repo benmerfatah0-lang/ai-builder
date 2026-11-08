@@ -13,9 +13,10 @@ import type { ImageReference } from './imageReferences';
 
 export interface TinyImage { width: number; height: number; rgba: Uint8Array }
 /** Isolate a simple transparent or uniform-edged background. No object recognition. */
-export function photoToModel(image: TinyImage, source: ImageReference, includeBackground = false): PhotoModel {
+export function photoToModel(image: TinyImage, source: ImageReference, includeBackground = false, manualMask?: Uint8Array): PhotoModel {
   const { width: w, height: h, rgba } = image;
   if (w < 2 || h < 2 || w > 24 || h > 24 || rgba.length !== w * h * 4) throw new Error('بيانات الصورة غير صالحة.');
+  if (manualMask && (includeBackground || manualMask.length !== w * h || manualMask.some((value) => value !== 0 && value !== 1))) throw new Error('تحديد الصورة غير صالح.');
   const pixel = (i: number) => [rgba[i * 4]!, rgba[i * 4 + 1]!, rgba[i * 4 + 2]!, rgba[i * 4 + 3]!] as const;
   const edges: number[] = [];
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!x || !y || x === w - 1 || y === h - 1) edges.push(y * w + x);
@@ -29,9 +30,10 @@ export function photoToModel(image: TinyImage, source: ImageReference, includeBa
     if (transparent) return false;
     return Math.hypot(r-background[0]!, g-background[1]!, b-background[2]!) < 55;
   };
-  if (!includeBackground && !transparent && edges.filter(close).length < edges.length * .8) throw new Error('خلفية الصورة معقدة؛ اختر صورة لجسم واحد على خلفية بسيطة أو شفافة.');
+  if (!manualMask && !includeBackground && !transparent && edges.filter(close).length < edges.length * .8) throw new Error('خلفية الصورة معقدة؛ اختر صورة لجسم واحد على خلفية بسيطة أو شفافة.');
   const removed = new Uint8Array(w * h), queue: number[] = [];
-  for (const i of edges) if (!includeBackground && close(i) && !removed[i]) { removed[i] = 1; queue.push(i); }
+  if (manualMask) for (let i=0;i<w*h;i++) if (!manualMask[i]) removed[i]=1;
+  for (const i of edges) if (!manualMask && !includeBackground && close(i) && !removed[i]) { removed[i] = 1; queue.push(i); }
   for (let index = 0; index < queue.length; index++) {
     const i = queue[index]!, x = i % w, y = Math.floor(i / w);
     for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]] as const) {
@@ -42,7 +44,7 @@ export function photoToModel(image: TinyImage, source: ImageReference, includeBa
     }
   }
   const foreground = Array.from({ length: w*h }, (_, i) => i).filter((i) => !removed[i] && pixel(i)[3] >= 128);
-  if (foreground.length < 6 || (!includeBackground && foreground.length > w*h*.8)) throw new Error('تعذّر فصل شكل واضح من الصورة؛ جرّب صورة أخرى بخلفية بسيطة.');
+  if (foreground.length < 6 || (!manualMask && !includeBackground && foreground.length > w*h*.8)) throw new Error('تعذّر فصل شكل واضح من الصورة؛ جرّب صورة أخرى بخلفية بسيطة.');
   const minX=Math.min(...foreground.map((i) => i%w)), maxX=Math.max(...foreground.map((i) => i%w));
   const minY=Math.min(...foreground.map((i) => Math.floor(i/w))), maxY=Math.max(...foreground.map((i) => Math.floor(i/w)));
   const mask = new Uint8Array(w*h); for (const i of foreground) mask[i]=1;
@@ -55,7 +57,7 @@ export function photoToModel(image: TinyImage, source: ImageReference, includeBa
     const [r,g,b] = pixel(i);
     return { x: x-minX, y: y-minY, depth: distance, color: `#${[r,g,b].map((v) => v.toString(16).padStart(2,'0')).join('')}` };
   });
-  return photoModelSchema.parse({ mode: includeBackground ? 'full-image-slab' : 'silhouette', width: maxX-minX+1, height: maxY-minY+1, cells,
+  return photoModelSchema.parse({ mode: includeBackground ? 'full-image-slab' : manualMask ? 'manual-silhouette' : 'silhouette', width: maxX-minX+1, height: maxY-minY+1, cells,
     source: { title: source.title, url: source.url, author: source.author, license_name: source.license_name, license_url: source.license_url } });
 }
 

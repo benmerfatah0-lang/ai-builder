@@ -1,3 +1,4 @@
+import { PhotoOutline } from './PhotoOutline';
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -81,21 +82,23 @@ export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغل
   const [pixels, setPixels] = useState<TinyImage | null>(null);
   const [rows, setRows] = useState(0), [error, setError] = useState('');
   const [canUseSlab, setCanUseSlab] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
+  const [showOutline, setShowOutline] = useState(false);
   const [finished, setFinished] = useState(false), [loading, setLoading] = useState(false);
   const complete = useRef(onComplete); complete.current = onComplete;
   const prepare = useRef(onPrepare); prepare.current = onPrepare;
   const preview = useRef(onPreview); preview.current = onPreview;
   const previewKey = useRef(`photo-${Math.random().toString(36).slice(2)}`);
-  const build = (image: TinyImage, source: ImageReference, includeBackground = false) => {
+  const build = (image: TinyImage, source: ImageReference, includeBackground = false, mask?: Uint8Array) => {
     let built: PhotoModel;
-    try { built = photoToModel(image, source, includeBackground); }
+    try { built = photoToModel(image, source, includeBackground, mask); }
     catch (reason) {
       setError(reason instanceof Error ? reason.message : 'تعذّر فصل الصورة.');
-      setCanUseSlab(!includeBackground); setLoading(false); return;
+      setCanUseSlab(!includeBackground); setShowOutline(!includeBackground); setLoading(false); return;
     }
     try {
       const draft = prepare.current?.(built);
-      setPrepared(draft); setModel(built); setRows(0); setError(''); setCanUseSlab(false); setLoading(false);
+      setPrepared(draft); setModel(built); setRows(0); setError(''); setCanUseSlab(false); setShowOutline(false); setLoading(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'تعذّر تحديد موقع البناء.'); setCanUseSlab(false); setLoading(false);
     }
@@ -103,10 +106,11 @@ export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغل
   useEffect(() => {
     if (!selected) return;
     let cancelled = false;
-    setError(''); setModel(null); setPrepared(undefined); setPixels(null); setCanUseSlab(false); setRows(0); setLoading(true);
+    setError(''); setModel(null); setPrepared(undefined); setPixels(null); setCanUseSlab(false); setShowOutline(false); setRows(0); setLoading(true);
     void readPhotoPixels(selected).then((result) => {
       if (cancelled) return;
-      setPixels(result); build(result, selected);
+      setPixels(result);
+      if (manualMode) { setShowOutline(true); setLoading(false); } else build(result, selected);
     }).catch((reason: unknown) => {
       if (!cancelled) { setError(reason instanceof Error ? reason.message : 'تعذّر قراءة الصورة.'); setLoading(false); }
     });
@@ -134,6 +138,7 @@ export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغل
     <strong>استوديو بناء «{topic.term}»</strong>
     {topic.imageNotice && <p>{topic.imageNotice}</p>}
     <p>تقريب منخفض الدقة؛ الخلف والعمق مفترضان، وليسا استعادة حقيقية. يحتاج الفصل صورة جسم واحد بخلفية شفافة أو موحدة.</p>
+    <label><input type="checkbox" checked={manualMode} onChange={(event) => setManualMode(event.target.checked)} disabled={loading || !!model || finished} /> أريد تحديد حدود الجسم يدوياً بعد اختيار الصورة</label>
     <div className="wiki-list"><span>لبدء البناء اضغط على الصورة الأقرب، ويفضّل أن تكون بخلفية بسيطة:</span>{images.map((image, index) => <div key={image.url}>
       <button className="image-ref-card" type="button" onClick={() => { if (selected?.url === image.url) setAttempt((old) => old + 1); else setSelected(image); }} disabled={finished} aria-pressed={selected?.url === image.url}>
         <ReferenceThumbnail key={thumbnailRetry} image={image} alt={image.title} eager={index < 4}/><span>{image.title} · {image.author} · {image.license_name}</span>
@@ -147,8 +152,9 @@ export function PhotoStudio({ topic, onComplete, onCancel, cancelLabel = 'إغل
     </div>
     {selected && <p>الصورة: <a href={selected.url} target="_blank" rel="noopener noreferrer">{selected.title}</a> · {selected.author} · <a href={selected.license_url} target="_blank" rel="noopener noreferrer">{selected.license_name}</a></p>}
     {loading && <p role="status">أقرأ مصغّرة الصورة وأحاول فصل الجسم…</p>}
-    {error && <p role="alert" className="online-error">{error} لم يُضف مجسم. اختر نتيجة أخرى أو ألغِ البناء.</p>}
+    {error && <p role="alert" className="online-error">{error} لم يُضف مجسم. حدّد حدود الجسم يدوياً أدناه إن ظهرت الأداة، أو اختر صورة أخرى أو ألغِ البناء.</p>}
     {error && selected && <button type="button" className="btn btn-small" onClick={() => setAttempt((old) => old + 1)}>إعادة محاولة الصورة</button>}
+    {showOutline && pixels && selected && <PhotoOutline key={`${selected.url}:${attempt}`} image={pixels} onApply={(mask) => build(pixels, selected, false, mask)} />}
     {canUseSlab && pixels && selected && <div><p>تعذّر فصل الجسم. يمكن بدلاً من ذلك إنشاء لوح مجسّم من الصورة كاملة، <strong>بما فيها الخلفية</strong>؛ ليس نموذجاً مفصولاً للجسم.</p>
       <button type="button" className="btn btn-small" onClick={() => build(pixels, selected, true)}>استخدم الصورة كاملة كلوح تقريبي</button></div>}
     {model && <div ref={progressRoot}>

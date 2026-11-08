@@ -1,4 +1,5 @@
 import { directionBetween, findAssetMentions, normalizeAssetText, parseCountToken, type AssetDirection } from './assetRequests';
+import { classifyTopic, isLandscapeKind, topicLabels } from './topicClassification';
 import type { TopicResearch } from './unknownResearch';
 
 export interface PhotoRequest { topic: TopicResearch; count: number; relation?: { assetId: string; direction: AssetDirection } }
@@ -17,6 +18,11 @@ export function planPhotoRequests(prompt: string, topics: TopicResearch[]): Phot
   }
   const escape = (word: string) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   for (const topic of topics) {
+    const classification = classifyTopic(topic);
+    if (isLandscapeKind(classification.kind)) {
+      warnings.push(`«${topic.term}» صُنّف ${topicLabels[classification.kind]}، وليس جسماً منفرداً؛ لن يُبنى كصورة مجسّمة. قد لا يتوفر نوعه الدقيق في التطبيق.`);
+      continue;
+    }
     const term = normalizeAssetText(topic.term).trim().replace(/^ال/u, '');
     if (!term || term.length > 400) { warnings.push(`تعذّر تحديد «${topic.term.slice(0,80)}» للإنشاء.`); continue; }
     const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])(?:و?ال|و)?${escape(term)}(?![\\p{L}\\p{N}_])`, 'gu');
