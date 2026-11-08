@@ -545,40 +545,75 @@
                         }
                       },
                       "source": {
-                        "type": "object",
-                        "properties": {
-                          "title": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "url": {
+                                "type": "string",
+                                "maxLength": 1200
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_url": {
+                                "type": "string",
+                                "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "url",
+                              "author",
+                              "license_name",
+                              "license_url"
+                            ],
+                            "additionalProperties": false
                           },
-                          "url": {
-                            "type": "string",
-                            "maxLength": 1200
-                          },
-                          "author": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_name": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_url": {
-                            "type": "string",
-                            "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "local"
+                              },
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "title",
+                              "author",
+                              "license_name"
+                            ],
+                            "additionalProperties": false
                           }
-                        },
-                        "required": [
-                          "title",
-                          "url",
-                          "author",
-                          "license_name",
-                          "license_url"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     },
                     "required": [
@@ -965,40 +1000,75 @@
                         }
                       },
                       "source": {
-                        "type": "object",
-                        "properties": {
-                          "title": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "url": {
+                                "type": "string",
+                                "maxLength": 1200
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_url": {
+                                "type": "string",
+                                "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "url",
+                              "author",
+                              "license_name",
+                              "license_url"
+                            ],
+                            "additionalProperties": false
                           },
-                          "url": {
-                            "type": "string",
-                            "maxLength": 1200
-                          },
-                          "author": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_name": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_url": {
-                            "type": "string",
-                            "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "local"
+                              },
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "title",
+                              "author",
+                              "license_name"
+                            ],
+                            "additionalProperties": false
                           }
-                        },
-                        "required": [
-                          "title",
-                          "url",
-                          "author",
-                          "license_name",
-                          "license_url"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     },
                     "required": [
@@ -1383,40 +1453,75 @@
                         }
                       },
                       "source": {
-                        "type": "object",
-                        "properties": {
-                          "title": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "url": {
+                                "type": "string",
+                                "maxLength": 1200
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_url": {
+                                "type": "string",
+                                "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "url",
+                              "author",
+                              "license_name",
+                              "license_url"
+                            ],
+                            "additionalProperties": false
                           },
-                          "url": {
-                            "type": "string",
-                            "maxLength": 1200
-                          },
-                          "author": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_name": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_url": {
-                            "type": "string",
-                            "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "local"
+                              },
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "title",
+                              "author",
+                              "license_name"
+                            ],
+                            "additionalProperties": false
                           }
-                        },
-                        "required": [
-                          "title",
-                          "url",
-                          "author",
-                          "license_name",
-                          "license_url"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     },
                     "required": [
@@ -1793,40 +1898,75 @@
                         }
                       },
                       "source": {
-                        "type": "object",
-                        "properties": {
-                          "title": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "url": {
+                                "type": "string",
+                                "maxLength": 1200
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_url": {
+                                "type": "string",
+                                "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "url",
+                              "author",
+                              "license_name",
+                              "license_url"
+                            ],
+                            "additionalProperties": false
                           },
-                          "url": {
-                            "type": "string",
-                            "maxLength": 1200
-                          },
-                          "author": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_name": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_url": {
-                            "type": "string",
-                            "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "local"
+                              },
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "title",
+                              "author",
+                              "license_name"
+                            ],
+                            "additionalProperties": false
                           }
-                        },
-                        "required": [
-                          "title",
-                          "url",
-                          "author",
-                          "license_name",
-                          "license_url"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     },
                     "required": [
@@ -2211,40 +2351,75 @@
                         }
                       },
                       "source": {
-                        "type": "object",
-                        "properties": {
-                          "title": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "url": {
+                                "type": "string",
+                                "maxLength": 1200
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_url": {
+                                "type": "string",
+                                "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "url",
+                              "author",
+                              "license_name",
+                              "license_url"
+                            ],
+                            "additionalProperties": false
                           },
-                          "url": {
-                            "type": "string",
-                            "maxLength": 1200
-                          },
-                          "author": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_name": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_url": {
-                            "type": "string",
-                            "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "local"
+                              },
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "title",
+                              "author",
+                              "license_name"
+                            ],
+                            "additionalProperties": false
                           }
-                        },
-                        "required": [
-                          "title",
-                          "url",
-                          "author",
-                          "license_name",
-                          "license_url"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     },
                     "required": [
@@ -2613,40 +2788,75 @@
                         }
                       },
                       "source": {
-                        "type": "object",
-                        "properties": {
-                          "title": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "url": {
+                                "type": "string",
+                                "maxLength": 1200
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_url": {
+                                "type": "string",
+                                "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "url",
+                              "author",
+                              "license_name",
+                              "license_url"
+                            ],
+                            "additionalProperties": false
                           },
-                          "url": {
-                            "type": "string",
-                            "maxLength": 1200
-                          },
-                          "author": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_name": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_url": {
-                            "type": "string",
-                            "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "local"
+                              },
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "title",
+                              "author",
+                              "license_name"
+                            ],
+                            "additionalProperties": false
                           }
-                        },
-                        "required": [
-                          "title",
-                          "url",
-                          "author",
-                          "license_name",
-                          "license_url"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     },
                     "required": [
@@ -3053,40 +3263,75 @@
                         }
                       },
                       "source": {
-                        "type": "object",
-                        "properties": {
-                          "title": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "url": {
+                                "type": "string",
+                                "maxLength": 1200
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_url": {
+                                "type": "string",
+                                "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "url",
+                              "author",
+                              "license_name",
+                              "license_url"
+                            ],
+                            "additionalProperties": false
                           },
-                          "url": {
-                            "type": "string",
-                            "maxLength": 1200
-                          },
-                          "author": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_name": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_url": {
-                            "type": "string",
-                            "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "local"
+                              },
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "title",
+                              "author",
+                              "license_name"
+                            ],
+                            "additionalProperties": false
                           }
-                        },
-                        "required": [
-                          "title",
-                          "url",
-                          "author",
-                          "license_name",
-                          "license_url"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     },
                     "required": [
@@ -3484,40 +3729,75 @@
                         }
                       },
                       "source": {
-                        "type": "object",
-                        "properties": {
-                          "title": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "url": {
+                                "type": "string",
+                                "maxLength": 1200
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_url": {
+                                "type": "string",
+                                "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "url",
+                              "author",
+                              "license_name",
+                              "license_url"
+                            ],
+                            "additionalProperties": false
                           },
-                          "url": {
-                            "type": "string",
-                            "maxLength": 1200
-                          },
-                          "author": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_name": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_url": {
-                            "type": "string",
-                            "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "local"
+                              },
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "title",
+                              "author",
+                              "license_name"
+                            ],
+                            "additionalProperties": false
                           }
-                        },
-                        "required": [
-                          "title",
-                          "url",
-                          "author",
-                          "license_name",
-                          "license_url"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     },
                     "required": [
@@ -3929,40 +4209,75 @@
                         }
                       },
                       "source": {
-                        "type": "object",
-                        "properties": {
-                          "title": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "url": {
+                                "type": "string",
+                                "maxLength": 1200
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_url": {
+                                "type": "string",
+                                "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "url",
+                              "author",
+                              "license_name",
+                              "license_url"
+                            ],
+                            "additionalProperties": false
                           },
-                          "url": {
-                            "type": "string",
-                            "maxLength": 1200
-                          },
-                          "author": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_name": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_url": {
-                            "type": "string",
-                            "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "local"
+                              },
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "title",
+                              "author",
+                              "license_name"
+                            ],
+                            "additionalProperties": false
                           }
-                        },
-                        "required": [
-                          "title",
-                          "url",
-                          "author",
-                          "license_name",
-                          "license_url"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     },
                     "required": [
@@ -4366,40 +4681,75 @@
                         }
                       },
                       "source": {
-                        "type": "object",
-                        "properties": {
-                          "title": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "url": {
+                                "type": "string",
+                                "maxLength": 1200
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_url": {
+                                "type": "string",
+                                "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "url",
+                              "author",
+                              "license_name",
+                              "license_url"
+                            ],
+                            "additionalProperties": false
                           },
-                          "url": {
-                            "type": "string",
-                            "maxLength": 1200
-                          },
-                          "author": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_name": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "license_url": {
-                            "type": "string",
-                            "pattern": "^https:\\/\\/creativecommons\\.org\\/(?:licenses\\/(?:by|by-sa)\\/[1-4]\\.0\\/|publicdomain\\/zero\\/1\\.0\\/)$"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "local"
+                              },
+                              "title": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 120
+                              },
+                              "author": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "license_name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "title",
+                              "author",
+                              "license_name"
+                            ],
+                            "additionalProperties": false
                           }
-                        },
-                        "required": [
-                          "title",
-                          "url",
-                          "author",
-                          "license_name",
-                          "license_url"
-                        ],
-                        "additionalProperties": false
+                        ]
                       }
                     },
                     "required": [

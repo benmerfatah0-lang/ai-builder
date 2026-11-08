@@ -13,6 +13,7 @@ import { NumberField, SelectField } from '../../../ui/controls';
 import { TextEditPanel } from './TextEditPanel';
 import { ResearchResults } from './ResearchResults';
 import { PhotoStudio } from './PhotoStudio';
+import { ImageSceneStudio } from './ImageSceneStudio';
 import { addPhotoModels } from '../../ai/photoModel';
 import { planPhotoRequests, type PhotoRequest } from '../../ai/photoRequests';
 import { type WorldPlan } from '../../../core/world-plan/schema';
@@ -210,6 +211,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
   return (
     <div className={`panel-scroll ${variant === 'forge' ? 'forge-ai' : ''}`}>
       {variant === 'panel' && <TextEditPanel shapeModel={shapeModel} />}
+      <ImageSceneStudio onOpenStudio={onOpenStudio} />
       {studio && <div dir="rtl">
         <p role="status">العنصر {studio.index + 1} من {studio.requests.length} · العدد المطلوب: {studio.requests[studio.index]!.count}</p>
         <PhotoStudio key={`${studio.index}:${studio.requests[studio.index]!.topic.term}`} topic={studio.requests[studio.index]!.topic} initialMeshStyle={studio.requests[studio.index]!.meshStyle}
