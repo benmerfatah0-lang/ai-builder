@@ -1,7 +1,8 @@
 import { findAssetMentions, normalizeAssetText, parseCountToken } from './assetRequests';
-import { searchImageReferences, searchWikiArticles } from './onlineInterpreter';
+import { lookupDictionary, searchImageReferences, searchWikiArticles } from './onlineInterpreter';
 import type { ImageReference } from './imageReferences';
 import type { WikiArticle } from './wikiReference';
+import { isDictionaryWord, type DictionaryResponse } from './dictionary';
 import type { Approximation } from './referenceUnderstanding';
 
 // These are grammar words, supported modifiers and existing environment cues, not a general language model.
@@ -19,7 +20,8 @@ create make build add put place move delete remove paint color colour enlarge sh
 world map scene area landscape terrain small tiny little large big huge tall wide old new beautiful red blue green yellow white black brown purple orange
 forest forests jungle desert deserts oasis oases mountain mountains island islands lake sea ocean river rivers meadow grassland plain farm city village ruins mine gold day night sunset sunrise dense sparse
 cartoon natural stylized low poly farmhouse connected dirt wheat wheatfield grass bright sparse normal
-search wikipedia real image pictures picture photo photos`.split(/\s+/u).map(canonical));
+search wikipedia real image pictures picture photo photos
+crée creer créez construire construis fais fabrique ajouter ajoute place un une le la les des du de dans avec et ou sur pour pres près monde carte scene scène petit petite grand grande vieux vieille rouge bleu vert jaune blanc noir`.split(/\s+/u).map(canonical));
 const NEGATIONS = new Set(['بدون', 'دون', 'بلا', 'without', 'no']);
 
 /** Best-effort candidate extraction, including unknown nouns alongside known assets. */
@@ -64,15 +66,19 @@ export interface TopicResearch {
   images: ImageReference[];
   wikiError: string | null;
   imageError: string | null;
+  dictionary?: DictionaryResponse;
+  dictionaryError?: string | null;
 }
 export interface ResearchReport { topics: TopicResearch[]; truncated: boolean; approximation?: Approximation }
 export async function researchUnknown(prompt: string): Promise<ResearchReport> {
   const { terms, truncated } = unknownTopics(prompt);
   const topics = await Promise.all(terms.map(async (term): Promise<TopicResearch> => {
-    const [wiki, images] = await Promise.allSettled([searchWikiArticles(term), searchImageReferences(term)]);
+    const [wiki, images, dictionary] = await Promise.allSettled([searchWikiArticles(term), searchImageReferences(term),
+      isDictionaryWord(term) ? lookupDictionary(term) : Promise.reject(new Error('البحث المعجمي يقبل كلمة واحدة فقط.'))]);
     const message = (reason: unknown) => reason instanceof Error ? reason.message : 'تعذّر الاتصال بالمصدر.';
     return { term, articles: wiki.status === 'fulfilled' ? wiki.value : [], images: images.status === 'fulfilled' ? images.value : [],
-      wikiError: wiki.status === 'rejected' ? message(wiki.reason) : null, imageError: images.status === 'rejected' ? message(images.reason) : null };
+      wikiError: wiki.status === 'rejected' ? message(wiki.reason) : null, imageError: images.status === 'rejected' ? message(images.reason) : null,
+      ...(dictionary.status === 'fulfilled' ? { dictionary: dictionary.value, dictionaryError: null } : { dictionaryError: message(dictionary.reason) }) };
   }));
   return { topics, truncated };
 }

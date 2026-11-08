@@ -20,6 +20,7 @@ MAX_RESPONSE = 2 * 1024 * 1024
 USER_AGENT = 'AIWorldBuilder/1.0 (https://github.com/benmerfatah0-lang/ai-builder)'
 ONLINE_URL = 'https://ar.wikipedia.org/w/api.php?action=query&meta=siteinfo&siprop=general&format=json'
 COMMONS_API = 'https://commons.wikimedia.org/w/api.php?'
+DICTIONARY_API = 'https://en.wiktionary.org/api/rest_v1/page/definition/'
 
 
 def search_image_references(query):
@@ -60,6 +61,41 @@ def search_image_references(query):
                         'license_name': ('CC0' if '/publicdomain/zero/' in license_url else 'CC ' + ('BY-SA' if '/by-sa/' in license_url else 'BY') + ' ' + license_url.rstrip('/').split('/')[-1])})
         if len(results) == 8: break
     return results
+
+
+def dictionary_definitions(word):
+    # The multilingual sections of the English Wiktionary's experimental
+    # definition API; glosses are generally in English. Never accept a URL.
+    if not isinstance(word, str) or not re.fullmatch(r'[^\W\d_]{2,80}', word, re.UNICODE):
+        raise ValueError('single word required')
+    try:
+        data = get_json(Request(DICTIONARY_API + quote(word, safe=''), headers={'User-Agent': USER_AGENT, 'Accept': 'application/json'}), timeout=25)
+    except HTTPError as error:
+        if error.code == 404:
+            return {'entries': [], 'complete': True}
+        raise
+    if not isinstance(data, dict):
+        raise ValueError('invalid dictionary response')
+    entries, complete = [], True
+    for language in ('ar', 'fr', 'en'):
+        blocks = data.get(language, [])
+        if not isinstance(blocks, list): raise ValueError('invalid dictionary language')
+        if len(blocks) > 8: complete = False
+        for block in blocks[:8]:
+            if not isinstance(block, dict) or not isinstance(block.get('definitions'), list) or not isinstance(block.get('partOfSpeech'), str):
+                complete = False
+                continue
+            definitions = block['definitions']
+            if len(definitions) > 8: complete = False
+            for sense in definitions[:8]:
+                if not isinstance(sense, dict) or not isinstance(sense.get('definition'), str):
+                    complete = False
+                    continue
+                definition = strip_html(sense['definition']).strip()
+                if not definition: complete = False; continue
+                if len(definition) > 400: complete = False
+                entries.append({'language': language, 'partOfSpeech': block['partOfSpeech'][:80], 'definition': definition[:400]})
+    return {'entries': entries, 'complete': complete}
 
 
 def analyze_reference_image(url):
@@ -162,7 +198,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.valid_host() or self.headers.get('Origin', '') != f'http://{host}':
             self.api_result(403, {'error': 'invalid origin'})
             return
-        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/image-analyze', '/api/knowledge', '/api/house-learning'):
+        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/image-analyze', '/api/dictionary', '/api/knowledge', '/api/house-learning'):
             self.api_result(404, {'error': 'unknown endpoint'})
             return
         if self.headers.get_content_type() != 'application/json':
@@ -208,6 +244,13 @@ class Handler(SimpleHTTPRequestHandler):
             query = payload.get('query')
             if not isinstance(query, str) or not query.strip() or len(query) > 400:
                 self.api_result(400, {'error': 'invalid query'})
+                return
+            if self.path == '/api/dictionary':
+                word = query.strip()
+                if not re.fullmatch(r'[^\W\d_]{2,80}', word, re.UNICODE):
+                    self.api_result(400, {'error': 'single word required'})
+                    return
+                self.api_result(200, dictionary_definitions(word))
                 return
             if self.path == '/api/image-search':
                 self.api_result(200, {'results': search_image_references(query.strip())})

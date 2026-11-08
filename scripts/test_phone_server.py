@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import unittest
 from http.server import ThreadingHTTPServer
 from unittest.mock import patch
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request
 from email.message import Message
 
@@ -78,6 +78,34 @@ class PhoneServerTests(unittest.TestCase):
         self.assertTrue(upstream.call_args.args[0].full_url.startswith('https://ar.wikipedia.org/'))
 
     @patch.object(phone_server, 'get_json')
+    def test_multilingual_dictionary_is_bounded_and_uses_fixed_upstream(self, upstream):
+        upstream.return_value = {
+            'fr': [{'partOfSpeech': 'Noun', 'definitions': [{'definition': '<b>A small house.</b>'}]}],
+            'ar': [{'partOfSpeech': 'Noun', 'definitions': [{'definition': 'A home.'}]}],
+            'en': [{'partOfSpeech': 'Noun', 'definitions': [{'definition': 'A hut.'}]}],
+            'de': [{'partOfSpeech': 'Noun', 'definitions': [{'definition': 'ignored'}]}],
+        }
+        for word in ('cabane', 'maison', 'بيت'):
+            status, body = self.request('/api/dictionary', body=json.dumps({'query': word}).encode())
+            self.assertEqual(status, 200)
+            result = json.loads(body)
+            self.assertEqual([entry['language'] for entry in result['entries']], ['ar', 'fr', 'en'])
+            self.assertEqual(result['entries'][1]['definition'], 'A small house.')
+            self.assertTrue(result['complete'])
+            self.assertTrue(upstream.call_args.args[0].full_url.startswith(phone_server.DICTIONARY_API))
+        upstream.reset_mock()
+        for word in ('https://evil.example', '../a', 'two words', 'x' * 81):
+            self.assertEqual(self.request('/api/dictionary', body=json.dumps({'query': word}).encode())[0], 400)
+        self.assertEqual(self.request('/api/dictionary', origin='https://evil.example')[0], 403)
+        upstream.assert_not_called()
+        upstream.return_value = {'fr': [{'partOfSpeech': 'Noun', 'definitions': [{'definition': 'house'}] * 9}]}
+        status, body = self.request('/api/dictionary', body=b'{"query":"cabane"}')
+        self.assertEqual(status, 200)
+        self.assertFalse(json.loads(body)['complete'])
+        upstream.side_effect = HTTPError('https://en.wiktionary.org', 404, 'Not found', {}, None)
+        self.assertEqual(json.loads(self.request('/api/dictionary', body=b'{"query":"cabane"}')[1]), {'entries': [], 'complete': True})
+
+    @patch.object(phone_server, 'get_json')
     def test_commons_image_search_restricts_types_sources_and_licenses(self, upstream):
         info = {'mime': 'image/jpeg', 'thumburl': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Castle.jpg/240px-Castle.jpg',
                 'extmetadata': {'LicenseUrl': {'value': 'http://creativecommons.org/licenses/by-sa/4.0/'},
@@ -118,7 +146,7 @@ class PhoneServerTests(unittest.TestCase):
 
     @patch.object(phone_server, 'get_json', side_effect=URLError('secret network error'))
     def test_no_silent_network_fallback_or_secret_leak(self, upstream):
-        for path in ('/api/online', '/api/search', '/api/image-search'):
+        for path in ('/api/online', '/api/search', '/api/image-search', '/api/dictionary'):
             status, body = self.request(path)
             self.assertEqual(status, 502)
             self.assertNotIn(b'secret', body)

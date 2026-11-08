@@ -103,7 +103,7 @@ const COLORS: [RegExp, string, string][] = [
   [/بنفسجي|purple/i, '#9463bc', 'بنفسجي'],
 ];
 
-const COMMON_WORDS = new Set(('علي الي من عن في بجانب بجوار بالقرب قرب امام قدام خلف وراء يمين يسار شمال لليمين لليسار العنصر المحدد المختار واحد واحدة واحده اثنين اثنان اثنتين ثلاث ثلاثة ثلاثه اربع اربعة اربعه خمس خمسة خمسه ست ستة سته سبع سبعة سبعه ثمان ثمانية ثمانيه تسع تسعة تسعه عشر عشرة عشره one two three four five six seven eight nine ten the a an to of on at next near beside left right behind front in selected object item').split(' '));
+const COMMON_WORDS = new Set(('علي الي من عن في بجانب بجوار بالقرب قرب امام قدام خلف وراء يمين يسار شمال لليمين لليسار العنصر المحدد المختار واحد واحدة واحده اثنين اثنان اثنتين ثلاث ثلاثة ثلاثه اربع اربعة اربعه خمس خمسة خمسه ست ستة سته سبع سبعة سبعه ثمان ثمانية ثمانيه تسع تسعة تسعه عشر عشرة عشره one two three four five six seven eight nine ten the a an to of on at next near beside left right behind front in selected object item un une le la les').split(' '));
 const SIZE_WORDS = /^(?:صغير(?:ه|ة)?|كبير(?:ه|ة)?|ضخم(?:ه|ة)?|طويل(?:ه|ة)?|عريض(?:ه|ة)?|واسع(?:ه|ة)?|small|tiny|little|large|big|huge|tall|wide|broad)$/u;
 function validateCommandWords(text: string, verb: RegExp, action: string): number[] {
   const numbers: number[] = [];
@@ -131,14 +131,14 @@ export function editWorldByText(plan: WorldPlan, selection: string[], command: s
   const text = normalizeAssetText(command.trim().replace(/\s+/g, ' '));
   if (!text || text.length > 400) throw new Error('اكتب أمراً واحداً لا يتجاوز 400 حرف.');
   const verbs: [RegExp, 'add' | 'delete' | 'grow' | 'shrink' | 'color' | 'move'][] = [
-    [/^(?:اضف|ضع|add)\s/u, 'add'], [/^(?:احذف|ازل|امسح|delete|remove)\s/u, 'delete'],
+    [/^(?:اضف|ضع|add|ajoute|ajouter)\s/u, 'add'], [/^(?:احذف|ازل|امسح|delete|remove)\s/u, 'delete'],
     [/^(?:كبر|كبّر|زد حجم|enlarge)\s/u, 'grow'], [/^(?:صغر|صغّر|قلل حجم|shrink)\s/u, 'shrink'],
     [/^(?:لون|لوّن|غير لون|color|colour)\s/u, 'color'], [/^(?:حرك|حرّك|انقل|move)\s/u, 'move'],
   ];
   const action = verbs.find(([pattern]) => pattern.test(text))?.[1];
   if (!action) throw new Error('أمر غير مدعوم. ابدأ بـ: أضف، احذف، كبّر، صغّر، لوّن أو حرّك.');
   const remainder = text.replace(verbs.find(([pattern]) => pattern.test(text))![0], '');
-  if (/(?:^|\s|و)(?:ثم|اضف|احذف|ازل|امسح|حرك|انقل|لون|كبر|صغر|add|delete|remove|move|color|colour|enlarge|shrink|and then)/u.test(remainder)) throw new Error('اكتب تعديلاً واحداً في كل مرة.');
+  if (/(?:^|\s|و)(?:ثم|اضف|احذف|ازل|امسح|حرك|انقل|لون|كبر|صغر|add|ajoute|ajouter|delete|remove|move|color|colour|enlarge|shrink|and then)/u.test(remainder)) throw new Error('اكتب تعديلاً واحداً في كل مرة.');
   if (/(?:بدون|دون|بلا|except|without|جميع|كافه|كل|all|سقف|باب|نافذ|داخل|فوق|بين)/u.test(text)) throw new Error('هذا التفصيل غير مدعوم في التعديل النصي؛ لم يتغير العالم.');
   const numbers = validateCommandWords(text, verbs.find(([pattern]) => pattern.test(text))![0], action);
   if (action !== 'color' && COLORS.some(([pattern]) => pattern.test(text))) throw new Error('الألوان في أمر منفصل فقط، مثل «لوّن البيت أحمر».');

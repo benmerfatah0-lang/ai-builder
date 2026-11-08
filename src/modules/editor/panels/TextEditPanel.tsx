@@ -26,7 +26,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
     const report = await researchUnknown(text);
     if (current !== sequence.current) return;
     // Only additions can be approximated: never reinterpret delete/move commands.
-    const isAdd = /^(?:اضف|ضع|add)\s/iu.test(text.trim().replace(/[أإآ]/g, 'ا'));
+    const isAdd = /^(?:اضف|ضع|add|ajoute|ajouter)\s/iu.test(text.trim().replace(/[أإآ]/g, 'ا'));
     const match = isAdd ? matchHouseApproximation(text, report) : null;
     if (!match) { setResearch(report); setBusy(false); return; }
     const approximation = await analyzeApproximation(match);
@@ -39,7 +39,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
       const edit = editWorldByText(original.plan, original.selection, approximation.rewritten, shapeModel, !hasExplicitColor(text) ? approximation.color : undefined);
       dispatch({ type: 'replacePlan', plan: edit.plan });
       setResearch({ ...report, approximation: { ...approximation, applied: true, colorApplied: Boolean(approximation.color && !hasExplicitColor(text)) } });
-      setFeedback({ text: `أُضيف «${match.term}» كنموذج بيت تقريبي من المقالة. ${edit.message} يمكنك التراجع من Undo.`, error: false });
+      setFeedback({ text: `أُضيف «${match.term}» كنموذج بيت تقريبي من ${match.sourceKind === 'dictionary' ? 'المعجم' : 'المقالة'}. ${edit.message} يمكنك التراجع من Undo.`, error: false });
       setCommand('');
     } catch (error) { setFeedback({ text: error instanceof Error ? error.message : 'تعذّر تطبيق التقريب؛ لم يتغير العالم.', error: true }); }
   };
@@ -57,7 +57,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
   };
   return (
     <section className="text-edit" dir="rtl" aria-labelledby="text-edit-heading">
-      <div className="text-edit-heading"><span><Icon name="sparkles" size={17} /></span><div><h2 id="text-edit-heading">عدّل عالمك بالكتابة</h2><p>تعديل واحد على العالم الحالي، دون إنشاء عالم جديد. إذا لم أفهم كلمات فقد أرسلها للبحث في ويكيبيديا وCommons.</p></div></div>
+      <div className="text-edit-heading"><span><Icon name="sparkles" size={17} /></span><div><h2 id="text-edit-heading">عدّل عالمك بالكتابة</h2><p>تعديل واحد على العالم الحالي، دون إنشاء عالم جديد. إذا لم أفهم كلمات فقد أرسلها للبحث في ويكيبيديا وويكاموس وCommons.</p></div></div>
       <label className="field">
         <span className="field-label">اكتب التعديل</span>
         <textarea className="prompt-input text-edit-input" aria-label="تعديل العالم بالكتابة" value={command} onChange={(event) => setCommand(event.target.value)} dir="auto" maxLength={400} rows={3} placeholder="مثلاً: أضف شجرتين على يمين البيت" />

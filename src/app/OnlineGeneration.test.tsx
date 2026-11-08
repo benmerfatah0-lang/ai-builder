@@ -90,6 +90,49 @@ describe('lightweight local planning interface', () => {
     fireEvent.click(screen.getByRole('button', { name: /Undo \(Ctrl\/Cmd\+Z\)/ }));
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
   }, 20000);
+  it('uses a single dictionary sense while generating a world', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/online') return new Response('{"online":true}');
+      if (url === '/api/search' || url === '/api/image-search') return new Response('{"results":[]}');
+      if (url === '/api/dictionary') return new Response('{"entries":[{"language":"fr","partOfSpeech":"Noun","definition":"house"}],"complete":true}');
+      return new Response('{}');
+    }));
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'cabane' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    expect(await screen.findByText(/وفق تعريف معجمي محدود/)).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
+  }, 20000);
+  it('uses a single dictionary sense for a limited, undoable addition', async () => {
+    const mock = vi.fn(async (url: string, options: RequestInit) => {
+      if (url === '/api/online') return new Response('{"online":true}');
+      if (url === '/api/search' || url === '/api/image-search') return new Response('{"results":[]}');
+      if (url === '/api/dictionary') {
+        expect(JSON.parse(options.body as string).query).toBe('cabane');
+        return new Response(JSON.stringify({ entries: [{ language: 'fr', partOfSpeech: 'Noun', definition: 'house' }], complete: true }));
+      }
+      return new Response('{}');
+    });
+    vi.stubGlobal('fetch', mock);
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'شجرة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
+    fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'ajoute une cabane' } });
+    fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
+    expect(await screen.findByText(/أُضيف «cabane» كنموذج بيت تقريبي من المعجم/)).toBeTruthy();
+    const results = screen.getByRole('region', { name: 'نتائج البحث التلقائي' });
+    expect(within(results).getByRole('link', { name: /ويكاموس: cabane/ }).getAttribute('href')).toBe('https://en.wiktionary.org/wiki/cabane');
+    expect(within(results).getByText(/فرنسية/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: /Undo \(Ctrl\/Cmd\+Z\)/ }));
+    expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getAllByRole('treeitem')).toHaveLength(1);
+  }, 20000);
   it('does not overwrite a world changed while an image is being analyzed', async () => {
     const image = { title: 'File:Hut.jpg', url: 'https://commons.wikimedia.org/wiki/File:Hut.jpg', thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Hut.jpg/240px-Hut.jpg', author: 'Alice', license_url: 'https://creativecommons.org/licenses/by/4.0/', license_name: 'CC BY 4.0' };
     let finish: ((response: Response) => void) | undefined;

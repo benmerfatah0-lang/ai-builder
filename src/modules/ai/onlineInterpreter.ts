@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { dictionaryResponseSchema, isDictionaryWord, type DictionaryResponse } from './dictionary';
 import { imageReferenceSchema, type ImageReference } from './imageReferences';
 import { parseHouseKnowledge } from './houseKnowledge';
 import { safeWikiUrl, type WikiArticle } from './wikiReference';
@@ -13,10 +14,11 @@ async function postJSON(path: string, body: object): Promise<unknown> {
   try {
     const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal });
     if (!response.ok) {
-      if ((response.status === 404 || response.status === 501) && (['/api/image-search', '/api/image-analyze'].includes(path) || response.headers.get('X-World-Builder-Proxy') !== '1')) {
+      if ((response.status === 404 || response.status === 501) && (['/api/image-search', '/api/image-analyze', '/api/dictionary'].includes(path) || response.headers.get('X-World-Builder-Proxy') !== '1')) {
         throw new Error('شغّل خادم الهاتف الجديد world-builder-server.py بدلاً من الخادم القديم.');
       }
       if (path === '/api/image-analyze') throw new Error(response.status === 503 ? 'تحليل الصور يحتاج python-pillow في Termux.' : 'تعذّر تحليل الصورة المصغرة.');
+      if (path === '/api/dictionary') throw new Error('تعذّر الاتصال بقاموس ويكاموس.');
       throw new Error(path === '/api/image-search' ? 'تعذّر البحث في Wikimedia Commons. تحقّق من الإنترنت ثم حاول مجدداً.' : 'تعذّر الاتصال بويكيبيديا. تحقّق من الإنترنت ثم حاول مجدداً.');
     }
     return await response.json();
@@ -35,6 +37,14 @@ export async function searchWikiArticles(query: string): Promise<WikiArticle[]> 
   if (!parsed.success) throw new Error('استجابت ويكيبيديا ببيانات بحث غير صالحة.');
   return parsed.data.results.filter((item) => item.title.trim() && safeWikiUrl(item.url)).slice(0, 4)
     .map((item) => ({ title: item.title.slice(0, 120), url: item.url, content: item.content.slice(0, 1200) }));
+}
+
+/** Look up one word in the English Wiktionary's Arabic, French and English sections. */
+export async function lookupDictionary(query: string): Promise<DictionaryResponse> {
+  if (!isDictionaryWord(query)) throw new Error('البحث المعجمي يقبل كلمة واحدة فقط.');
+  const result = dictionaryResponseSchema.safeParse(await postJSON('/api/dictionary', { query }));
+  if (!result.success) throw new Error('استجاب القاموس ببيانات غير صالحة.');
+  return result.data;
 }
 
 /** Analyze one Commons thumbnail in Termux; the server never retains image bytes. */

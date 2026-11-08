@@ -27,4 +27,16 @@ describe('narrow Wikipedia-to-house approximation', () => {
     expect(matchHouseApproximation('كوخ', { topics: [topic], truncated: true })).toBeNull();
     expect(matchHouseApproximation('كوخ', { topics: [topic, topic], truncated: false })).toBeNull();
   });
+  it('only accepts one complete dictionary noun sense for an approximate house', () => {
+    const entry = { language: 'fr' as const, partOfSpeech: 'Noun', definition: 'A small house.' };
+    const dictionaryTopic = { ...topic, term: 'cabane', articles: [], dictionary: { entries: [entry], complete: true } };
+    const report = { topics: [dictionaryTopic], truncated: false };
+    expect(matchHouseApproximation('ajoute une cabane', report)?.rewritten).toBe('ajoute une بيت');
+    expect(matchHouseApproximation('add cabane', report)?.sourceKind).toBe('dictionary');
+    expect(matchHouseApproximation('add cabane', { ...report, topics: [{ ...dictionaryTopic, dictionary: { entries: [entry, { ...entry, definition: 'A place.' }], complete: true } }] })).toBeNull();
+    expect(matchHouseApproximation('add cabane', { ...report, topics: [{ ...dictionaryTopic, dictionary: { entries: [entry], complete: false } }] })).toBeNull();
+    expect(matchHouseApproximation('add cabane', { ...report, topics: [{ ...dictionaryTopic, dictionary: { entries: [{ ...entry, definition: 'A person in a small house.' }], complete: true } }] })).toBeNull();
+    expect(matchHouseApproximation('add cabane', { ...report, topics: [{ ...dictionaryTopic, dictionary: { entries: [{ ...entry, partOfSpeech: 'Verb' }], complete: true } }] })).toBeNull();
+  });
+
 });

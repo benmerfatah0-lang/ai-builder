@@ -1,6 +1,7 @@
 import { findAssetMentions, normalizeAssetText, parseAssetRequests } from './assetRequests';
 import { analyzeImageReference } from './onlineInterpreter';
 import type { ResearchReport } from './unknownResearch';
+import { dictionaryPage } from './dictionary';
 import type { ImageReference } from './imageReferences';
 
 export interface Approximation {
@@ -8,6 +9,7 @@ export interface Approximation {
   rewritten: string;
   articleTitle: string;
   articleUrl: string;
+  sourceKind?: 'dictionary';
   image?: ImageReference;
   color?: string;
   imageError?: string;
@@ -24,7 +26,13 @@ export function matchHouseApproximation(prompt: string, report: ResearchReport):
   if (report.truncated || report.topics.length !== 1) return null;
   const topic = report.topics[0]!;
   const article = topic.articles.find((item) => clean(item.title) === clean(topic.term));
-  if (!article || /ليس|ليست|\b(?:not|never)\b/iu.test(normalizeAssetText(article.content)) || !houseDefinition.test(normalizeAssetText(article.content))) return null;
+  const validArticle = article && !/ليس|ليست|\b(?:not|never)\b/iu.test(normalizeAssetText(article.content)) && houseDefinition.test(normalizeAssetText(article.content));
+  // A single complete noun sense such as “a small house” is a very narrow
+  // lexical fallback. Polysemy, other parts of speech and truncation are refused.
+  const dictionary = topic.dictionary;
+  const sense = dictionary?.complete && dictionary.entries.length === 1 ? dictionary.entries[0] : undefined;
+  const validDictionary = sense && /^noun$/i.test(sense.partOfSpeech) && /^(?:(?:a|an) )?(?:(?:small|large|simple|traditional) )?(?:house|home|hut|cabin)[.]?$/i.test(sense.definition.trim());
+  if (!validArticle && !validDictionary) return null;
   const normal = normalizeAssetText(prompt);
   // Do not merge an inferred house with a separately requested house.
   if (findAssetMentions(normal).some((mention) => mention.id === 'house')) return null;
@@ -34,7 +42,7 @@ export function matchHouseApproximation(prompt: string, report: ResearchReport):
   const rewritten = normal.replace(pattern, (_whole, conjunction: string) => `${conjunction}بيت`);
   const assets = parseAssetRequests(rewritten, true);
   if (!assets || assets.filter((item) => item.assetId === 'house').length !== 1) return null;
-  return { term: topic.term, rewritten, articleTitle: article.title, articleUrl: article.url, ...(topic.images[0] ? { image: topic.images[0] } : {}) };
+  return { term: topic.term, rewritten, articleTitle: validArticle ? article.title : topic.term, articleUrl: validArticle ? article.url : dictionaryPage(topic.term), ...(!validArticle ? { sourceKind: 'dictionary' as const } : {}), ...(topic.images[0] ? { image: topic.images[0] } : {}) };
 }
 
 export async function analyzeApproximation(match: Omit<Approximation, 'color' | 'imageError'>): Promise<Approximation> {

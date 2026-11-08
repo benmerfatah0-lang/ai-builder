@@ -1,13 +1,14 @@
+import { dictionaryPage } from '../../ai/dictionary';
 import type { ResearchReport } from '../../ai/unknownResearch';
 
 export function ResearchResults({ report, busy }: { report: ResearchReport | null; busy: boolean }) {
-  if (busy) return <p role="status" className="hint-text" dir="rtl">أبحث تلقائياً في ويكيبيديا وWikimedia Commons عن الكلمات غير المعروفة…</p>;
+  if (busy) return <p role="status" className="hint-text" dir="rtl">أبحث تلقائياً في ويكيبيديا وويكاموس وWikimedia Commons عن الكلمات غير المعروفة…</p>;
   if (!report || !report.topics.length) return null;
   return <section className="wiki-library" dir="rtl" aria-label="نتائج البحث التلقائي">
     <strong>بحث تلقائي عن كلمات قد لا أفهمها</strong>
     <p>التعرف تقريبي وقد لا تكون النتائج مطابقة. يستطيع التطبيق في حالة محدودة تحليل لون مركز صورة؛ لا يفصل الجسم عن الخلفية ولا يستخرج شكلاً ثلاثي الأبعاد. راجع المصادر والتراخيص.</p>
     {report.approximation && <div className="wiki-entry">
-      <p>مقتطف المقالة صنّف «{report.approximation.term}» كبيت؛ {report.approximation.applied ? 'استُخدم' : 'اقتُرح'} نموذج بيت موجود كتقريب وليس نموذجاً مطابقاً.</p>
+      <p>{report.approximation.sourceKind === 'dictionary' ? 'تعريف المعجم صنّف' : 'مقتطف المقالة صنّف'} «{report.approximation.term}» كبيت؛ {report.approximation.applied ? 'استُخدم' : 'اقتُرح'} نموذج بيت موجود كتقريب وليس نموذجاً مطابقاً.</p>
       {report.approximation.color && <p>متوسط لون مركز أول صورة: <strong>{report.approximation.color}</strong>. {report.approximation.colorApplied ? 'استُخدم كلون البيت.' : 'لم يُطبّق اللون.'} قد يمثل الخلفية، وليس لون الجسم.</p>}
       {report.approximation.imageError && <p className="online-error">{report.approximation.imageError} استُخدم اللون الافتراضي.</p>}
       {!report.approximation.image && <p>لم تتوفر صورة مناسبة؛ استُخدم اللون الافتراضي.</p>}
@@ -20,6 +21,11 @@ export function ResearchResults({ report, busy }: { report: ResearchReport | nul
         <div className="wiki-list"><span>مقالات ويكيبيديا</span>{topic.articles.slice(0, 2).map((entry) => <div key={entry.url}>
           <a href={entry.url} target="_blank" rel="noopener noreferrer">{entry.title} ↗</a><p>{entry.content}</p>
         </div>)}</div>}
+      {topic.dictionaryError ? <p className="online-error">{topic.dictionaryError}</p> : topic.dictionary && <div className="wiki-list">
+        <span><a href={dictionaryPage(topic.term)} target="_blank" rel="noopener noreferrer">ويكاموس: {topic.term} ↗</a> · تعريفات بالإنجليزية</span>
+        {!topic.dictionary.entries.length ? <p>لم نجد تعريفاً عربياً أو فرنسياً أو إنجليزياً لهذه الكلمة.</p> : topic.dictionary.entries.slice(0, 6).map((entry, index) => <p key={index}><b>{({ ar: 'عربية', fr: 'فرنسية', en: 'إنجليزية' } as const)[entry.language]}</b> · {entry.partOfSpeech}: {entry.definition}</p>)}
+        {(!topic.dictionary.complete || topic.dictionary.entries.length > 6) && <p>النتائج المعروضة مختصرة؛ افتح المصدر لباقي المعاني.</p>}
+      </div>}
       {topic.imageError ? <p className="online-error">تعذّر البحث عن الصور في Wikimedia Commons. {topic.imageError}</p> : !topic.images.length ? <p>لم تظهر صور بالتراخيص والبيانات المدعومة.</p> :
         <div className="wiki-list"><span>صور من Wikimedia Commons</span>{topic.images.slice(0, 4).map((image) => <div className="image-ref-card" key={image.url}>
           <img src={image.thumbnail} alt={`صورة مرجعية: ${image.title}`} loading="lazy" referrerPolicy="no-referrer" width="240" />

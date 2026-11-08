@@ -111,9 +111,9 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         setResearch({ ...discovered, approximation: approximate });
         const assets = parseAssetRequests(approximate.rewritten, true)!;
         interpretation.intent.assets = assets.map((item) => item.assetId === 'house' && approximate?.color && !hasExplicitColor(text) ? { ...item, referenceColor: approximate.color } : item);
-        interpretation.intent.cues = [...interpretation.intent.cues.filter((cue) => !cue.startsWith('default counts')), `Wikipedia approximate house: ${match.term}`];
+        interpretation.intent.cues = [...interpretation.intent.cues.filter((cue) => !cue.startsWith('default counts')), `${match.sourceKind === 'dictionary' ? 'Wiktionary' : 'Wikipedia'} approximate house: ${match.term}`];
         interpretation.intent.summary += ` · ${match.term}: approximate house`;
-        interpretation.notes = [`«${match.term}» ممثل ببيت تقريبي وفق مقتطف ويكيبيديا؛ لا يتم استنتاج شكل 3D من الصورة.${approximate.color && !hasExplicitColor(text) ? ' لُوّن البيت بمتوسط مركز الصورة، وقد يكون لون الخلفية.' : hasExplicitColor(text) ? ' لم يُستخدم لون الصورة؛ لون الوصف لا يُطبّق تلقائياً هنا ويمكن تغييره في Inspect.' : ' لم يُستخدم لون الصورة.'}`, ...(interpretation.notes ?? [])];
+        interpretation.notes = [`«${match.term}» ممثل ببيت تقريبي وفق ${match.sourceKind === 'dictionary' ? 'تعريف معجمي محدود' : 'مقتطف ويكيبيديا'}؛ لا يتم استنتاج شكل 3D من الصورة.${approximate.color && !hasExplicitColor(text) ? ' لُوّن البيت بمتوسط مركز الصورة، وقد يكون لون الخلفية.' : hasExplicitColor(text) ? ' لم يُستخدم لون الصورة؛ لون الوصف لا يُطبّق تلقائياً هنا ويمكن تغييره في Inspect.' : ' لم يُستخدم لون الصورة.'}`, ...(interpretation.notes ?? [])];
       }
       if (discovered.topics.length) {
         const names = discovered.topics.map((topic) => `«${topic.term}»`).join('، ');
