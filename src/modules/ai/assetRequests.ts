@@ -3,10 +3,11 @@ export type AssetDirection = 'left' | 'right' | 'front' | 'behind' | 'near';
 export interface AssetRequest {
   assetId: string;
   count: number;
+  size?: 'small' | 'large' | 'tall' | 'wide';
   relation?: { target: number; direction: AssetDirection };
 }
 
-interface Match { id: string; start: number; end: number; text: string }
+export interface AssetMatch { id: string; start: number; end: number; text: string }
 const ALIASES: [string, string][] = [
   ['mine-entrance', 'gold mines?|mines?|منجمين|منجمان|مناجم|منجم'],
   ['mine-cart', 'mine carts?|mining carts?|carts?|عربات|عربة|عربه'],
@@ -18,8 +19,8 @@ const ALIASES: [string, string][] = [
   ['broadleaf', 'broadleaf trees?|broadleaf'],
   ['cactus', 'cact(?:us|i)|صبار'],
   ['bush', 'bush(?:es)?|shrubs?|شجيرات|شجيرة|شجيره'],
-  ['tree', 'trees?|شجرتين|شجرتان|اشجار|شجرة|شجره|شجر'],
-  ['boulder', 'boulders?|rocks?|stones?|صخور|صخرة|صخره|حجارة|حجاره'],
+  ['tree', 'trees?|شجرتين|شجرتان|شجرات|اشجار|شجرة|شجره|شجر'],
+  ['boulder', 'boulders?|rocks?|stones?|صخرتين|صخرتان|صخرات|صخور|صخرة|صخره|حجارة|حجاره'],
   ['crag', 'crags?'],
   ['house', 'houses?|homes?|بيتين|بيتان|منزلين|منزلان|بيوت|منازل|منزل|بيت|منزلا'],
   ['tower', 'towers?|برجين|برجان|ابراج|برج'],
@@ -30,6 +31,10 @@ const ALIASES: [string, string][] = [
   ['cylinder', 'cylinders?|اسطوانات|اسطوانة|اسطوانه'],
   ['cone', 'cones?|مخاريط|مخروط'],
   ['torus', 'rings?|حلقات|حلقة|حلقه'],
+  ['barn', 'barns?|حظيرتين|حظيرتان|حظائر|حظيرة|حظيره'],
+  ['coop', 'chicken coops?|coops?|اقنان|قن'],
+  ['bridge', 'bridges?|جسرين|جسران|جسور|جسر'],
+  ['wheat-field', 'wheat fields?|حقول قمح|حقل قمح'],
   ['wood-fence', 'fences?|اسوار|سياج|سور'],
   ['dirt-path', 'paths?|roads?|طرق|طريق|ممرات|ممر'],
 ];
@@ -38,35 +43,56 @@ const WORD_NUMBERS: Record<string, number> = {
   one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, ten: 10,
   واحد: 1, واحدة: 1, واحده: 1, اثنين: 2, اثنان: 2, اثنتين: 2,
   ثلاث: 3, ثلاثة: 3, ثلاثه: 3, اربع: 4, اربعة: 4, اربعه: 4,
-  خمس: 5, خمسة: 5, خمسه: 5, عشر: 10, عشرة: 10, عشره: 10,
+  خمس: 5, خمسة: 5, خمسه: 5, ست: 6, ستة: 6, سته: 6, سبع: 7, سبعة: 7, سبعه: 7, ثمان: 8, ثمانية: 8, ثمانيه: 8, تسع: 9, تسعة: 9, تسعه: 9, عشر: 10, عشرة: 10, عشره: 10, seven: 7, eight: 8, nine: 9,
 };
 
-function normalize(text: string): string {
+export function normalizeAssetText(text: string): string {
   return text.toLowerCase().replace(/[\u064b-\u065f\u0670]/g, '')
     .replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي')
     .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x660))
     .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x6f0));
 }
 
-function countBefore(segment: string): number | undefined {
-  const match = /(?:^|\s)(?:و\s*)?(\d{1,3}|one|two|three|four|five|six|ten|واحد|واحدة|واحده|اثنين|اثنان|اثنتين|ثلاث|ثلاثة|ثلاثه|اربع|اربعة|اربعه|خمس|خمسة|خمسه|عشر|عشرة|عشره)\s*$/u.exec(segment);
-  if (!match?.[1]) return undefined;
-  return WORD_NUMBERS[match[1]] ?? Number(match[1]);
+const NUMBER_WORDS = Object.keys(WORD_NUMBERS).sort((a, b) => b.length - a.length).join('|');
+export function parseCountToken(token: string | undefined): number | undefined {
+  if (!token) return undefined;
+  if (WORD_NUMBERS[token] !== undefined) return WORD_NUMBERS[token];
+  return /^\d{1,3}$/.test(token) ? Number(token) : undefined;
 }
-
-function directionBetween(text: string): AssetDirection | undefined {
-  if (/يمين|right of/.test(text)) return 'right';
-  if (/يسار|شمال|left of/.test(text)) return 'left';
+function countBefore(segment: string): number | undefined {
+  const match = new RegExp(`(?:^|\\s)(?:و\\s*)?(\\d{1,3}|${NUMBER_WORDS})\\s*$`, 'u').exec(segment);
+  return parseCountToken(match?.[1]);
+}
+function countAfter(segment: string): number | undefined {
+  const match = new RegExp(`^\\s+(\\d{1,3}|${NUMBER_WORDS})(?=$|\\s*(?:و|,|،|\\.))`, 'u').exec(segment);
+  return parseCountToken(match?.[1]);
+}
+function sizeFor(before: string, after: string, hasPrevious = false): AssetRequest['size'] {
+  const words = 'صغير(?:ه|ة)?|كبير(?:ه|ة)?|ضخم(?:ه|ة)?|طويل(?:ه|ة)?|عريض(?:ه|ة)?|واسع(?:ه|ة)?|small|tiny|little|large|big|huge|tall|wide|broad';
+  // Arabic adjectives commonly follow their noun; do not reuse the previous
+  // noun's trailing adjective as a modifier for the next noun.
+  const prefix = hasPrevious ? before.replace(/^\s+(?:ال)?(?:صغير(?:ه|ة)?|كبير(?:ه|ة)?|ضخم(?:ه|ة)?|طويل(?:ه|ة)?|عريض(?:ه|ة)?|واسع(?:ه|ة)?)(?![\p{L}\p{N}_])/u, '') : before;
+  const match = new RegExp(`^\\s+(?:ال)?(${words})(?![\\p{L}\\p{N}_])`, 'u').exec(after) ??
+    new RegExp(`(?:^|\\s)(?:ال)?(${words})\\s*$`, 'u').exec(prefix);
+  if (!match?.[1]) return undefined;
+  const word = match[1];
+  if (/صغير|small|tiny|little/.test(word)) return 'small';
+  if (/طويل|tall/.test(word)) return 'tall';
+  if (/عريض|واسع|wide|broad/.test(word)) return 'wide';
+  return 'large';
+}
+export function directionBetween(text: string): AssetDirection | undefined {
+  if (/يمين|right of|to the right/.test(text)) return 'right';
+  if (/يسار|شمال|left of|to the left/.test(text)) return 'left';
   if (/امام|قدام|in front of/.test(text)) return 'front';
   if (/خلف|وراء|behind/.test(text)) return 'behind';
   if (/بجانب|بجوار|قرب|بالقرب|next to|near|beside/.test(text)) return 'near';
   return undefined;
 }
 
-/** Parse a limited set of asset names, quantities and pairwise relations. */
-export function parseAssetRequests(prompt: string): AssetRequest[] | undefined {
-  const text = normalize(prompt);
-  const matches: Match[] = [];
+/** Locate catalog nouns in the normalized input; no network or content execution. */
+export function findAssetMentions(text: string): AssetMatch[] {
+  const matches: AssetMatch[] = [];
   for (const [id, alternatives] of ALIASES) {
     const regex = new RegExp(`(?<![\\p{L}\\p{N}_])(?:و?ب?ال|و?ب|و)?(?:${alternatives})(?![\\p{L}\\p{N}_])`, 'gu');
     for (const match of text.matchAll(regex)) {
@@ -74,14 +100,18 @@ export function parseAssetRequests(prompt: string): AssetRequest[] | undefined {
       matches.push({ id, start: match.index, end: match.index + match[0].length, text: match[0] });
     }
   }
-  // Prefer longer, more specific matches (e.g. "palm trees" over "trees").
   matches.sort((a, b) => a.start - b.start || b.end - a.end);
-  const selected: Match[] = [];
+  const selected: AssetMatch[] = [];
   for (const match of matches) {
-    if (selected.some((other) => match.start < other.end && match.end > other.start)) continue;
-    selected.push(match);
+    if (!selected.some((other) => match.start < other.end && match.end > other.start)) selected.push(match);
   }
-  selected.sort((a, b) => a.start - b.start);
+  return selected.sort((a, b) => a.start - b.start);
+}
+
+/** Parse a limited set of asset names, quantities and pairwise relations. */
+export function parseAssetRequests(prompt: string, forceExplicit = false): AssetRequest[] | undefined {
+  const text = normalizeAssetText(prompt);
+  const selected = findAssetMentions(text);
   if (!selected.length) return undefined;
 
   // Keep the established landscape planner for general English descriptions.
@@ -90,26 +120,55 @@ export function parseAssetRequests(prompt: string): AssetRequest[] | undefined {
   const hasArabic = /[\u0600-\u06ff]/.test(text);
   const hasRelation = selected.some((m, i) => i > 0 && directionBetween(text.slice(selected[i - 1]!.end, m.start)));
   const hasSpecial = selected.some((m) => ['box', 'sphere', 'cylinder', 'cone', 'torus', 'wood-fence', 'dirt-path', 'mine-entrance', 'mine-cart', 'pickaxe', 'excavator', 'chest'].includes(m.id));
-  if (!hasArabic && !hasRelation && !hasSpecial) return undefined;
+  const hasAssetSize = selected.some((m, i) => sizeFor(text.slice(i ? selected[i - 1]!.end : 0, m.start), text.slice(m.end, selected[i + 1]?.start ?? text.length), i > 0) !== undefined);
+  if (!forceExplicit && !hasArabic && !hasRelation && !hasSpecial && !hasAssetSize) return undefined;
 
   const requests: AssetRequest[] = [];
-  const kept: Match[] = [];
+  const kept: { match: AssetMatch; request: number }[] = [];
   for (const [index, match] of selected.entries()) {
-    const between = text.slice(index ? selected[index - 1]!.end : 0, match.start);
+    let between = text.slice(index ? selected[index - 1]!.end : 0, match.start);
     if (/(?:بدون|دون|بلا|without|no)\s*(?:ال)?\s*$/u.test(between)) continue;
-    const number = countBefore(between);
-    const plural = /(?:trees|rocks|houses|towers|lanterns|palms|cubes|spheres|اشجار|بيوت|منازل|صخور|فوانيس|نخيل|مكعبات|شجيرات|عربات|معاول|حفارات|صناديق|مناجم|carts|pickaxes|excavators|chests|mines)$/.test(match.text);
-    const dual = /(?:تين|تان|لين|لان|جين|جان|يتين|يتان)$/.test(match.text);
-    requests.push({ assetId: match.id, count: number ?? (dual ? 2 : plural ? 3 : 1) });
-    kept.push(match);
+    // A suffix such as "شجرة أمامه" refers to the preceding object, not
+    // the next noun. Do not turn it into a relation with the next object.
+    const pronoun = /(?:يمين|يسار|امام|قدام|خلف|وراء|بجانب|بجوار)(?:ه|ها|هما)(?![\p{L}])/u;
+    const previous = kept.at(-1);
+    const previousPrevious = kept.at(-2);
+    if (previous && previousPrevious && pronoun.test(between)) {
+      const direction = directionBetween(between);
+      if (direction && previous.request !== previousPrevious.request) requests[previous.request]!.relation = { target: previousPrevious.request, direction };
+      between = between.replace(pronoun, '');
+    }
+    // A mountain is terrain here, not a discrete asset anchor. Never silently
+    // attach its relation to the next recognised object.
+    const direction = /جبل|جبال|mountain/i.test(between) ? undefined : directionBetween(between);
+    const reference = direction && /^(?:و?ب?ال)/u.test(match.text)
+      ? kept.find((entry) => entry.match.id === match.id && entry.request !== previous?.request)
+      : undefined;
+    let requestIndex: number;
+    if (reference) {
+      requestIndex = reference.request;
+    } else {
+      const after = text.slice(match.end, selected[index + 1]?.start ?? text.length);
+      const number = countBefore(between) ?? countAfter(after);
+      const plural = /(?:trees|rocks|houses|towers|lanterns|palms|cubes|spheres|اشجار|شجرات|بيوت|منازل|صخور|صخرات|فوانيس|نخيل|مكعبات|شجيرات|عربات|معاول|حفارات|صناديق|مناجم|حظائر|جسور|barns|bridges|carts|pickaxes|excavators|chests|mines)$/.test(match.text);
+      const dual = /(?:تين|تان|لين|لان|جين|جان|يتين|يتان)$/.test(match.text);
+      requestIndex = requests.length;
+      requests.push({ assetId: match.id, count: number ?? (dual ? 2 : plural ? 3 : 1), size: sizeFor(between, after, index > 0) });
+    }
+    if (previous && direction && previous.request !== requestIndex) {
+      if (direction === 'near' && !reference) requests[requestIndex]!.relation = { target: previous.request, direction };
+      else requests[previous.request]!.relation = { target: requestIndex, direction };
+    }
+    kept.push({ match, request: requestIndex });
   }
-  for (let i = 1; i < kept.length; i += 1) {
-    const previous = kept[i - 1]!;
-    const current = kept[i]!;
-    const direction = directionBetween(text.slice(previous.end, current.start));
-    if (!direction) continue;
-    if (direction === 'near') requests[i]!.relation = { target: i - 1, direction };
-    else requests[i - 1]!.relation = { target: i, direction };
+  const last = kept.at(-1);
+  const previous = kept.at(-2);
+  if (last && previous && last.request !== previous.request) {
+    const tail = text.slice(last.match.end);
+    if (!/جبل|جبال|mountain/.test(text.slice(previous.match.end, last.match.start)) && /(?:يمين|يسار|امام|قدام|خلف|وراء|بجانب|بجوار)(?:ه|ها|هما)(?![\p{L}])/u.test(tail)) {
+      const direction = directionBetween(tail);
+      if (direction) requests[last.request]!.relation = { target: previous.request, direction };
+    }
   }
   // A city with a mine needs buildings, even when the user didn't specify a count.
   // Keep explicit relations/counts and associate otherwise unplaced mining props with the mine.

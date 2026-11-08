@@ -2,6 +2,7 @@ import { applyShapeModel } from '../../modules/ai/shapeLearner';
 import { ASSET_LIBRARY } from '../assets/catalog';
 import type { WorldObject, WorldPlan } from '../world-plan/schema';
 import { MAX_WORLD_OBJECTS } from '../world-plan/schema';
+import { normalizeAssetText } from '../../modules/ai/assetRequests';
 import type { AssetDirection, AssetRequest } from '../../modules/ai/assetRequests';
 import type { WorldIntent } from '../../modules/ai/types';
 import { createTerrainSampler } from './terrain';
@@ -21,6 +22,10 @@ export function buildAssetLayout(
   const ledger = new PlacementLedger();
   const objects: WorldObject[] = [];
   const warnings: string[] = [];
+  const normalizedPrompt = normalizeAssetText(intent.prompt);
+  if (/(?:امام|خلف|وراء|يمين|يسار|بجانب|بجوار|قرب)\s*(?:ال)?(?:جبل|جبال)/.test(normalizedPrompt) || /(?:in front of|behind|right of|left of|near)\s+(?:the\s+)?mountain/.test(normalizedPrompt)) {
+    warnings.push('الجبل تضاريس وليس أصلاً مستقلاً هنا؛ تعذّر ضمان موضع العناصر بالنسبة إليه.');
+  }
   const anchors = new Map<number, [number, number, number]>();
   const completed = new Set<number>();
   const visiting = new Set<number>();
@@ -67,9 +72,12 @@ export function buildAssetLayout(
         const themed = baseObject.kind === 'building' && baseObject.variant === 'house' && intent.biome === 'desert' && requests.some((item) => item.assetId === 'mine-entrance')
           ? { ...baseObject, color: '#c5a67c', roofColor: '#9b805f', meta: { ...baseObject.meta, desertHouse: true } }
           : baseObject;
-        const object = intent.shapeModel ? applyShapeModel(themed, intent.shapeModel, rng) : themed;
+        const shaped = intent.shapeModel ? applyShapeModel(themed, intent.shapeModel, rng) : themed;
+        const factors = request.size === 'small' ? [0.7, 0.7, 0.7] : request.size === 'large' ? [1.4, 1.4, 1.4] : request.size === 'tall' ? [1, 1.4, 1] : request.size === 'wide' ? [1.4, 1, 1.4] : [1, 1, 1];
+        const object: WorldObject = { ...shaped, transform: { ...shaped.transform, scale: shaped.transform.scale.map((value, axis) => value * factors[axis]!) as [number, number, number] } };
         let position: [number, number, number] | undefined;
         for (let attempt = 0; attempt < 120; attempt += 1) {
+          if (request.relation?.direction === 'near' && attempt >= 48) break;
           const [x, z] = candidate(request.relation?.direction, anchor, attempt);
           if (Math.abs(x) > shell.terrain.size / 2 - 5 || Math.abs(z) > shell.terrain.size / 2 - 5) continue;
           const y = sampler.heightAt(x, z);

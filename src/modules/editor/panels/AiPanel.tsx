@@ -9,6 +9,7 @@ import type { PromptInterpretation } from '../../ai/types';
 import { useEditor } from '../store';
 import { Icon } from '../../../ui/Icon';
 import { NumberField, SelectField } from '../../../ui/controls';
+import { TextEditPanel } from './TextEditPanel';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
 
 const EXAMPLES = [
@@ -92,11 +93,11 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       setResult(interpretation);
       const learnedCount = report.plan.objects.filter((object) => object.meta.learnedShape).length;
       const hasMine = report.plan.objects.some((object) => object.kind === 'primitive' && object.primitive === 'mine-entrance');
-      setNotes([...(interpretation.notes ?? []),
+      setNotes([...report.warnings, ...(interpretation.notes ?? []),
         ...(hasMine ? ['المنجم مدخل زخرفي يوحي بالعمق فقط؛ لا توجد أنفاق محفورة أو قابلة للدخول، والأدوات والحفارات ثابتة.'] : []),
         learnedCount ? `تم توليد ${learnedCount} من أشكال البيت أو الشجرة عريضة الأوراق أو الصخرة من النموذج الصغير.` :
           'لم يُستخدم تدريب الأشكال لهذا الوصف؛ جرّب وصفاً مثل: بيت وشجرة وصخرة. المزارع تحتفظ بقالبها الخاص.',
-        ...report.warnings].slice(0, 12));
+        ].slice(0, 12));
       setStats({ objects: report.plan.objects.length, groups: report.plan.groups.length });
       notify(
         report.warnings.length > 0
@@ -115,6 +116,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
 
   return (
     <div className={`panel-scroll ${variant === 'forge' ? 'forge-ai' : ''}`}>
+      {variant === 'panel' && <TextEditPanel shapeModel={shapeModel} />}
       {variant !== 'forge' && <div className="create-intro" dir="rtl">
         <div className="create-eyebrow"><span>✦</span> استوديو العوالم</div>
         <h2>خيالك، أصبح عالماً.</h2>

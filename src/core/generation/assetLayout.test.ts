@@ -58,3 +58,33 @@ describe('prompt-driven library layouts', () => {
     expect(plan.objects.filter((o) => o.kind === 'tree').length).toBeGreaterThan(10);
   });
 });
+
+describe('improved individual sizes, numbers and references', () => {
+  it('attaches sizes to each object, not the whole world', () => {
+    const small = generate('بيت صغير وشجرة كبيرة');
+    const normal = generate('بيت وشجرة');
+    expect(small.intent.scale).toBe('medium');
+    expect(small.intent.assets?.map((x) => x.size)).toEqual(['small', 'large']);
+    const smallHouse = small.plan.objects.find((o) => o.kind === 'building')!;
+    const normalHouse = normal.plan.objects.find((o) => o.kind === 'building')!;
+    expect(smallHouse.transform.scale[0]).toBeCloseTo(normalHouse.transform.scale[0] * .7);
+  });
+  it('handles written numbers, duals and Arabic pronoun references', () => {
+    const result = generate('بيت وسبع شجرات على يمينه');
+    expect(result.plan.objects.filter((o) => o.kind === 'tree')).toHaveLength(7);
+    const house = result.plan.objects.find((o) => o.kind === 'building')!;
+    expect(result.plan.objects.filter((o) => o.kind === 'tree').every((o) => o.transform.position[0] > house.transform.position[0])).toBe(true);
+    const repeated = generate('بيت صغير أمام شجرة و ٣ صخور على يمين البيت');
+    expect(repeated.plan.objects.filter((o) => o.kind === 'building')).toHaveLength(1);
+    const h = repeated.plan.objects.find((o) => o.kind === 'building')!;
+    const t = repeated.plan.objects.find((o) => o.kind === 'tree')!;
+    expect(h.transform.position[2]).toBeLessThan(t.transform.position[2]);
+    expect(repeated.plan.objects.filter((o) => o.kind === 'rock').every((o) => o.transform.position[0] > h.transform.position[0])).toBe(true);
+  });
+  it('reports that a mountain is terrain, not a separately placed anchor', () => {
+    const result = generate('بيت صغير أمام جبل وثلاث شجرات على يمينه');
+    expect(result.intent.biome).toBe('mountains');
+    expect(result.warnings.join(' ')).toContain('الجبل تضاريس');
+    expect(result.intent.assets?.find((a) => a.assetId === 'tree')?.relation).toBeUndefined();
+  });
+});

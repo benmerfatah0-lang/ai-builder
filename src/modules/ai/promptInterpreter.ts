@@ -350,7 +350,9 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
 
   // A farm is a meadow scene; farm cues outweigh a stray biome word.
   const biome = farm ? 'meadow' : biomeResult.biome;
-  const scale = options.scale ?? scaleResult.scale;
+  // An adjective attached to an individual asset should not resize the entire world.
+  const explicitWorldSize = /(?:عالم|خريطه|خريطة|منظر)\s+(?:صغير|كبير|واسع|ضخم)|(?:small|large|big|huge)\s+(?:world|map|scene)/i.test(prompt);
+  const scale = options.scale ?? (assets?.some((asset) => asset.size) && !explicitWorldSize ? 'medium' : scaleResult.scale);
   const style = options.style ?? styleResult.style;
   const density = options.density ?? densityResult.density;
   const factor = SCALE_SETTINGS[scale].countFactor;
@@ -383,7 +385,10 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
   cues.push(`biome: ${biome}`);
   if (biomeResult.matched.length > 0) cues.push(`matched: ${biomeResult.matched.slice(0, 4).join(', ')}`);
   cues.push(`time: ${timeResult.timeOfDay}`);
-  if (assets?.length) cues.push(`assets: ${assets.map((asset) => `${asset.count} ${asset.assetId}`).join(', ')}`);
+  if (assets?.length) {
+    cues.push(`assets: ${assets.map((asset) => `${asset.count} ${asset.size ? asset.size + ' ' : ''}${asset.assetId}`).join(', ')}`);
+    for (const asset of assets) if (asset.relation && assets[asset.relation.target]) cues.push(`${asset.assetId} ${asset.relation.direction} of ${assets[asset.relation.target]!.assetId}`);
+  }
   if (settlementMatches.length > 0) cues.push(`settlement: ${settlementMatches[0]}`);
   if (water) cues.push('water: enabled');
   if (scale !== 'medium') cues.push(`scale: ${scale}`);

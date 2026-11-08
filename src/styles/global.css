@@ -3018,3 +3018,14 @@ kbd {
   .forge-hero { padding-top: 25px; }
   .forge-navigation button { gap: 4px; }
 }
+
+.text-edit { padding: 14px; margin-bottom: 22px; border: 1px solid rgba(166,106,241,.32); border-radius: 12px; background: linear-gradient(155deg, rgba(166,106,241,.1), rgba(22,15,35,.8)); text-align: right; }
+.text-edit-heading { display: flex; gap: 10px; align-items: start; margin-bottom: 13px; }
+.text-edit-heading > span { display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 9px; color: #cba6ff; background: rgba(166,106,241,.14); }
+.text-edit-heading h2 { margin: 0; font-size: 14px; color: #eee4fa; }
+.text-edit-heading p { margin: 4px 0 0; color: var(--text-dim); font-size: 11px; line-height: 1.6; }
+.text-edit-input { min-height: 78px; }
+.text-edit-button { width: 100%; min-height: 42px; margin-top: 10px; }
+.text-edit-success { color: #a8e2bd; line-height: 1.7; font-size: 12px; }
+.text-edit-help { margin-top: 12px; color: var(--text-dim); font-size: 11px; line-height: 1.8; }
+.text-edit-help summary { color: #c9a7ea; cursor: pointer; font-weight: 650; }
