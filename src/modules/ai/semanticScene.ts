@@ -11,7 +11,7 @@ const BACKGROUND=new Set([2,3,5,6,9,11,13,16,29,46,52,53,68,93,94,121]);
 const ASSETS:Record<number,SceneType>={15:'table',19:'chair',42:'column',43:'signpost',66:'flower',69:'bench',104:'fountain',111:'barrel',114:'tent',149:'flag',4:'broadleaf',25:'house',32:'wood-fence',34:'boulder',41:'box',61:'bridge',84:'tower',119:'sphere',21:'water',26:'water',60:'water',109:'water',128:'water'};
 export interface SemanticRegion { classId:number; label:string; x:number; y:number; width:number; height:number; pixels:number[] }
 /** Connected semantic areas are not individual instances: touching trees may merge. */
-export function semanticRegions(labels:Uint8Array, maxRegions=30): {regions:SemanticRegion[]; ignored:string[]; truncated:number} {
+export function semanticRegions(labels:Uint8Array, maxRegions=30, includeScenery=false): {regions:SemanticRegion[]; ignored:string[]; truncated:number} {
   if(labels.length!==4096 || labels.some((value)=>value>=ADE_CLASSES.length)) throw new Error('نتيجة نموذج الرؤية غير صالحة.');
   const visited=new Uint8Array(4096), found:SemanticRegion[]=[], ignored=new Set<string>();
   for(let start=0;start<labels.length;start++){
@@ -22,7 +22,7 @@ export function semanticRegions(labels:Uint8Array, maxRegions=30): {regions:Sema
       for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]] as const){const xx=x+dx,yy=y+dy;if(xx<0||xx>=64||yy<0||yy>=64)continue;const n=yy*64+xx;if(!visited[n]&&labels[n]===id){visited[n]=1;queue.push(n);}}
     }
     if(queue.length<6)continue;
-    if(BACKGROUND.has(id)){ignored.add(ADE_CLASSES[id]!);continue;}
+    if(BACKGROUND.has(id) && !(includeScenery && [6,16,29,52,68].includes(id))){ignored.add(ADE_CLASSES[id]!);continue;}
     found.push({classId:id,label:ADE_CLASSES[id]!,x:minX,y:minY,width:maxX-minX+1,height:maxY-minY+1,pixels:queue});
   }
   found.sort((a,b)=>b.pixels.length-a.pixels.length);

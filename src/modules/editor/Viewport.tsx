@@ -821,7 +821,9 @@ export function Viewport({
     // A freshly mounted Forge preview has already framed its construction site.
     if (constructionPreview?.base === plan || walkingRef.current) return;
     if (selectionRef.current.length) runtimeRef.current?.frameSelection(selectionRef.current);
-    else runtimeRef.current?.frameWorld();
+    else if (plan.objects.length && plan.objects.every((object) => object.kind === 'primitive' && object.primitive === 'generated-mesh')) {
+      runtimeRef.current?.frameSelection(plan.objects.map((object) => object.id));
+    } else runtimeRef.current?.frameWorld();
   }, [plan.id]);
 
   // Frame requests from the toolbar and keyboard shortcuts.

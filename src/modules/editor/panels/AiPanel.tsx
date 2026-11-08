@@ -11,6 +11,8 @@ import { ReferenceSceneWorkflow } from './ReferenceSceneWorkflow';
 import { type WorldPlan } from '../../../core/world-plan/schema';
 import { correctBuildSpelling } from '../../ai/spelling';
 import { unknownTopics } from '../../ai/unknownResearch';
+import { CloudWorldComposer } from './CloudWorldComposer';
+import { textToCloudItems, type CloudWorldItem } from '../../ai/cloudWorld';
 import { generatedGlbToWorld, requestGeneratedGlb } from '../../ai/generatedMesh';
 import { interpretPromptLocally } from '../../ai/promptInterpreter';
 import { seedFromPrompt } from '../../../core/world-plan/factory';
@@ -71,6 +73,9 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   const [density, setDensity] = useState<WorldDensity | 'auto'>('auto');
   const [generating, setGenerating] = useState(false);
   const [cloudRunning, setCloudRunning] = useState(false);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [cloudDraft, setCloudDraft] = useState<{items:CloudWorldItem[];prompt:string;plan:WorldPlan;id:number}|null>(null);
+  const cloudDraftId=useRef(0);
   const [cloudResult, setCloudResult] = useState(false);
   const cloudController = useRef<AbortController | null>(null);
   useEffect(() => () => cloudController.current?.abort(), []);
@@ -80,7 +85,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   const [generationError, setGenerationError] = useState('');
   const generateCloud = async () => {
     const text = prompt.trim();
-    if (!text || generating || text.length > 400) return;
+    if (!text || generating || batchBusy || text.length > 400) return;
     const originalPlan = state.plan;
     const controller = new AbortController(); cloudController.current = controller;
     const timer = window.setTimeout(() => controller.abort(), 600_000);
@@ -102,7 +107,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   };
   const generate = async (useReference = false) => {
     const text = prompt.trim();
-    if (!text || generating) return;
+    if (!text || generating || batchBusy) return;
     if (useReference) {
       setResult(null);setCloudResult(false);setNotes([]);setStats(null);
       setReferenceFlow({prompt:text,plan:state.plan,id:++referenceSequence.current});setGenerationError('');return;
@@ -175,10 +180,10 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
 
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
       <div className="create-actions" dir="rtl">
-        <button type="button" className="btn btn-primary image-build-btn" onClick={() => void generate(true)} disabled={!prompt.trim() || generating}>
+        <button type="button" className="btn btn-primary image-build-btn" onClick={() => void generate(true)} disabled={!prompt.trim() || generating || batchBusy}>
           <Icon name="sparkles" size={17} /> إنشاء عالم من صورة
         </button>
-        <button type="button" className="btn generate-btn text-build-btn" onClick={() => void generate(false)} disabled={!prompt.trim() || generating} aria-label="إنشاء بالوصف فقط">
+        <button type="button" className="btn generate-btn text-build-btn" onClick={() => void generate(false)} disabled={!prompt.trim() || generating || batchBusy} aria-label="إنشاء بالوصف فقط">
           {generating ? 'جاري إنشاء العالم…' : 'إنشاء بالوصف فقط'}
         </button>
       </div>
@@ -187,13 +192,19 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         <div>
           <strong>مجسّم جديد من الوصف (سحابي مجاني وتجريبي)</strong>
           <p>يرسل الزر الوصف إلى خدمة Shap-E على Hugging Face؛ لا ترسل معلومات خاصة. ينشئ مجسّماً واحداً في عالم جديد بدلاً من تركيب مكتبة، لا مشهداً متعدد العناصر. الإنجليزية قد تعطي نتائج أفضل. المجسمات تقريبية وقد تفشل التفاصيل المعقدة. الخدمة مشتركة وقد تتوقف أو تنفد حصتها المجانية.</p>
-          <button type="button" className="btn btn-primary" disabled={!prompt.trim() || prompt.trim().length > 400 || generating} onClick={() => void generateCloud()}>{cloudRunning ? 'ينتظر التوليد السحابي…' : 'توليد مجسّم جديد من الوصف'}</button>
+          <button type="button" className="btn btn-primary" disabled={!prompt.trim() || prompt.trim().length > 400 || generating || batchBusy} onClick={() => void generateCloud()}>{cloudRunning ? 'ينتظر التوليد السحابي…' : 'توليد مجسّم جديد من الوصف'}</button>
           {cloudRunning && <button type="button" className="btn" onClick={() => cloudController.current?.abort()}>إيقاف الانتظار</button>}
           {prompt.trim().length > 400 && <p>الحد الأقصى للتوليد السحابي 400 حرف.</p>}
           {cloudRunning && <p role="status">قد يستغرق الانتظار عدة دقائق؛ إيقاف الانتظار لا يضمن إلغاء مهمة الخدمة.</p>}
           {cloudResult && <div><p role="status">اكتمل المجسم. يمكنك تحريكه وحفظ العالم وتصديره، والتراجع عن استبدال العالم السابق.</p>{onOpenStudio && <button type="button" className="btn" onClick={onOpenStudio}>فتح العالم في المحرر ←</button>}</div>}
         </div>
       </div>
+      <div className="callout" dir="rtl"><div>
+        <strong>عالم من عناصر مولّدة منفصلة</strong>
+        <p>يقترح تقسيم الوصف محلياً دون الاعتماد على أسماء المكتبة، ثم يرسل وصف كل عنصر للخدمة بعد المراجعة. التقسيم والعلاقات تقريبية؛ راجعها. التضاريس تبقى إجرائية محلية، لا مجسماً مولّداً.</p>
+        {!cloudDraft && <button type="button" className="btn btn-primary" disabled={!prompt.trim() || prompt.trim().length>400 || generating || batchBusy} onClick={()=>setCloudDraft({items:textToCloudItems(prompt),prompt:prompt.trim(),plan:state.plan,id:++cloudDraftId.current})}>تخطيط عالم من الوصف</button>}
+      </div></div>
+      {cloudDraft && <CloudWorldComposer key={cloudDraft.id} initialItems={cloudDraft.items} initialPlan={cloudDraft.plan} description={cloudDraft.prompt} mode="text" canApply={()=>currentPrompt.current.trim()===cloudDraft.prompt} onBusyChange={setBatchBusy} onClose={()=>setCloudDraft(null)} onOpenStudio={onOpenStudio} />}
       {referenceFlow && <ReferenceSceneWorkflow key={referenceFlow.id} prompt={referenceFlow.prompt} basePlan={referenceFlow.plan} mode="create" canApply={()=>currentPrompt.current.trim()===referenceFlow.prompt} onCancel={()=>setReferenceFlow(null)} onApplied={()=>{setReferenceFlow(null);notify('أُنشئ المشهد؛ يمكن التراجع بـ Undo.','success');}} onOpenStudio={onOpenStudio}/>}
       {result && (
         <div className="ai-result">

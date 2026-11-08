@@ -33,3 +33,11 @@ it('maps recognized furniture and structures to the expanded local catalog', asy
   const plan=createImageScene('image',result.marks,7);
   expect(plan.objects.map((object)=>object.kind === 'primitive' ? object.primitive : object.kind)).toEqual(labels);
 });
+
+
+it('can include mountain and road scenery in the cloud plan without changing the old path', () => {
+  const labels=new Uint8Array(4096).fill(2);
+  for(let y=5;y<15;y++)for(let x=5;x<15;x++)labels[y*64+x]=16;
+  expect(semanticRegions(labels).regions).toHaveLength(0);
+  expect(semanticRegions(labels,30,true).regions.map(r=>r.label)).toEqual(['mountain']);
+});

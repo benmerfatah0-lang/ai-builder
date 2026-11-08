@@ -8,6 +8,8 @@ import { photoToModel, type TinyImage } from '../../ai/photoModel';
 import { photoStyleForTopic, type PhotoMeshStyle } from '../../ai/photoStyle';
 import { scenePhotoCrop } from '../../ai/scenePhotoCrop';
 import { localSceneVision } from '../../ai/localVision';
+import { CloudWorldComposer } from './CloudWorldComposer';
+import { regionsToCloudItems, MAX_CLOUD_OBJECTS, type CloudWorldItem } from '../../ai/cloudWorld';
 import { semanticRegions, regionsToSceneMarks } from '../../ai/semanticScene';
 import { researchDetectedClasses, type SemanticResearchResult } from '../../ai/semanticResearch';
 import type { PhotoModel, WorldPlan } from '../../../core/world-plan/schema';
@@ -28,6 +30,9 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
   const [meshStyle,setMeshStyle]=useState<PhotoMeshStyle>('smooth');
   const [showPreview,setShowPreview]=useState(false);
   const [autoBusy,setAutoBusy]=useState(false), [autoStatus,setAutoStatus]=useState('');
+  const [cloudBatchBusy,setCloudBatchBusy]=useState(false);
+  const [cloudDraft,setCloudDraft]=useState<{items:CloudWorldItem[];plan:WorldPlan;description:string;skipped:number;ignored:string[];id:number}|null>(null);
+  const cloudSequence=useRef(0);
   const [autoReport,setAutoReport]=useState<{count:number;ignored:string[];truncated:number;failed:string[];research:SemanticResearchResult[]}|null>(null);
   const autoController=useRef<AbortController|null>(null), planRef=useRef(state.plan), descriptionRef=useRef(description), autoButtonRef=useRef<HTMLButtonElement|null>(null);planRef.current=state.plan;descriptionRef.current=description;
   useEffect(()=>{if(embedded && picture){autoButtonRef.current?.focus({preventScroll:true});autoButtonRef.current?.scrollIntoView?.({behavior:'smooth',block:'center'});}},[embedded,picture]);
@@ -35,7 +40,7 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
   const release=(url:string) => { if(pending.current.delete(url)) URL.revokeObjectURL(url); };
   useEffect(()=>()=>{ const pendingAuto=autoController.current;autoController.current=null;pendingAuto?.abort();generation.current++; for(const url of pending.current) URL.revokeObjectURL(url); pending.current.clear(); },[]);
   const loadFile = (file:File, imageReference?:ImageReference) => {
-    autoController.current?.abort();setAutoBusy(false);setAutoStatus('');setAutoReport(null);
+    autoController.current?.abort();setAutoBusy(false);setAutoStatus('');setAutoReport(null);setCloudDraft(null);
     const id=++generation.current;
     if(!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size>12*1024*1024 || !file.size) { setLoading(false); setError('اختر JPEG أو PNG أو WebP بحجم لا يتجاوز 12 ميغابايت.'); return; } const url=URL.createObjectURL(file); pending.current.add(url); setLoading(true);setError('');
     const image=new Image();
@@ -103,6 +108,23 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
     } catch(reason) {if(!controller.signal.aborted)setError(reason instanceof Error?reason.message:'تعذّر التحليل التلقائي.');}
     finally {if(autoController.current===controller){autoController.current=null;setAutoBusy(false);setAutoStatus('');}}
   };
+  const prepareCloudFromImage=async()=>{
+    if(!picture || autoBusy || loading || cloudBatchBusy)return;
+    const controller=new AbortController();autoController.current=controller;
+    const initialPlan=planRef.current, sourceDescription=description;
+    setAutoBusy(true);setAutoStatus('أحلّل الصورة محلياً لتحديد المناطق…');setError('');setMessage('');
+    try {
+      if((basePlan && initialPlan!==basePlan) || (canApply && !canApply()))throw new Error('تغيّر العالم أو الوصف؛ ألغِ وأعد المحاولة.');
+      const labels=await localSceneVision(picture.source,controller.signal);
+      if(controller.signal.aborted)return;
+      const detected=semanticRegions(labels,30,true);
+      if(!detected.regions.length)throw new Error('لم يجد النموذج مناطق يمكن بناؤها. جرّب صورة أخرى.');
+      if(planRef.current!==initialPlan || descriptionRef.current!==sourceDescription || (canApply && !canApply()))throw new Error('تغيّر العالم أو الوصف؛ لم يُطبّق شيء.');
+      const items=regionsToCloudItems(detected.regions,picture.pixels);
+      setCloudDraft({items,plan:initialPlan,description:sourceDescription,skipped:detected.truncated+Math.max(0,detected.regions.length-MAX_CLOUD_OBJECTS),ignored:detected.ignored,id:++cloudSequence.current});
+    }catch(reason){if(!controller.signal.aborted)setError(reason instanceof Error?reason.message:'تعذّر تحليل الصورة.');}
+    finally {if(autoController.current===controller){autoController.current=null;setAutoBusy(false);setAutoStatus('');}}
+  };
   const normalizedDescription=normalizeAssetText(description);
   const negatedAt=(index:number)=>/(?:^|\s)(?:بدون|دون|بلا|لا|without|no|not)\s+(?:ال)?$/iu.test(normalizedDescription.slice(0,index));
   const suggestions=findAssetMentions(normalizedDescription).filter((item)=>!negatedAt(item.start)).map((item)=>(SCENE_TYPES.find((entry)=>entry.id===item.id)?.id ?? ({tree:'broadleaf',broadleaf:'broadleaf',boulder:'boulder',house:'house',tower:'tower',bridge:'bridge','wood-fence':'wood-fence',sphere:'sphere',box:'box'} as Record<string,SceneType>)[item.id])).filter((item):item is SceneType=>!!item);
@@ -131,7 +153,9 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
         <strong className="workflow-title">٣. حلّل الصورة وابنِ العالم</strong>
         <div className="selected-photo"><img src={picture.url} alt="الصورة المختارة للتحليل"/><span>{picture.title}</span></div>
         <p>يتعرّف محلياً على مناطق الصورة، ويبحث عن فئاتها، ثم يبني أشكالاً تقريبية. لا تُرسل الصورة، لكن أسماء الفئات تُرسل للبحث.</p>
-        <button ref={autoButtonRef} type="button" className="btn btn-primary auto-build-btn" disabled={autoBusy || loading || !!autoReport} onClick={()=>void buildAutomatically()}>حلّل وابحث وابنِ تلقائياً</button>
+        {!cloudDraft && <button type="button" className="btn btn-primary" disabled={autoBusy || loading || cloudBatchBusy || !!autoReport} onClick={()=>void prepareCloudFromImage()}>حلّل الصورة لتوليد عناصر سحابية</button>}
+        {cloudDraft && <div><p>يتعرّف النموذج على فئات محدودة ومناطق متصلة لا على كل الأشياء؛ قد يدمجها أو يخطئ في الألوان. لا يعرف العمق أو الجوانب المخفية. السماء والأرض مستبعدتان؛ قد تقترح بعض الجبال والطرق كأجسام. {cloudDraft.skipped ? `تُركت ${cloudDraft.skipped} منطقة بسبب الحد الأقصى. `:''}{cloudDraft.ignored.length?`الخلفية المستبعدة: ${cloudDraft.ignored.join('، ')}.`:''}</p><CloudWorldComposer key={cloudDraft.id} initialItems={cloudDraft.items} initialPlan={cloudDraft.plan} description={cloudDraft.description} mode={mode==='edit'?'append':'image'} canApply={()=>descriptionRef.current===cloudDraft.description && (!canApply || canApply())} onBusyChange={setCloudBatchBusy} onBuilt={()=>onAutoBuilt?.()} onClose={()=>setCloudDraft(null)} onOpenStudio={onOpenStudio}/></div>}
+        <button ref={autoButtonRef} type="button" className="btn btn-primary auto-build-btn" disabled={autoBusy || loading || cloudBatchBusy || !!autoReport} onClick={()=>void buildAutomatically()}>حلّل وابحث وابنِ تلقائياً</button>
         <details className="workflow-details"><summary>ما يلزم وحدود التحليل</summary><p>يحتاج تثبيت نموذج الرؤية مرة واحدة على الهاتف. التحليل تقريبي وقد يدمج عناصر أو يفوّت الصغيرة؛ لا يستنتج العمق الحقيقي. يبني حتى 30 منطقة، ويعامل الأرض والخلفية كخلفية.</p><p>إذا كانت ملفات التحديث مثبتة، ثبّت النموذج في Termux بالأمر: <code>cd ~/world-builder &amp;&amp; python vision-setup.py</code> ثم أعد تشغيل الخادم وحدّث الصفحة.</p></details>
         {autoBusy && <><p role="status">{autoStatus}</p><button type="button" className="btn btn-small" onClick={()=>{autoController.current?.abort();setMessage('أُلغي التحليل؛ لم يتغيّر العالم.');}}>إلغاء التحليل</button></>}
         {autoReport && <div><p>أُنشئت {autoReport.count} منطقة مستقلة. {autoReport.truncated>0?`تُركت ${autoReport.truncated} منطقة بسبب الحد الأقصى. `:''}{autoReport.failed.length?`تعذّر بناء: ${autoReport.failed.join('، ')}. `:''}{autoReport.ignored.length?`فئات عوملت كخلفية أو أرض: ${autoReport.ignored.join('، ')}.`:''}</p>
@@ -174,10 +198,10 @@ export function ImageSceneStudio({ onOpenStudio, embedded=false, initialDescript
           setModel(built);setError('');
         } catch(reason) {setError(reason instanceof Error?reason.message:'تعذّر تحديد العنصر.');}
       }}/>{model && <><p>تم تحديد الشكل؛ راجع العمق والحجم ثم أضفه للقائمة.</p><button type="button" className="btn btn-small" onClick={()=>setShowPreview((old)=>!old)}>{showPreview?'إغلاق معاينة الشكل':'معاينة الشكل ثلاثي الأبعاد'}</button>{showPreview && <PhotoModelPreview model={model} rows={model.height} depthScale={thickness}/>}</>}</>}
-      <button type="button" className="btn btn-small" onClick={add} disabled={autoBusy || !!autoReport || !point || (type==='photo'&&!model)}>أضف العنصر إلى المراجعة</button>
-      <div><strong>العناصر التي ستُنشأ: {marks.length}</strong>{marks.map((item,i)=><p key={item.id}>{i+1}. {item.name} · {SCENE_TYPES.find((entry)=>entry.id===item.type)?.label} · عمق {item.depth.toFixed(2)} · ارتفاع {item.height?.toFixed(1) ?? "0.0"} <button type="button" className="btn btn-small" disabled={autoBusy || !!autoReport} onClick={()=>{setMarks((old)=>old.filter((entry)=>entry.id!==item.id));setPoint(null);setModel(null);setShowPreview(false);}}>إزالة {item.name}</button></p>)}</div>
+      <button type="button" className="btn btn-small" onClick={add} disabled={autoBusy || cloudBatchBusy || !!autoReport || !point || (type==='photo'&&!model)}>أضف العنصر إلى المراجعة</button>
+      <div><strong>العناصر التي ستُنشأ: {marks.length}</strong>{marks.map((item,i)=><p key={item.id}>{i+1}. {item.name} · {SCENE_TYPES.find((entry)=>entry.id===item.type)?.label} · عمق {item.depth.toFixed(2)} · ارتفاع {item.height?.toFixed(1) ?? "0.0"} <button type="button" className="btn btn-small" disabled={autoBusy || cloudBatchBusy || !!autoReport} onClick={()=>{setMarks((old)=>old.filter((entry)=>entry.id!==item.id));setPoint(null);setModel(null);setShowPreview(false);}}>إزالة {item.name}</button></p>)}</div>
       <p>{mode==='create'?'ينشئ أرضاً مستوية':'يحافظ على الأرض الحالية ويضع العناصر قرب مركزها'} وماءً زخرفياً إن اخترته؛ لا يحفر وادياً ولا يستنتج الجدران والأجزاء المخفية. قد تتداخل العناصر أو تظهر تحت الماء. راجعها في المحرر بعد التطبيق.</p>
-      <button type="button" className="btn btn-primary" disabled={!marks.length || autoBusy || !!autoReport} onClick={build}>{mode==='edit'?'إضافة العناصر المحددة إلى العالم':'إنشاء عالم جديد من العناصر المحددة'}</button>
+      <button type="button" className="btn btn-primary" disabled={!marks.length || autoBusy || cloudBatchBusy || !!autoReport} onClick={build}>{mode==='edit'?'إضافة العناصر المحددة إلى العالم':'إنشاء عالم جديد من العناصر المحددة'}</button>
       <p>{mode==='edit'?'تُضاف العناصر إلى العالم الحالي':'هذا يستبدل العالم المعروض'} ويمكن التراجع عنه بـ Undo. الألوان والشكل المشتقان من القصاصة واسم الملف يحفظان في المشروع، ومع صورة Commons تحفظ بيانات مصدرها وترخيصها للمجسم المشتق؛ لا تحفظ الصورة الأصلية. تحقق من حقك في استخدام الصورة قبل مشاركة الناتج.</p>
       </details>
     </>}
