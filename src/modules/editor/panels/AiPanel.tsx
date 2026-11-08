@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { correctBuildSpelling } from '../../ai/spelling';
 import { applyHouseKnowledge } from '../../ai/houseKnowledge';
 import { applyMapTraining } from '../../ai/mapTrainer';
@@ -52,12 +52,20 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   const [research, setResearch] = useState<ResearchReport | null>(null);
   const [researchBusy, setResearchBusy] = useState(false);
   const researchSequence = useRef(0);
+  const researchAbort = useRef<AbortController | null>(null);
+  const alive = useRef(true);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; researchSequence.current++; researchAbort.current?.abort(); }; }, []);
   const researchFor = async (text: string) => {
+    researchAbort.current?.abort();
+    const controller = new AbortController(); researchAbort.current = controller;
     const id = ++researchSequence.current;
-    setResearch(null);
+    setResearch(null); setProgress(null);
     if (!unknownTopics(text).terms.length) { setResearchBusy(false); return { topics: [], truncated: false }; }
     setResearchBusy(true);
-    const report = await researchUnknown(text);
+    const report = await researchUnknown(text, { signal: controller.signal, onProgress: (partial, done, total) => {
+      if (id === researchSequence.current) { setResearch(partial); setProgress({ done, total }); }
+    } });
     if (id === researchSequence.current) { setResearch(report); setResearchBusy(false); }
     return report;
   };
@@ -110,9 +118,10 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         ...(scale !== 'auto' ? { scale } : {}),
         ...(density !== 'auto' ? { density } : {}),
       }, false, unknownTopics(correctedText).terms.length > 0);
+      if (!alive.current) return;
       const discovered = await researchFor(correctedText);
       const singleTopic = discovered.topics.length === 1 && !discovered.truncated ? discovered.topics[0] : undefined;
-      const ambiguousPhoto = singleTopic && singleTopic.images.length > 1 && isSinglePhotoRequest(correctedText, singleTopic.term, 'generate');
+      const ambiguousPhoto = singleTopic && (singleTopic.images.length > 1 || singleTopic.imageNext != null) && isSinglePhotoRequest(correctedText, singleTopic.term, 'generate');
       const match = !interpretation.intent.features?.farm && !ambiguousPhoto ? matchHouseApproximation(correctedText, discovered) : null;
       let approximate: Approximation | null = match;
       if (match) {
@@ -128,7 +137,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       }
       if (discovered.topics.length) {
         const names = discovered.topics.map((topic) => `«${topic.term}»`).join('، ');
-        interpretation.notes = [`بحثت عن ${names}؛ ${match ? 'استُخدم تقريب من أصل موجود، وليس بناءً مطابقاً.' : discovered.topics.length === 1 && discovered.topics[0]?.images.length && isSinglePhotoRequest(correctedText, discovered.topics[0].term, 'generate') ? 'سنحاول بناء مجسم تقريبي من صورة؛ قد تفشل المحاولة إذا كانت الخلفية غير مناسبة.' : 'البحث لا ينشئ العنصر غير المدعوم تلقائياً في الوصف المركب، والنتيجة تعتمد على الأصول المعروفة فقط.'}`, ...(interpretation.notes ?? [])];
+        interpretation.notes = [`بحثت عن ${names}؛ ${match ? 'استُخدم تقريب من أصل موجود، وليس بناءً مطابقاً.' : discovered.topics.length === 1 && (discovered.topics[0]?.images.length || discovered.topics[0]?.imageNext != null) && discovered.topics[0] && isSinglePhotoRequest(correctedText, discovered.topics[0].term, 'generate') ? 'سنحاول بناء مجسم تقريبي من صورة؛ قد تفشل المحاولة إذا كانت الخلفية غير مناسبة.' : 'البحث لا ينشئ العنصر غير المدعوم تلقائياً في الوصف المركب، والنتيجة تعتمد على الأصول المعروفة فقط.'}`, ...(interpretation.notes ?? [])];
         // Use only an exact article-title match, only for a single candidate, and only
         // the fixed terrain vocabulary. Search results are untrusted and not 3D data.
         const topic = discovered.topics.length === 1 && !discovered.truncated ? discovered.topics[0] : undefined;
@@ -147,11 +156,12 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         const first = report.validation.errors[0]?.message ?? 'Unknown validation error.';
         throw new Error(`The generated plan is invalid: ${first}`);
       }
-      if (currentPlan.current !== originalPlan) throw new Error('تغيّر العالم أثناء البحث؛ لم نستبدله. أعد الإنشاء إذا أردت.');
+      if (!alive.current || researchAbort.current?.signal.aborted) throw new DOMException('أُوقف البحث؛ لم يُنشأ العالم.', 'AbortError');
+      if (currentPlan.current !== originalPlan || currentPrompt.current.trim() !== text) throw new Error('تغيّر العالم أثناء البحث أو تغيّر الوصف؛ لم نستبدله. أعد الإنشاء إذا أردت.');
       const plan = variant === 'forge' && worldName.trim() ? { ...report.plan, name: worldName.trim() } : report.plan;
       dispatch({ type: 'replacePlan', plan });
       const photoTopic = !match && !discovered.truncated && discovered.topics.length === 1 ? discovered.topics[0] : undefined;
-      if (photoTopic?.images.length && isSinglePhotoRequest(correctedText, photoTopic.term, 'generate')) {
+      if ((photoTopic?.images.length || photoTopic?.imageNext != null) && photoTopic && isSinglePhotoRequest(correctedText, photoTopic.term, 'generate')) {
         setStudio({ topic: photoTopic, plan, text }); setStudioPending(true);
       }
       if (approximate) setResearch({ ...discovered, approximation: { ...approximate,
@@ -173,10 +183,11 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         'success',
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'تعذّر إنشاء العالم. حاول مجدداً.';
+      const message = error instanceof Error && error.name === 'AbortError' ? 'أُوقف البحث؛ لم يُنشأ العالم.' : error instanceof Error ? error.message : 'تعذّر إنشاء العالم. حاول مجدداً.';
       setGenerationError(message);
       notify(message, 'danger');
     } finally {
+      setResearchBusy(false);
       setGenerating(false);
     }
   };
@@ -196,7 +207,8 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
           setNotes((old) => ['أُضيف مجسم الصورة التقريبي؛ العمق والخلف افتراضيان، وموقعه آلي وليس علاقة مكانية مفهومة.', ...old]);
         } catch (error) { setGenerationError(error instanceof Error ? error.message : 'تعذّر إضافة المجسم.'); }
       }} />}
-      <ResearchResults report={research} busy={researchBusy} />
+      {researchBusy && <button type="button" className="btn btn-small" onClick={() => researchAbort.current?.abort()}>إيقاف البحث</button>}
+      <ResearchResults report={research} busy={researchBusy} progress={progress} />
       {variant !== 'forge' && <div className="create-intro" dir="rtl">
         <div className="create-eyebrow"><span>✦</span> استوديو العوالم</div>
         <h2>خيالك، أصبح عالماً.</h2>

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { interpretOnline, searchImageReferences, searchWikiArticles } from './onlineInterpreter';
+import { interpretOnline, searchImageReferences, searchWikiArticles, searchImageReferencePage, searchWikiArticlePage } from './onlineInterpreter';
 const emptyKnowledge = { version: 1, cursor: 0, status: 'starting', classes: {
   desert: { docs: 0, tokens: {} }, forest: { docs: 0, tokens: {} }, mountains: { docs: 0, tokens: {} }, island: { docs: 0, tokens: {} },
 }, sources: [] };
@@ -85,4 +85,20 @@ describe('lightweight local planning and Wikipedia', () => {
     mock.mockResolvedValueOnce(new Response('{"online":false}'));
     await expect(interpretOnline('بيت')).rejects.toThrow('التحقق');
   });
+  it('retrieves additional pages with safe offsets and rejects non-advancing continuation', async () => {
+    const image = { title: 'File:X.jpg', url: 'https://commons.wikimedia.org/wiki/File:X.jpg', thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/X.jpg/240px-X.jpg', author: 'a', license_name: 'CC BY 4.0', license_url: 'https://creativecommons.org/licenses/by/4.0/' };
+    const mock = vi.fn(async (url: string, options: RequestInit) => {
+      const payload = JSON.parse(options.body as string);
+      if (url === '/api/image-search') return new Response(JSON.stringify({results: [image], next: payload.offset === 15 ? 30 : 15}));
+      return new Response(JSON.stringify({results: [], next: payload.offset === 20 ? 20 : 20}));
+    });
+    vi.stubGlobal('fetch', mock);
+    expect((await searchImageReferencePage('test')).next).toBe(15);
+    expect((await searchImageReferencePage('test', 15)).next).toBe(30);
+    expect(JSON.parse(mock.mock.calls[1]![1].body as string).offset).toBe(15);
+    expect((await searchWikiArticlePage('test')).next).toBe(20);
+    await expect(searchWikiArticlePage('test', 20)).rejects.toThrow(/متابعة/);
+    await expect(searchImageReferencePage('test', -1)).rejects.toThrow();
+  });
+
 });

@@ -24,19 +24,22 @@ COMMONS_API = 'https://commons.wikimedia.org/w/api.php?'
 DICTIONARY_API = 'https://en.wiktionary.org/api/rest_v1/page/definition/'
 
 
-def search_image_references(query):
+def search_image_references(query, offset=0):
     # Never accept a URL from the client; the sole upstream is the fixed Commons API.
     params = urlencode({'action': 'query', 'format': 'json', 'formatversion': 2,
                         'generator': 'search', 'gsrnamespace': 6, 'gsrlimit': 15,
                         'gsrsearch': query + ' filetype:bitmap', 'prop': 'imageinfo',
                         'iiprop': 'url|mime|extmetadata', 'iiurlwidth': 240})
+    if offset:
+        params += '&' + urlencode({'gsroffset': offset, 'continue': 'gsroffset||'})
     data = get_json(Request(COMMONS_API + params, headers={'User-Agent': USER_AGENT}), timeout=25)
     if not isinstance(data, dict) or 'error' in data or not isinstance(data.get('query', {}), dict):
         raise ValueError('invalid Commons response')
     pages = data.get('query', {}).get('pages', [])
     if not isinstance(pages, list): raise ValueError('invalid Commons pages')
     results, seen = [], set()
-    for page in pages[:15]:
+    pages = sorted(pages[:15], key=lambda page: page.get('index', 2147483647) if isinstance(page, dict) and type(page.get('index')) is int else 2147483647)
+    for page in pages:
         if not isinstance(page, dict): continue
         title, infos = page.get('title'), page.get('imageinfo')
         if not isinstance(title, str) or not title.startswith('File:') or not isinstance(infos, list) or not infos or not isinstance(infos[0], dict): continue
@@ -60,8 +63,11 @@ def search_image_references(query):
         results.append({'title': title[:120], 'url': source, 'thumbnail': thumb,
                         'author': author or 'Not specified', 'license_url': license_url.replace('http://', 'https://', 1),
                         'license_name': ('CC0' if '/publicdomain/zero/' in license_url else 'CC ' + ('BY-SA' if '/by-sa/' in license_url else 'BY') + ' ' + license_url.rstrip('/').split('/')[-1])})
-        if len(results) == 8: break
-    return results
+    continuation = data.get('continue', {})
+    next_offset = continuation.get('gsroffset') if isinstance(continuation, dict) else None
+    if type(next_offset) is not int or next_offset <= offset or next_offset > 2147483647:
+        next_offset = None
+    return {'results': results, 'next': next_offset}
 
 
 def dictionary_definitions(word):
@@ -217,7 +223,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.valid_host() or self.headers.get('Origin', '') != f'http://{host}':
             self.api_result(403, {'error': 'invalid origin'})
             return
-        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/image-analyze', '/api/image-pixels', '/api/dictionary', '/api/knowledge', '/api/house-learning'):
+        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/image-analyze', '/api/image-pixels', '/api/translate-en', '/api/wiki-article', '/api/dictionary', '/api/knowledge', '/api/house-learning'):
             self.api_result(404, {'error': 'unknown endpoint'})
             return
         if self.headers.get_content_type() != 'application/json':
@@ -264,6 +270,38 @@ class Handler(SimpleHTTPRequestHandler):
             if not isinstance(query, str) or not query.strip() or len(query) > 400:
                 self.api_result(400, {'error': 'invalid query'})
                 return
+            if self.path == '/api/wiki-article':
+                language = 'ar' if re.search(r'[\u0600-\u06ff]', query) else 'en'
+                hostname = f'{language}.wikipedia.org'
+                params = urlencode({'action': 'query', 'format': 'json', 'formatversion': 2, 'prop': 'extracts',
+                                    'titles': query.strip(), 'exintro': 1, 'explaintext': 1, 'exchars': 1200, 'redirects': 1})
+                data = get_json(Request(f'https://{hostname}/w/api.php?' + params, headers={'User-Agent': USER_AGENT}), timeout=25)
+                if not isinstance(data, dict) or 'error' in data or not isinstance(data.get('query', {}).get('pages'), list):
+                    raise ValueError('invalid article response')
+                pages = data['query']['pages']
+                if not pages or not isinstance(pages[0], dict) or pages[0].get('missing'):
+                    self.api_result(200, {'article': None})
+                    return
+                title, extract = pages[0].get('title'), pages[0].get('extract')
+                if not isinstance(title, str) or not title or not isinstance(extract, str):
+                    raise ValueError('invalid article extract')
+                self.api_result(200, {'article': {'title': title[:120], 'url': f'https://{hostname}/wiki/{quote(title.replace(" ", "_"), safe="/_():-")}', 'content': extract[:1200]}})
+                return
+            if self.path == '/api/translate-en':
+                # Fixed host and API parameters; a title is data, not a URL.
+                params = urlencode({'action': 'query', 'format': 'json', 'formatversion': 2,
+                                    'prop': 'langlinks', 'titles': query.strip(), 'lllang': 'en', 'lllimit': 1})
+                data = get_json(Request('https://ar.wikipedia.org/w/api.php?' + params, headers={'User-Agent': USER_AGENT}), timeout=25)
+                if not isinstance(data, dict) or 'error' in data or not isinstance(data.get('query', {}).get('pages'), list):
+                    raise ValueError('invalid language links response')
+                pages = data['query']['pages']
+                title = None
+                if isinstance(pages, list) and pages and isinstance(pages[0], dict):
+                    links = pages[0].get('langlinks', [])
+                    if isinstance(links, list):
+                        title = next((link.get('title') for link in links if isinstance(link, dict) and link.get('lang') == 'en' and isinstance(link.get('title'), str)), None)
+                self.api_result(200, {'title': title[:120] if title else None})
+                return
             if self.path == '/api/dictionary':
                 word = query.strip()
                 if not re.fullmatch(r'[^\W\d_]{2,80}', word, re.UNICODE):
@@ -271,28 +309,39 @@ class Handler(SimpleHTTPRequestHandler):
                     return
                 self.api_result(200, dictionary_definitions(word))
                 return
+            # Numeric offsets only; never accept arbitrary URLs or API parameters.
+            offset = payload.get('offset', 0)
+            if type(offset) is not int or not 0 <= offset <= 2147483647:
+                self.api_result(400, {'error': 'invalid offset'})
+                return
             if self.path == '/api/image-search':
-                self.api_result(200, {'results': search_image_references(query.strip())})
+                self.api_result(200, search_image_references(query.strip(), offset))
                 return
             language = 'ar' if re.search(r'[\u0600-\u06ff]', query) else 'en'
             hostname = f'{language}.wikipedia.org'
-            target = f'https://{hostname}/w/rest.php/v1/search/page?' + urlencode({'q': query, 'limit': 4})
+            params = {'action': 'query', 'format': 'json', 'formatversion': 2,
+                      'list': 'search', 'srnamespace': 0, 'srlimit': 20, 'srprop': 'snippet', 'srsearch': query}
+            if offset:
+                params.update({'sroffset': offset, 'continue': '-||'})
+            target = f'https://{hostname}/w/api.php?' + urlencode(params)
             response = get_json(Request(target, headers={'User-Agent': USER_AGENT}), timeout=25)
-            if not isinstance(response, dict) or not isinstance(response.get('pages'), list):
+            if not isinstance(response, dict) or 'error' in response or not isinstance(response.get('query', {}).get('search'), list):
                 raise ValueError('invalid search response')
             results = []
-            for page in response['pages'][:4]:
-                if not isinstance(page, dict):
-                    continue
-                title, key = page.get('title'), page.get('key')
-                if not isinstance(title, str) or not isinstance(key, str) or not key:
-                    continue
-                excerpt = page.get('excerpt') or page.get('description') or ''
-                if not isinstance(excerpt, str):
-                    excerpt = ''
+            for page in response['query']['search'][:20]:
+                if not isinstance(page, dict): continue
+                title = page.get('title')
+                if not isinstance(title, str) or not title: continue
+                excerpt = page.get('snippet') or ''
+                if not isinstance(excerpt, str): excerpt = ''
+                key = title.replace(' ', '_')
                 results.append({'title': title[:120], 'url': f'https://{hostname}/wiki/{quote(key, safe="/_():-")}',
                                 'content': strip_html(excerpt)})
-            self.api_result(200, {'results': results})
+            continuation = response.get('continue', {})
+            next_offset = continuation.get('sroffset') if isinstance(continuation, dict) else None
+            if type(next_offset) is not int or next_offset <= offset or next_offset > 2147483647:
+                next_offset = None
+            self.api_result(200, {'results': results, 'next': next_offset})
         except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError):
             self.api_result(502, {'error': 'service unavailable'})
 

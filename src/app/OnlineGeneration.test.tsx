@@ -404,4 +404,22 @@ describe('lightweight local planning interface', () => {
     expect(within(screen.getByRole('tree', { name: 'Scene hierarchy' })).getByText('فيل')).toBeTruthy();
   }, 20000);
 
+  it('cancels an ongoing multi-source search without replacing the world', async () => {
+    const mock = vi.fn((url: string, options: RequestInit) => {
+      if (url === '/api/online') return Promise.resolve(new Response('{"online":true}'));
+      if (url === '/api/search') return new Promise<Response>((_resolve, reject) => options.signal?.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once:true }));
+      if (url === '/api/image-search') return Promise.resolve(new Response('{"results":[]}'));
+      if (url === '/api/dictionary') return Promise.resolve(new Response('{"entries":[],"complete":true}'));
+      return Promise.resolve(new Response('{}'));
+    });
+    vi.stubGlobal('fetch', mock);
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'عالم فيه فيل' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'إيقاف البحث' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('أُوقف البحث؛ لم يُنشأ العالم');
+    expect(screen.queryByText('World generated')).toBeNull();
+  }, 20000);
+
 });

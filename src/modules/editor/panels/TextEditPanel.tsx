@@ -19,26 +19,39 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
   const [busy, setBusy] = useState(false);
   const [studio, setStudio] = useState<{ topic: TopicResearch; plan: WorldPlan; selection: string; command: string; seq: number } | null>(null);
   const sequence = useRef(0);
+  const researchAbort = useRef<AbortController | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const currentEditor = useRef(state); currentEditor.current = state;
   const currentCommand = useRef(command); currentCommand.current = command;
-  useEffect(() => () => { sequence.current++; }, []);
+  useEffect(() => () => { sequence.current++; researchAbort.current?.abort(); }, []);
   const lookup = async (text: string) => {
+    researchAbort.current?.abort();
+    const controller = new AbortController(); researchAbort.current = controller;
     const current = ++sequence.current;
+    setProgress(null);
     const original = currentEditor.current;
     setResearch(null); setStudio(null);
     if (!unknownTopics(text).terms.length) { setBusy(false); return; }
     setBusy(true);
-    const report = await researchUnknown(text);
+    let report: ResearchReport;
+    try {
+      report = await researchUnknown(text, { signal: controller.signal, onProgress: (partial, done, total) => {
+        if (current === sequence.current) { setResearch(partial); setProgress({ done, total }); }
+      } });
+    } catch (error) {
+      if (current === sequence.current) { setBusy(false); setFeedback({ text: controller.signal.aborted ? 'أُوقف البحث؛ لم يُطبّق تعديل.' : (error instanceof Error ? error.message : 'تعذّر البحث.'), error: true }); }
+      return;
+    }
     if (current !== sequence.current) return;
     // Only additions can be approximated: never reinterpret delete/move commands.
     const isAdd = /^(?:اضف|اضيف|ضع|اصنع|انشئ|ابني|اعمل|صمم|add|ajoute|ajouter)\s/iu.test(text.trim().replace(/[أإآ]/g, 'ا'));
     const singleTopic = report.topics.length === 1 && !report.truncated ? report.topics[0] : undefined;
     // If the images are ambiguous, ask before using one instead of coloring a house from the first hit.
-    const match = isAdd && !(singleTopic && singleTopic.images.length > 1 && isSinglePhotoRequest(text, singleTopic.term, 'edit')) ? matchHouseApproximation(text, report) : null;
+    const match = isAdd && !(singleTopic && (singleTopic.images.length > 1 || singleTopic.imageNext != null) && isSinglePhotoRequest(text, singleTopic.term, 'edit')) ? matchHouseApproximation(text, report) : null;
     if (!match) {
       setResearch(report); setBusy(false);
       const topic = report.topics.length === 1 && !report.truncated ? report.topics[0] : undefined;
-      if (isAdd && topic?.images.length && isSinglePhotoRequest(text, topic.term, 'edit')) {
+      if (isAdd && (topic?.images.length || topic?.imageNext != null) && topic && isSinglePhotoRequest(text, topic.term, 'edit')) {
         setStudio({ topic, plan: original.plan, selection: original.selection.join('\0'), command: text, seq: current });
         setFeedback({ text: 'وجدت صوراً؛ سأحاول بناء شكل تقريبي منها، إذا كانت الخلفية مناسبة.', error: false });
       }
@@ -62,7 +75,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
     try {
       const result = editWorldByText(state.plan, state.selection, command, shapeModel);
       dispatch({ type: 'replacePlan', plan: result.plan });
-      sequence.current++; setResearch(null); setStudio(null); setBusy(false);
+      sequence.current++; researchAbort.current?.abort(); setResearch(null); setStudio(null); setBusy(false);
       setFeedback({ text: `${result.message} يمكنك التراجع من زر Undo.`, error: false });
       setCommand('');
     } catch (error) {
@@ -92,7 +105,8 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
           setCommand('');
         } catch (error) { setFeedback({ text: error instanceof Error ? error.message : 'تعذّر إضافة المجسم.', error: true }); }
       }} />}
-      <ResearchResults report={research} busy={busy} />
+      {busy && <button type="button" className="btn btn-small" onClick={() => { sequence.current++; researchAbort.current?.abort(); setBusy(false); setFeedback({ text: 'أُوقف البحث؛ لم يُطبّق تعديل.', error: true }); }}>إيقاف البحث</button>}
+      <ResearchResults report={research} busy={busy} progress={progress} />
       <details className="text-edit-help"><summary>الأوامر المتاحة</summary><p>مثال: «اصنع لي نهراً يمر وسط القرية»، «أضف شجرتين على يمين البيت»، «لوّن البيت أحمر»، «كبّر البيت»، «احذف البيت»، أو «حرّك البيت إلى يسار الشجرة». إذا وُجد أكثر من عنصر مطابق، اختر واحداً في المشهد أولاً. يمكن كتابة «العنصر المحدد». النهر عنصر مرئي زخرفي لا يحفر التضاريس؛ يقدّر القرية من تجمع البيوت ويحاول تجنب العناصر، ويمكن التراجع عنه. يصحح التطبيق أخطاء إملائية محدودة ويعرض التصحيح، ولا يصحح أوامر الحذف والتحريك تلقائياً. الأوامر المحدودة تعمل محلياً؛ اليمين واليسار حسب محاور العالم، وليس اتجاه الكاميرا.</p></details>
     </section>
   );

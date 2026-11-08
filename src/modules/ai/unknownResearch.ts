@@ -1,5 +1,5 @@
 import { findAssetMentions, normalizeAssetText, parseCountToken } from './assetRequests';
-import { lookupDictionary, searchImageReferences, searchWikiArticles } from './onlineInterpreter';
+import { englishWikiTitle, lookupDictionary, readWikiArticle, searchImageReferencePage, searchWikiArticlePage } from './onlineInterpreter';
 import type { ImageReference } from './imageReferences';
 import type { WikiArticle } from './wikiReference';
 import { isDictionaryWord, type DictionaryResponse } from './dictionary';
@@ -57,7 +57,7 @@ export function unknownTopics(prompt: string): { terms: string[]; truncated: boo
   }
   flush();
   const unique = [...new Set(terms.map((term) => term.trim()).filter(Boolean))];
-  return { terms: unique.slice(0, 2), truncated: unique.length > 2 };
+  return { terms: unique, truncated: false };
 }
 
 export interface TopicResearch {
@@ -68,17 +68,66 @@ export interface TopicResearch {
   imageError: string | null;
   dictionary?: DictionaryResponse;
   dictionaryError?: string | null;
+  articleNext?: number | null;
+  imageNext?: number | null;
+  imageQuery?: string;
+  imageNotice?: string;
+  articleNotice?: string;
 }
 export interface ResearchReport { topics: TopicResearch[]; truncated: boolean; approximation?: Approximation }
-export async function researchUnknown(prompt: string): Promise<ResearchReport> {
+/** Search every detected topic in a small worker pool, keeping the phone responsive. */
+export async function researchUnknown(prompt: string, options: { signal?: AbortSignal; onProgress?: (report: ResearchReport, done: number, total: number) => void } = {}): Promise<ResearchReport> {
   const { terms, truncated } = unknownTopics(prompt);
-  const topics = await Promise.all(terms.map(async (term): Promise<TopicResearch> => {
-    const [wiki, images, dictionary] = await Promise.allSettled([searchWikiArticles(term), searchImageReferences(term),
-      isDictionaryWord(term) ? lookupDictionary(term) : Promise.reject(new Error('البحث المعجمي يقبل كلمة واحدة فقط.'))]);
-    const message = (reason: unknown) => reason instanceof Error ? reason.message : 'تعذّر الاتصال بالمصدر.';
-    return { term, articles: wiki.status === 'fulfilled' ? wiki.value : [], images: images.status === 'fulfilled' ? images.value : [],
-      wikiError: wiki.status === 'rejected' ? message(wiki.reason) : null, imageError: images.status === 'rejected' ? message(images.reason) : null,
-      ...(dictionary.status === 'fulfilled' ? { dictionary: dictionary.value, dictionaryError: null } : { dictionaryError: message(dictionary.reason) }) };
-  }));
-  return { topics, truncated };
+  const completed: (TopicResearch | undefined)[] = new Array(terms.length);
+  let next = 0, done = 0;
+  const message = (reason: unknown) => reason instanceof Error ? reason.message : 'تعذّر الاتصال بالمصدر.';
+  async function worker() {
+    while (next < terms.length) {
+      if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+      const index = next++, term = terms[index]!;
+      const [wiki, images, dictionary] = await Promise.allSettled([searchWikiArticlePage(term, 0, options.signal), searchImageReferencePage(term, 0, options.signal),
+        isDictionaryWord(term) ? lookupDictionary(term, options.signal) : Promise.reject(new Error('البحث المعجمي يقبل كلمة واحدة فقط.'))]);
+      if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+      const clean = (value: string) => canonical(normalizeAssetText(value)).replace(/^ال/u, '').trim();
+      let articles = wiki.status === 'fulfilled' ? wiki.value.results : [];
+      const exact = articles.find((entry) => clean(entry.title) === clean(term));
+      let articleNotice: string | undefined;
+      if (exact) {
+        try {
+          const article = await readWikiArticle(exact.title, options.signal);
+          if (article && clean(article.title) === clean(term) && article.content) {
+            articles = articles.map((entry) => entry === exact ? article : entry);
+            articleNotice = 'استُخدمت مقدمة المقالة المطابقة بدلاً من مقتطف البحث.';
+          }
+        } catch (error) {
+          if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+          articleNotice = `تعذّر قراءة مقدمة المقالة؛ استُخدم مقتطف البحث فقط: ${message(error)}`;
+        }
+      }
+      let imagePage = images.status === 'fulfilled' ? images.value : null;
+      let imageQuery = term, imageNotice: string | undefined;
+      // Commons titles are often English. If Arabic gave no results at all, use
+      // the English language link of an exact Wikipedia title, never a guess.
+      if (imagePage && !imagePage.results.length && imagePage.next === null && wiki.status === 'fulfilled' && /[\u0600-\u06ff]/u.test(term)) {
+        const article = exact;
+        if (article) {
+          try {
+            const english = await englishWikiTitle(article.title, options.signal);
+            if (english) { imagePage = await searchImageReferencePage(english, 0, options.signal); imageQuery = english; imageNotice = `بُحث في Commons أيضاً بالعنوان الإنجليزي المرتبط: ${english}`; }
+          } catch (error) {
+            if (options.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+            imageNotice = `تعذّر البحث بالعنوان الإنجليزي المرتبط: ${message(error)}`;
+          }
+        }
+      }
+      completed[index] = { term, articles, ...(articleNotice ? { articleNotice } : {}), images: imagePage?.results ?? [],
+        wikiError: wiki.status === 'rejected' ? message(wiki.reason) : null, imageError: images.status === 'rejected' ? message(images.reason) : null,
+        articleNext: wiki.status === 'fulfilled' ? wiki.value.next : null, imageNext: imagePage?.next ?? null, imageQuery, ...(imageNotice ? { imageNotice } : {}),
+        ...(dictionary.status === 'fulfilled' ? { dictionary: dictionary.value, dictionaryError: null } : { dictionaryError: message(dictionary.reason) }) };
+      done++;
+      options.onProgress?.({ topics: completed.filter((topic): topic is TopicResearch => !!topic), truncated }, done, terms.length);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(2, terms.length) }, () => worker()));
+  return { topics: completed.filter((topic): topic is TopicResearch => !!topic), truncated };
 }

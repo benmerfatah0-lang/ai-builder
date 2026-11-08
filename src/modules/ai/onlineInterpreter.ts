@@ -2,19 +2,21 @@ import { z } from 'zod';
 import { dictionaryResponseSchema, isDictionaryWord, type DictionaryResponse } from './dictionary';
 import { imageReferenceSchema, type ImageReference } from './imageReferences';
 import { parseHouseKnowledge } from './houseKnowledge';
-import { safeWikiUrl, type WikiArticle } from './wikiReference';
+import { safeWikiUrl, wikiArticleSchema, type WikiArticle } from './wikiReference';
 import { applyWikiKnowledge, summarizeKnowledge } from './wikiKnowledge';
 import { interpretPromptLocally } from './promptInterpreter';
 import type { InterpretOptions, PromptInterpretation } from './types';
 
 /** The phone server mediates Wikipedia and Commons requests; planning remains local and rule-based. */
-async function postJSON(path: string, body: object): Promise<unknown> {
+async function postJSON(path: string, body: object, signal?: AbortSignal): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45000);
+  const abort = () => controller.abort();
+  if (signal?.aborted) controller.abort(); else signal?.addEventListener('abort', abort, { once: true });
   try {
     const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal });
     if (!response.ok) {
-      if ((response.status === 404 || response.status === 501) && (['/api/image-search', '/api/image-analyze', '/api/image-pixels', '/api/dictionary'].includes(path) || response.headers.get('X-World-Builder-Proxy') !== '1')) {
+      if ((response.status === 404 || response.status === 501) && (['/api/image-search', '/api/image-analyze', '/api/image-pixels', '/api/translate-en', '/api/wiki-article', '/api/dictionary'].includes(path) || response.headers.get('X-World-Builder-Proxy') !== '1')) {
         throw new Error('شغّل خادم الهاتف الجديد world-builder-server.py بدلاً من الخادم القديم.');
       }
       if (path === '/api/image-analyze' || path === '/api/image-pixels') throw new Error(response.status === 503 ? 'تحليل الصور يحتاج python-pillow في Termux.' : 'تعذّر تحليل الصورة المصغرة.');
@@ -23,26 +25,52 @@ async function postJSON(path: string, body: object): Promise<unknown> {
     }
     return await response.json();
   } catch (error) {
+    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     if (error instanceof TypeError || (error instanceof Error && error.name === 'AbortError')) throw new Error('تعذّر الاتصال. تحقّق من تشغيل خادم الهاتف والإنترنت.');
     if (error instanceof SyntaxError) throw new Error('استجاب الخادم ببيانات غير صالحة.');
     throw error;
-  } finally { clearTimeout(timeout); }
+  } finally { clearTimeout(timeout); signal?.removeEventListener('abort', abort); }
 }
-const searchResult = z.object({ results: z.array(z.object({ title: z.string(), url: z.string(), content: z.string() })).max(20) });
+const offsetSchema = z.number().int().min(0).max(2147483647);
+const searchResult = z.object({ results: z.array(z.object({ title: z.string(), url: z.string(), content: z.string() })).max(20), next: offsetSchema.nullable().optional() });
+export interface SearchPage<T> { results: T[]; next: number | null }
+function checkedNext(next: number | null | undefined, offset: number): number | null {
+  if (next == null) return null;
+  if (next <= offset) throw new Error('استجاب المصدر بمؤشر متابعة غير صالح.');
+  return next;
+}
 
-/** Search live, retain only links to the supported Wikipedia editions and short text snippets. */
-export async function searchWikiArticles(query: string): Promise<WikiArticle[]> {
-  if (!query.trim() || query.length > 400) throw new Error('اكتب موضوعاً للبحث لا يتجاوز 400 حرف.');
-  const parsed = searchResult.safeParse(await postJSON('/api/search', { query: query.trim() }));
+/** One page; consumers can keep requesting pages until the source stops. */
+export async function searchWikiArticlePage(query: string, offset = 0, signal?: AbortSignal): Promise<SearchPage<WikiArticle>> {
+  if (!query.trim() || query.length > 400 || !offsetSchema.safeParse(offset).success) throw new Error('اكتب موضوعاً للبحث لا يتجاوز 400 حرف.');
+  const parsed = searchResult.safeParse(await postJSON('/api/search', { query: query.trim(), ...(offset ? { offset } : {}) }, signal));
   if (!parsed.success) throw new Error('استجابت ويكيبيديا ببيانات بحث غير صالحة.');
-  return parsed.data.results.filter((item) => item.title.trim() && safeWikiUrl(item.url)).slice(0, 4)
+  const results = parsed.data.results.filter((item) => item.title.trim() && safeWikiUrl(item.url))
     .map((item) => ({ title: item.title.slice(0, 120), url: item.url, content: item.content.slice(0, 1200) }));
+  return { results, next: checkedNext(parsed.data.next, offset) };
+}
+export async function searchWikiArticles(query: string): Promise<WikiArticle[]> {
+  return (await searchWikiArticlePage(query)).results;
+}
+
+/** Read the beginning of an exact article, not only the search snippet. */
+export async function readWikiArticle(title: string, signal?: AbortSignal): Promise<WikiArticle | null> {
+  const parsed = z.object({ article: wikiArticleSchema.nullable() }).safeParse(await postJSON('/api/wiki-article', { query: title }, signal));
+  if (!parsed.success) throw new Error('تعذّر قراءة مقدمة المقالة.');
+  return parsed.data.article;
+}
+
+/** Linked English title, used only after an exact Arabic article match. */
+export async function englishWikiTitle(title: string, signal?: AbortSignal): Promise<string | null> {
+  const parsed = z.object({ title: z.string().min(1).max(120).nullable() }).safeParse(await postJSON('/api/translate-en', { query: title }, signal));
+  if (!parsed.success) throw new Error('تعذّر قراءة رابط اللغة الإنجليزية.');
+  return parsed.data.title;
 }
 
 /** Look up one word in the English Wiktionary's Arabic, French and English sections. */
-export async function lookupDictionary(query: string): Promise<DictionaryResponse> {
+export async function lookupDictionary(query: string, signal?: AbortSignal): Promise<DictionaryResponse> {
   if (!isDictionaryWord(query)) throw new Error('البحث المعجمي يقبل كلمة واحدة فقط.');
-  const result = dictionaryResponseSchema.safeParse(await postJSON('/api/dictionary', { query }));
+  const result = dictionaryResponseSchema.safeParse(await postJSON('/api/dictionary', { query }, signal));
   if (!result.success) throw new Error('استجاب القاموس ببيانات غير صالحة.');
   return result.data;
 }
@@ -68,15 +96,19 @@ export async function readPhotoPixels(image: ImageReference): Promise<import('./
   } catch { throw new Error('بيانات الصورة غير صالحة.'); }
 }
 
-/** Search Commons without downloading originals or accepting arbitrary client URLs. */
-export async function searchImageReferences(query: string): Promise<ImageReference[]> {
+/** Paged Commons search; only free-license, attributed thumbnails are accepted. */
+export async function searchImageReferencePage(query: string, offset = 0, signal?: AbortSignal): Promise<SearchPage<ImageReference>> {
   const clean = query.trim();
-  if (!clean || clean.length > 400) throw new Error('اكتب موضوعاً للصور لا يتجاوز 400 حرف.');
-  const raw = await postJSON('/api/image-search', { query: clean });
-  const schema = z.object({ results: z.array(imageReferenceSchema.omit({ query: true })).max(8) });
+  if (!clean || clean.length > 400 || !offsetSchema.safeParse(offset).success) throw new Error('اكتب موضوعاً للصور لا يتجاوز 400 حرف.');
+  const raw = await postJSON('/api/image-search', { query: clean, ...(offset ? { offset } : {}) }, signal);
+  const schema = z.object({ results: z.array(imageReferenceSchema.omit({ query: true })).max(15), next: offsetSchema.nullable().optional() });
   const parsed = schema.safeParse(raw);
   if (!parsed.success) throw new Error('استجاب مصدر الصور ببيانات غير صالحة.');
-  return parsed.data.results.map((result) => ({ ...result, query: clean })).filter((image, index, all) => all.findIndex((item) => item.url === image.url) === index);
+  const results = parsed.data.results.map((result) => ({ ...result, query: clean })).filter((image, index, all) => all.findIndex((item) => item.url === image.url) === index);
+  return { results, next: checkedNext(parsed.data.next, offset) };
+}
+export async function searchImageReferences(query: string): Promise<ImageReference[]> {
+  return (await searchImageReferencePage(query)).results;
 }
 
 export async function interpretOnline(prompt: string, options: InterpretOptions = {}, forceSearch = false, suppressImplicitSearch = false): Promise<PromptInterpretation> {

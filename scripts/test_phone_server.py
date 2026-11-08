@@ -89,17 +89,55 @@ class PhoneServerTests(unittest.TestCase):
         upstream.return_value = {'query': {}}
         self.assertEqual(self.request('/api/online')[0], 200)
         self.assertEqual(upstream.call_args.args[0].full_url, phone_server.ONLINE_URL)
-        upstream.return_value = {'pages': [{'key': 'Some_place', 'title': 'Some place', 'excerpt': 'A <b>real</b> place'},
-                                          {'key': '../../evil?x=1', 'title': 'Test', 'excerpt': ''}]}
+        upstream.return_value = {'query': {'search': [{'title': 'Some place', 'snippet': 'A <b>real</b> place'},
+                                          {'title': 'Test', 'snippet': ''}]}, 'continue': {'sroffset': 20, 'continue': '-||'}}
         status, body = self.request('/api/search', body=b'{"query":"test"}')
         self.assertEqual(status, 200)
-        self.assertTrue(upstream.call_args.args[0].full_url.startswith('https://en.wikipedia.org/w/rest.php/v1/search/page?'))
+        self.assertTrue(upstream.call_args.args[0].full_url.startswith('https://en.wikipedia.org/w/api.php?'))
         result = json.loads(body)['results']
         self.assertEqual(result[0]['content'], 'A real place')
         self.assertEqual(result[0]['url'], 'https://en.wikipedia.org/wiki/Some_place')
         self.assertTrue(result[1]['url'].startswith('https://en.wikipedia.org/wiki/'))
+        self.assertEqual(json.loads(body)['next'], 20)
+        self.request('/api/search', body=b'{"query":"test","offset":20}')
+        self.assertIn('sroffset=20', upstream.call_args.args[0].full_url)
+        for bad in (-1, '20', True, 2147483648):
+            self.assertEqual(self.request('/api/search', body=json.dumps({'query':'x','offset':bad}).encode())[0], 400)
         self.request('/api/search', body=json.dumps({'query': 'الصحراء'}).encode())
         self.assertTrue(upstream.call_args.args[0].full_url.startswith('https://ar.wikipedia.org/'))
+
+    @patch.object(phone_server, 'get_json')
+    def test_reads_bounded_article_intro_from_fixed_host(self, upstream):
+        from urllib.parse import parse_qs, urlsplit
+        upstream.return_value = {'query': {'pages': [{'title': 'فيل', 'extract': 'حيوان' * 400}]}}
+        status, body = self.request('/api/wiki-article', body=json.dumps({'query': 'فيل'}).encode())
+        self.assertEqual(status, 200)
+        article = json.loads(body)['article']
+        self.assertEqual(article['title'], 'فيل')
+        self.assertEqual(len(article['content']), 1200)
+        url = urlsplit(upstream.call_args.args[0].full_url)
+        self.assertEqual(url.hostname, 'ar.wikipedia.org')
+        self.assertEqual(parse_qs(url.query)['titles'], ['فيل'])
+        self.assertEqual(parse_qs(url.query)['explaintext'], ['1'])
+        self.assertEqual(self.request('/api/wiki-article', origin='https://evil.example', body=b'{"query":"x"}')[0], 403)
+        upstream.return_value = {'query': {'pages': [{'missing': True}]}}
+        self.assertIsNone(json.loads(self.request('/api/wiki-article', body=b'{"query":"x"}')[1])['article'])
+
+    @patch.object(phone_server, 'get_json')
+    def test_translate_en_uses_fixed_wikipedia_host_and_language_links(self, upstream):
+        from urllib.parse import parse_qs, urlsplit
+        upstream.return_value = {'query': {'pages': [{'title': 'فيل', 'langlinks': [{'lang': 'en', 'title': 'Elephant'}]}]}}
+        status, body = self.request('/api/translate-en', body=json.dumps({'query': 'فيل'}).encode())
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {'title': 'Elephant'})
+        url = urlsplit(upstream.call_args.args[0].full_url)
+        self.assertEqual(url.hostname, 'ar.wikipedia.org')
+        params = parse_qs(url.query)
+        self.assertEqual(params['titles'], ['فيل'])
+        self.assertEqual(params['lllang'], ['en'])
+        self.assertEqual(self.request('/api/translate-en', origin='https://evil.example', body=b'{"query":"x"}')[0], 403)
+        upstream.return_value = {'query': {'pages': [{'title': 'فيل'}]}}
+        self.assertIsNone(json.loads(self.request('/api/translate-en', body=json.dumps({'query':'فيل'}).encode())[1])['title'])
 
     @patch.object(phone_server, 'get_json')
     def test_multilingual_dictionary_is_bounded_and_uses_fixed_upstream(self, upstream):
@@ -142,7 +180,7 @@ class PhoneServerTests(unittest.TestCase):
         wrong_mime = copy.deepcopy(good); wrong_mime['title'] = 'File:Vector.svg'; wrong_mime['imageinfo'][0]['mime'] = 'image/svg+xml'
         original = copy.deepcopy(good); original['title'] = 'File:Original.jpg'; original['imageinfo'][0]['thumburl'] = 'https://upload.wikimedia.org/wikipedia/commons/a/a1/Original.jpg'
         cc0 = copy.deepcopy(no_author); cc0['title'] = 'File:CC0.jpg'; cc0['imageinfo'][0]['extmetadata']['LicenseUrl']['value'] = 'https://creativecommons.org/publicdomain/zero/1.0/'
-        upstream.return_value = {'query': {'pages': [good, bad_license, bad_thumb, no_author, wrong_mime, original, cc0]}}
+        upstream.return_value = {'query': {'pages': [good, bad_license, bad_thumb, no_author, wrong_mime, original, cc0]}, 'continue': {'gsroffset': 15, 'continue': 'gsroffset||'}}
         status, body = self.request('/api/image-search', body=json.dumps({'query': 'قلعة'}).encode())
         self.assertEqual(status, 200)
         self.assertTrue(upstream.call_args.args[0].full_url.startswith(phone_server.COMMONS_API))
@@ -152,6 +190,12 @@ class PhoneServerTests(unittest.TestCase):
         self.assertEqual(result[0]['license_name'], 'CC BY-SA 4.0')
         self.assertEqual(result[0]['license_url'], 'https://creativecommons.org/licenses/by-sa/4.0/')
         self.assertEqual(result[1]['license_name'], 'CC0')
+        self.assertEqual(json.loads(body)['next'], 15)
+        status, body = self.request('/api/image-search', body=b'{"query":"castle","offset":15}')
+        self.assertEqual(status, 200)
+        self.assertIn('gsroffset=15', upstream.call_args.args[0].full_url)
+        self.assertIsNone(json.loads(body)['next'])
+        self.assertEqual(self.request('/api/image-search', body=b'{"query":"castle","offset":-1}')[0], 400)
         self.assertEqual(self.request('/api/image-search', body=b'{"query":""}')[0], 400)
         self.assertEqual(self.request('/api/image-search', origin='https://evil.example')[0], 403)
 
