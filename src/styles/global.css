@@ -3029,3 +3029,11 @@ kbd {
 .text-edit-success { color: #a8e2bd; line-height: 1.7; font-size: 12px; }
 .text-edit-help { margin-top: 12px; color: var(--text-dim); font-size: 11px; line-height: 1.8; }
 .text-edit-help summary { color: #c9a7ea; cursor: pointer; font-weight: 650; }
+
+.wiki-library { margin: 12px 0; padding: 12px; border: 1px solid var(--border, #383050); border-radius: 12px; font-size: .86rem; }
+.wiki-library summary { cursor: pointer; font-weight: 700; }
+.wiki-library p { line-height: 1.6; }
+.wiki-list { display: grid; gap: 10px; margin-top: 14px; }
+.wiki-entry { padding: 10px; border: 1px solid var(--border, #383050); border-radius: 9px; overflow-wrap: anywhere; }
+.wiki-entry p { margin: 8px 0; }
+.wiki-actions { display: flex; flex-wrap: wrap; gap: 8px; }

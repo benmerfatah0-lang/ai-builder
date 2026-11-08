@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { interpretOnline } from './onlineInterpreter';
+import { interpretOnline, searchWikiArticles } from './onlineInterpreter';
 const emptyKnowledge = { version: 1, cursor: 0, status: 'starting', classes: {
   desert: { docs: 0, tokens: {} }, forest: { docs: 0, tokens: {} }, mountains: { docs: 0, tokens: {} }, island: { docs: 0, tokens: {} },
 }, sources: [] };
@@ -8,6 +8,17 @@ const house = () => new Response(JSON.stringify(emptyHouse));
 const knowledge = () => new Response(JSON.stringify(emptyKnowledge));
 afterEach(() => vi.unstubAllGlobals());
 describe('lightweight local planning and Wikipedia', () => {
+  it('only returns bounded snippets from actual Wikipedia links when searching the notebook', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ results: [
+      { title: 'Oasis', url: 'https://en.wikipedia.org/wiki/Oasis', content: 'x'.repeat(2000) },
+      { title: 'Unsafe', url: 'https://en.wikipedia.org.evil.example/wiki/a', content: 'x' },
+      { title: 'Credentials', url: 'https://u@en.wikipedia.org/wiki/a', content: 'x' },
+    ] }))));
+    const articles = await searchWikiArticles('oasis');
+    expect(articles).toHaveLength(1);
+    expect(articles[0]!.content).toHaveLength(1200);
+    await expect(searchWikiArticles('')).rejects.toThrow();
+  });
   it('requires internet, reads the learning state, and uses no LLM', async () => {
     const mock = vi.fn().mockResolvedValueOnce(new Response('{"online":true}')).mockResolvedValueOnce(knowledge()).mockResolvedValueOnce(house());
     vi.stubGlobal('fetch', mock);

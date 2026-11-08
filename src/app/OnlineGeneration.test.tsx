@@ -20,6 +20,34 @@ describe('lightweight local planning interface', () => {
     expect(screen.getByRole('link', { name: 'مصدر ↗' }).getAttribute('href')).toContain('ar.wikipedia.org/wiki/');
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/online', '/api/knowledge', '/api/house-learning', '/api/search']);
   }, 20000);
+  it('searches, saves and explicitly uses a Wikipedia reference, and keeps it after reopening', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ results: [{ title: 'واحة', url: 'https://ar.wikipedia.org/wiki/واحة', content: 'الواحة في الصحراء.' }] })))
+      .mockResolvedValueOnce(new Response('{"online":true}'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ version: 1, cursor: 0, status: 'starting', classes: { desert: {docs:0,tokens:{}}, forest: {docs:0,tokens:{}}, mountains: {docs:0,tokens:{}}, island: {docs:0,tokens:{}} }, sources: [] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ version: 1, cursor: 0, status: 'starting', samples: 0, last_loss: null, sources: [], profiles: Object.fromEntries(['default', 'small', 'tall', 'wide'].map(key => [key, {count: 0, mean: [1, 1, 1, 1]}])) })));
+    vi.stubGlobal('fetch', fetchMock);
+    const view = render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.click(screen.getByText('مكتبة ويكيبيديا للبحث والبناء'));
+    fireEvent.change(screen.getByLabelText('موضوع البحث في ويكيبيديا'), { target: { value: 'واحة' } });
+    fireEvent.click(screen.getByRole('button', { name: 'ابحث في ويكيبيديا' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'حفظ واحة' }));
+    fireEvent.click(screen.getByRole('button', { name: 'اختيار واحة للتوليد' }));
+    expect(screen.getByText('المرجع المختار للعالم التالي: واحة')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'بيت' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate world' }));
+    expect(await screen.findByText(/استُخدمت كلمة تضاريس من المرجع المحفوظ/)).toBeTruthy();
+    expect(screen.getByText('biome: desert')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'المصدر 1: واحة' }).getAttribute('href')).toBe('https://ar.wikipedia.org/wiki/واحة');
+    view.unmount();
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.click(screen.getByText('مكتبة ويكيبيديا للبحث والبناء'));
+    expect(screen.getByRole('button', { name: 'حذف واحة' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'حذف واحة' }));
+    expect(screen.queryByRole('button', { name: 'حذف واحة' })).toBeNull();
+  }, 20000);
   it('creates a named world from the Forge home and opens the existing 3D editor', async () => {
     const responses = [new Response('{"online":true}'), new Response(JSON.stringify({ version: 1, cursor: 0, status: 'starting', classes: { desert: {docs:0,tokens:{}}, forest: {docs:0,tokens:{}}, mountains: {docs:0,tokens:{}}, island: {docs:0,tokens:{}} }, sources: [] })), new Response(JSON.stringify({ version: 1, cursor: 0, status: 'starting', samples: 0, last_loss: null, sources: [], profiles: Object.fromEntries(['default', 'small', 'tall', 'wide'].map(key => [key, {count: 0, mean: [1, 1, 1, 1]}])) }))];
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(responses[0]).mockResolvedValueOnce(responses[1]).mockResolvedValueOnce(responses[2]));
@@ -47,7 +75,10 @@ describe('lightweight local planning interface', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Close library' }));
       fireEvent.click(screen.getByRole('button', { name: /Builder/ }));
       expect(await screen.findByRole('navigation', { name: 'Editor panels' })).toBeTruthy();
-      expect(within(screen.getByRole('dialog', { name: 'AI world' })).getByLabelText('تعديل العالم بالكتابة')).toBeTruthy();
+      const mobileAI = within(screen.getByRole('dialog', { name: 'AI world' }));
+      expect(mobileAI.getByLabelText('تعديل العالم بالكتابة')).toBeTruthy();
+      fireEvent.click(mobileAI.getByText('مكتبة ويكيبيديا للبحث والبناء'));
+      expect(mobileAI.getByLabelText('موضوع البحث في ويكيبيديا')).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: /Forge/ }));
       expect(screen.getByLabelText('Description')).toBeTruthy();
     } finally { browser.happyDOM.setViewport({ width: 1024, height: 768 }); }

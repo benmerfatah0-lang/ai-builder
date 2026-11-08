@@ -10,6 +10,8 @@ import { useEditor } from '../store';
 import { Icon } from '../../../ui/Icon';
 import { NumberField, SelectField } from '../../../ui/controls';
 import { TextEditPanel } from './TextEditPanel';
+import { WikiLibraryPanel } from './WikiLibraryPanel';
+import { applySavedWikiArticle, type WikiArticle } from '../../ai/wikiLibrary';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
 
 const EXAMPLES = [
@@ -37,6 +39,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
     try { return readShapeModel(window.localStorage); } catch { return initialShapeModel(); }
   });
   const [searchWikipedia, setSearchWikipedia] = useState(false);
+  const [selectedWiki, setSelectedWiki] = useState<WikiArticle | null>(null);
   const [trainingMessage, setTrainingMessage] = useState('');
   const learnSelected = () => {
     try {
@@ -81,6 +84,12 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         ...(scale !== 'auto' ? { scale } : {}),
         ...(density !== 'auto' ? { density } : {}),
       }, searchWikipedia);
+      if (selectedWiki) {
+        const applied = applySavedWikiArticle(interpretation.intent, selectedWiki);
+        interpretation.intent = applied.intent;
+        interpretation.notes = [`المرجع المختار «${selectedWiki.title}»: ${applied.hint}`, ...(interpretation.notes ?? [])];
+        interpretation.sources = [{ title: selectedWiki.title, url: selectedWiki.url }, ...(interpretation.sources ?? []).filter((item) => item.url !== selectedWiki.url)];
+      }
       interpretation.intent = applyMapTraining(interpretation.intent, mapTrainer.model);
       interpretation.intent.shapeModel = interpretation.houseLearning ? applyHouseKnowledge(shapeModel, interpretation.houseLearning, text) : shapeModel;
       const report = generateWorldPlanWithReport(interpretation.intent);
@@ -151,6 +160,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       <div className="forge-search" dir="rtl">
         <label><input type="checkbox" checked={searchWikipedia} onChange={(event) => setSearchWikipedia(event.target.checked)} /> ابحث في ويكيبيديا عن هذا الوصف</label>
       </div>
+      <WikiLibraryPanel selected={selectedWiki} onSelect={setSelectedWiki} />
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
 
       <button

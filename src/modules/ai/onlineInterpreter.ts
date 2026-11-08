@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { parseHouseKnowledge } from './houseKnowledge';
+import { safeWikiUrl, type WikiArticle } from './wikiLibrary';
 import { applyWikiKnowledge, summarizeKnowledge } from './wikiKnowledge';
 import { interpretPromptLocally } from './promptInterpreter';
 import type { InterpretOptions, PromptInterpretation } from './types';
@@ -24,6 +25,15 @@ async function postJSON(path: string, body: object): Promise<unknown> {
   } finally { clearTimeout(timeout); }
 }
 const searchResult = z.object({ results: z.array(z.object({ title: z.string(), url: z.string(), content: z.string() })).max(20) });
+
+/** Search live, retain only links to the supported Wikipedia editions and short text snippets. */
+export async function searchWikiArticles(query: string): Promise<WikiArticle[]> {
+  if (!query.trim() || query.length > 400) throw new Error('اكتب موضوعاً للبحث لا يتجاوز 400 حرف.');
+  const parsed = searchResult.safeParse(await postJSON('/api/search', { query: query.trim() }));
+  if (!parsed.success) throw new Error('استجابت ويكيبيديا ببيانات بحث غير صالحة.');
+  return parsed.data.results.filter((item) => item.title.trim() && safeWikiUrl(item.url)).slice(0, 4)
+    .map((item) => ({ title: item.title.slice(0, 120), url: item.url, content: item.content.slice(0, 1200) }));
+}
 
 export async function interpretOnline(prompt: string, options: InterpretOptions = {}, forceSearch = false): Promise<PromptInterpretation> {
   const online = z.object({ online: z.literal(true) }).safeParse(await postJSON('/api/online', {}));
@@ -51,12 +61,7 @@ export async function interpretOnline(prompt: string, options: InterpretOptions 
   let sources: { title: string; url: string; content: string }[] = [];
   if (searched) {
     const query = prompt.replace(/ابحث\s*(?:عن)?|(?:في|من)\s*ويكيبيديا|search\s*(?:for)?|wikipedia/gi, '').trim() || prompt;
-    const parsed = searchResult.safeParse(await postJSON('/api/search', { query }));
-    if (!parsed.success) throw new Error('استجابت ويكيبيديا ببيانات بحث غير صالحة.');
-    sources = parsed.data.results.filter((item) => {
-      try { const url = new URL(item.url); return url.protocol === 'https:' && ['ar.wikipedia.org', 'en.wikipedia.org'].includes(url.hostname); }
-      catch { return false; }
-    }).slice(0, 4).map((item) => ({ title: item.title.slice(0, 120), url: item.url, content: item.content.slice(0, 1200) }));
+    sources = await searchWikiArticles(query);
     // Search text is untrusted: only use a small, fixed vocabulary for biome hints.
     // An explicit biome in the user's own prompt always takes precedence.
     if (!/صحر|غاب|جزير|جبل|desert|forest|island|mountain/i.test(prompt)) {
