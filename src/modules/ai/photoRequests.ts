@@ -45,7 +45,7 @@ export function planPhotoRequests(prompt: string, topics: TopicResearch[]): Phot
     if ((prev && /^(?:صغير(?:ه|ة)?|كبير(?:ه|ة)?|ضخم(?:ه|ة)?|طويل(?:ه|ة)?|عريض(?:ه|ة)?|احمر|ازرق|اخضر|اصفر|ابيض|اسود|بني|red|blue|green|small|large|big|tall|wide)$/iu.test(prev)) || /^(?:\s+)(?:ال)?(?:صغير(?:ة|ه)?|كبير(?:ة|ه)?|ضخم(?:ة|ه)?|طويل(?:ة|ه)?|عريض(?:ة|ه)?|احمر|ازرق|اخضر|اصفر|ابيض|اسود|بني|red|blue|green|small|large|big|tall|wide)(?![\p{L}])/iu.test(after)) {
       warnings.push(`لم يُنشأ «${topic.term}»: لم يُفهم الحجم أو اللون المطلوب من الصورة.`); continue;
     }
-    if (!topic.images.length && topic.imageNext == null) { warnings.push(`لم أجد صوراً مناسبة لـ «${topic.term}»؛ لم يُنشأ.`); continue; }
+    if (!topic.images.length && topic.imageNext == null) { warnings.push(topic.imageError ? `تعذّر البحث عن صور «${topic.term}»؛ لم يُنشأ. ${topic.imageError}` : `لم أجد صوراً مناسبة لـ «${topic.term}»؛ لم يُنشأ.`); continue; }
     requests.push({ topic, count: count ?? 1, ...(relation ? { relation } : {}) });
   }
   return { requests, warnings };

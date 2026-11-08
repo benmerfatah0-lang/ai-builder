@@ -112,6 +112,67 @@ class PhoneServerTests(unittest.TestCase):
         upstream.return_value = b'not an image'
         self.assertEqual(self.request('/api/image-pixels', body=json.dumps({'url': url}).encode())[0], 502)
 
+    @patch.object(phone_server, 'get_image')
+    @patch.object(phone_server, 'get_json')
+    def test_real_imageinfo_250px_thumb_host_and_tracking_parameters(self, wiki, image):
+        # Representative fields copied from a live Commons imageinfo response.
+        from urllib.parse import urlencode
+        thumb = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/8/83/Elephant_running.jpg/250px-Elephant_running.jpg'
+        api_thumb = thumb + '?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail'
+        wiki.return_value = {'query': {'pages': [{'title':'File:Elephant running.jpg', 'index':3, 'imageinfo':[{
+            'mime':'image/jpeg', 'thumburl':api_thumb, 'thumbwidth':240,
+            'extmetadata': {'LicenseUrl':{'value':'https://creativecommons.org/licenses/by-sa/4.0'}, 'Artist':{'value':'Byrdyak'}}
+        }]}]}}
+        status, body = self.request('/api/image-search', body=b'{"query":"elephant"}')
+        self.assertEqual(status, 200)
+        found = json.loads(body)['results']
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]['thumbnail'], thumb)
+        self.assertEqual(found[0]['license_url'], 'https://creativecommons.org/licenses/by-sa/4.0/')
+        image.return_value = b'\xff\xd8\xffcontent'
+        status, body = self.request('/api/image-thumbnail?' + urlencode({'url':thumb}), method='GET')
+        self.assertEqual((status, body), (200, image.return_value))
+        self.assertEqual(image.call_args.args[0].full_url, thumb)
+        for bad in [api_thumb, thumb.replace('thumb.wikimedia.org', 'thumb.wikimedia.org.evil.example'),
+                    thumb.replace('/250px-', '/500px-'), thumb.replace('/8/83/', '/8/83/%2e%2e/'),
+                    thumb.replace('https://thumb.wikimedia.org/', 'https://user@thumb.wikimedia.org/')]:
+            self.assertEqual(self.request('/api/image-thumbnail?' + urlencode({'url':bad}), method='GET')[0], 400)
+        for query in ['?x=1', '?utm_source=evil&utm_campaign=imageinfo&utm_content=thumbnail']:
+            wiki.return_value['query']['pages'][0]['imageinfo'][0]['thumburl'] = thumb + query
+            self.assertEqual(json.loads(self.request('/api/image-search', body=b'{"query":"elephant"}')[1])['results'], [])
+
+    @patch.object(phone_server, 'build_opener')
+    def test_image_downloader_accepts_only_trusted_thumb_host_and_bounds_bytes(self, opener):
+        import io
+        class Response(io.BytesIO):
+            def __init__(self, data, content_type):
+                super().__init__(data)
+                self.headers = Message()
+                self.headers['Content-Type'] = content_type
+        thumb = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/8/83/Elephant_running.jpg/250px-Elephant_running.jpg'
+        opener.return_value.open.return_value = Response(b'jpeg', 'image/jpeg')
+        self.assertEqual(phone_server.get_image(Request(thumb), timeout=25), b'jpeg')
+        self.assertIsInstance(opener.call_args.args[0], phone_server.NoRedirects)
+        opener.return_value.open.return_value = Response(b'x' * 1_000_001, 'image/jpeg')
+        with self.assertRaises(ValueError): phone_server.get_image(Request(thumb), timeout=25)
+        opener.return_value.open.return_value = Response(b'<svg/>', 'image/svg+xml')
+        with self.assertRaises(ValueError): phone_server.get_image(Request(thumb), timeout=25)
+        opener.reset_mock()
+        with self.assertRaises(ValueError): phone_server.get_image(Request(thumb.replace('thumb.wikimedia.org','evil.example')), timeout=25)
+        opener.assert_not_called()
+
+    @unittest.skipIf(__import__('house_learner').Image is None, 'Pillow needed for image pixels')
+    @patch.object(phone_server, 'get_image')
+    def test_modern_thumbnail_is_also_accepted_for_pixel_conversion(self, upstream):
+        import io
+        from PIL import Image
+        out = io.BytesIO(); Image.new('RGB', (250, 150), (10, 20, 30)).save(out, format='JPEG')
+        upstream.return_value = out.getvalue()
+        thumb = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/8/83/Elephant_running.jpg/250px-Elephant_running.jpg'
+        status, body = self.request('/api/image-pixels', body=json.dumps({'url':thumb}).encode())
+        self.assertEqual(status, 200)
+        self.assertEqual((json.loads(body)['width'], json.loads(body)['height']), (24, 14))
+
     @patch.object(phone_server, 'get_json')
     def test_connectivity_and_search_are_fixed_to_wikipedia(self, upstream):
         upstream.return_value = {'query': {}}

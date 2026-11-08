@@ -11,4 +11,10 @@ describe('Commons result validation', () => {
       { ...image, thumbnail: 'https://upload.wikimedia.org/wikipedia/commons/a/original.jpg' },
       { ...image, license_url: 'https://evil.example/license' }]) expect(imageReferenceSchema.safeParse(entry).success).toBe(false);
   });
+  it('accepts the current MediaWiki 250px thumb host and rejects untrusted variants', () => {
+    const thumb = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/8/83/Elephant_running.jpg/250px-Elephant_running.jpg';
+    expect(imageReferenceSchema.safeParse({...image, thumbnail:thumb}).success).toBe(true);
+    for (const bad of [thumb + '?utm_source=commons.wikimedia.org', thumb.replace('thumb.wikimedia.org','thumb.wikimedia.org.evil.example'), thumb.replace('/250px-', '/500px-'), thumb.replace('/8/83/', '/8/83/%2e%2e/')]) expect(imageReferenceSchema.safeParse({...image, thumbnail:bad}).success).toBe(false);
+  });
+
 });

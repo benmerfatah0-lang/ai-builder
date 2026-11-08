@@ -12,10 +12,11 @@ export function ResearchResults({ report, busy, progress }: { report: ResearchRe
     {busy && <p role="status">البحث جارٍ… {progress ? `${progress.done} / ${progress.total}` : ''}</p>}
     <p>التعرف تقريبي وقد لا تكون النتائج مطابقة. في الحالات البسيطة يمكن محاولة فصل شكل الصورة وبناء حجم تقريبي متناظر؛ ليست استعادة حقيقية للجوانب المخفية. راجع المصادر والتراخيص.</p>
     {report.approximation && <div className="wiki-entry">
-      <p>{report.approximation.sourceKind === 'dictionary' ? 'تعريف المعجم صنّف' : 'مقتطف المقالة صنّف'} «{report.approximation.term}» كبيت؛ {report.approximation.applied ? 'استُخدم' : 'اقتُرح'} نموذج بيت موجود كتقريب وليس نموذجاً مطابقاً.</p>
+      <p>{report.approximation.sourceKind === 'dictionary' ? 'تعريف المعجم صنّف' : 'مقتطف المقالة صنّف'} «{report.approximation.term}» ك{report.approximation.assetLabel ?? 'بيت'}؛ {report.approximation.applied ? 'استُخدم' : 'اقتُرح'} نموذج {report.approximation.assetLabel ?? 'بيت'} موجود كتقريب وليس نموذجاً مطابقاً.</p>
+      <p>المصدر: <a href={report.approximation.articleUrl} target="_blank" rel="noopener noreferrer">{report.approximation.articleTitle} ↗</a></p>
       {report.approximation.color && <p>متوسط لون مركز أول صورة: <strong>{report.approximation.color}</strong>. {report.approximation.colorApplied ? 'استُخدم كلون البيت.' : 'لم يُطبّق اللون.'} قد يمثل الخلفية، وليس لون الجسم.</p>}
       {report.approximation.imageError && <p className="online-error">{report.approximation.imageError} استُخدم اللون الافتراضي.</p>}
-      {!report.approximation.image && <p>لم تتوفر صورة مناسبة؛ استُخدم اللون الافتراضي.</p>}
+      {!report.approximation.image && <p>لم تُستخدم صورة؛ الشكل من مكتبة التطبيق وليس مستخرجاً من ويكيبيديا.</p>}
       {report.approximation.image && <p>مصدر التحليل: <a href={report.approximation.image.url} target="_blank" rel="noopener noreferrer">{report.approximation.image.title}</a> · {report.approximation.image.author} · <a href={report.approximation.image.license_url} target="_blank" rel="noopener noreferrer">{report.approximation.image.license_name}</a></p>}
     </div>}
     {report.topics.map((topic) => <ResearchTopic topic={topic} key={topic.term} />)}

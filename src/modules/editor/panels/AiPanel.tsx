@@ -17,7 +17,7 @@ import { addPhotoModels } from '../../ai/photoModel';
 import { planPhotoRequests, type PhotoRequest } from '../../ai/photoRequests';
 import { type WorldPlan } from '../../../core/world-plan/schema';
 import { normalizeAssetText, parseAssetRequests } from '../../ai/assetRequests';
-import { analyzeApproximation, hasExplicitColor, matchHouseApproximation, type Approximation } from '../../ai/referenceUnderstanding';
+import { analyzeApproximation, hasExplicitColor, matchReferenceApproximation, containsApproximation, type Approximation } from '../../ai/referenceUnderstanding';
 import { applyWikiArticleHint } from '../../ai/wikiReference';
 import { researchUnknown, unknownTopics, type ResearchReport } from '../../ai/unknownResearch';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
@@ -122,8 +122,8 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
       if (!alive.current) return;
       const discovered = await researchFor(correctedText);
       const singleTopic = discovered.topics.length === 1 && !discovered.truncated ? discovered.topics[0] : undefined;
-      const ambiguousPhoto = singleTopic && (singleTopic.images.length > 1 || singleTopic.imageNext != null) && planPhotoRequests(correctedText, [singleTopic]).requests.length > 0;
-      const match = !interpretation.intent.features?.farm && !ambiguousPhoto ? matchHouseApproximation(correctedText, discovered) : null;
+      const ambiguousPhoto = singleTopic && (singleTopic.images.length > 1 || (singleTopic.images.length > 0 && singleTopic.imageNext != null)) && planPhotoRequests(correctedText, [singleTopic]).requests.length > 0;
+      const match = !interpretation.intent.features?.farm && !ambiguousPhoto ? matchReferenceApproximation(correctedText, discovered) : null;
       let approximate: Approximation | null = match;
       if (match) {
         setResearchBusy(true);
@@ -132,9 +132,9 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
         setResearch({ ...discovered, approximation: approximate });
         const assets = parseAssetRequests(approximate.rewritten, true)!;
         interpretation.intent.assets = assets.map((item) => item.assetId === 'house' && approximate?.color && !hasExplicitColor(text) ? { ...item, referenceColor: approximate.color } : item);
-        interpretation.intent.cues = [...interpretation.intent.cues.filter((cue) => !cue.startsWith('default counts')), `${match.sourceKind === 'dictionary' ? 'Wiktionary' : 'Wikipedia'} approximate house: ${match.term}`];
-        interpretation.intent.summary += ` · ${match.term}: approximate house`;
-        interpretation.notes = [`«${match.term}» ممثل ببيت تقريبي وفق ${match.sourceKind === 'dictionary' ? 'تعريف معجمي محدود' : 'مقتطف ويكيبيديا'}؛ لا يتم استنتاج شكل 3D من الصورة.${approximate.color && !hasExplicitColor(text) ? ' لُوّن البيت بمتوسط مركز الصورة، وقد يكون لون الخلفية.' : hasExplicitColor(text) ? ' لم يُستخدم لون الصورة؛ لون الوصف لا يُطبّق تلقائياً هنا ويمكن تغييره في Inspect.' : ' لم يُستخدم لون الصورة.'}`, ...(interpretation.notes ?? [])];
+        interpretation.intent.cues = [...interpretation.intent.cues.filter((cue) => !cue.startsWith('default counts')), `${match.sourceKind === 'dictionary' ? 'Wiktionary' : 'Wikipedia'} approximate ${match.assetLabel ?? 'house'}: ${match.term}`];
+        interpretation.intent.summary += ` · ${match.term}: approximate ${match.assetLabel ?? 'house'}`;
+        interpretation.notes = [`«${match.term}» ممثل ب${match.assetLabel ?? 'بيت'} تقريبي وفق ${match.sourceKind === 'dictionary' ? 'تعريف معجمي محدود' : 'مقتطف ويكيبيديا'}؛ لا يتم استنتاج شكل 3D من الصورة.${approximate.color && !hasExplicitColor(text) ? ' لُوّن البيت بمتوسط مركز الصورة، وقد يكون لون الخلفية.' : hasExplicitColor(text) ? ' لم يُستخدم لون الصورة؛ لون الوصف لا يُطبّق تلقائياً هنا ويمكن تغييره في Inspect.' : ' لم يُستخدم لون الصورة.'}`, ...(interpretation.notes ?? [])];
       }
       if (discovered.topics.length) {
         const names = discovered.topics.map((topic) => `«${topic.term}»`).join('، ');
@@ -160,13 +160,19 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
       if (!alive.current || researchAbort.current?.signal.aborted) throw new DOMException('أُوقف البحث؛ لم يُنشأ العالم.', 'AbortError');
       if (currentPlan.current !== originalPlan || currentPrompt.current.trim() !== text) throw new Error('تغيّر العالم أثناء البحث أو تغيّر الوصف؛ لم نستبدله. أعد الإنشاء إذا أردت.');
       const plan = variant === 'forge' && worldName.trim() ? { ...report.plan, name: worldName.trim() } : report.plan;
+      if (approximate && !containsApproximation(plan, approximate)) {
+        interpretation.notes = [
+          `صُنّف «${approximate.term}» كتقريب لـ${approximate.assetLabel ?? 'بيت'}، لكن لم يوضع نموذج له في الماب. راجع تنبيهات الموضع والسعة.`,
+          ...(interpretation.notes ?? []).filter((note) => !note.includes('ممثل ب') && !note.includes('استُخدم تقريب من أصل موجود')),
+        ];
+      }
       dispatch({ type: 'replacePlan', plan });
       const photos = match ? { requests: [], warnings: [] } : planPhotoRequests(correctedText, discovered.topics);
       if (photos.requests.length) {
         setStudio({ requests: photos.requests, index: 0, plan, text }); setStudioPending(true);
       }
       if (approximate) setResearch({ ...discovered, approximation: { ...approximate,
-        applied: plan.objects.some((object) => object.kind === 'building' && object.variant === 'house'),
+        applied: containsApproximation(plan, approximate),
         colorApplied: Boolean(approximate.color && !hasExplicitColor(text) && plan.objects.some((object) => object.kind === 'building' && object.variant === 'house')) } });
       setResult(interpretation);
       const learnedCount = report.plan.objects.filter((object) => object.meta.learnedShape).length;

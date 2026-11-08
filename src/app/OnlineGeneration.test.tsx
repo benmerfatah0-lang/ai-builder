@@ -663,4 +663,102 @@ describe('lightweight local planning interface', () => {
     expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).queryByText('فيل')).toBeNull();
   }, 20000);
 
+  it('uses an exact Wikipedia definition without images to add an approximate catalog tree', async () => {
+    const article = {title:'باوباب', url:'https://ar.wikipedia.org/wiki/باوباب', content:'الباوباب هي شجرة كبيرة.'};
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/online') return new Response('{"online":true}');
+      if (url === '/api/search') return new Response(JSON.stringify({results:[article]}));
+      if (url === '/api/wiki-article') return new Response(JSON.stringify({article}));
+      if (url === '/api/image-search') return new Response('{"results":[],"next":15}');
+      if (url === '/api/translate-en') return new Response('{"title":null}');
+      if (url === '/api/dictionary') return new Response('{"entries":[],"complete":true}');
+      return new Response('{}');
+    }));
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Description'), {target:{value:'عالم فيه باوباب'}});
+    fireEvent.click(screen.getByRole('button', {name:'Generate world'}));
+    expect(await screen.findByText(/مقتطف المقالة صنّف «باوباب» كشجرة/)).toBeTruthy();
+    expect(screen.getByText(/لم تُستخدم صورة؛ الشكل من مكتبة التطبيق/)).toBeTruthy();
+    expect(screen.queryByRole('region', {name:'استوديو تقريب الصورة'})).toBeNull();
+    fireEvent.click(await screen.findByRole('button', {name:'فتح العالم في المحرر ←'}));
+    fireEvent.click(screen.getByRole('tab', {name:/^Scene$/}));
+    expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).getAllByRole('treeitem')).toHaveLength(1);
+  }, 20000);
+
+  it('uses an exact Wikipedia definition for a safe undoable edit when images fail', async () => {
+    const article = {title:'باوباب', url:'https://ar.wikipedia.org/wiki/باوباب', content:'الباوباب هي شجرة ضخمة.'};
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/online') return new Response('{"online":true}');
+      if (url === '/api/search') return new Response(JSON.stringify({results:[article]}));
+      if (url === '/api/wiki-article') return new Response(JSON.stringify({article}));
+      if (url === '/api/image-search') return new Response('', {status:502});
+      if (url === '/api/dictionary') return new Response('{"entries":[],"complete":true}');
+      return new Response('{}');
+    }));
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Description'), {target:{value:'بيت'}});
+    fireEvent.click(screen.getByRole('button', {name:'Generate world'}));
+    fireEvent.click(await screen.findByRole('button', {name:'فتح العالم في المحرر ←'}));
+    fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), {target:{value:'أضف باوباب يمين البيت'}});
+    fireEvent.click(screen.getByRole('button', {name:'تطبيق التعديل'}));
+    expect(await screen.findByText(/أُضيف «باوباب» كنموذج شجرة تقريبي من المقالة/)).toBeTruthy();
+    expect(screen.getByText(/تعذّر البحث عن الصور في Wikimedia Commons/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', {name:/^Scene$/}));
+    const tree = screen.getByRole('tree', {name:'Scene hierarchy'});
+    expect(within(tree).getAllByRole('treeitem')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', {name:/Undo \(Ctrl\/Cmd\+Z\)/}));
+    expect(within(tree).getAllByRole('treeitem')).toHaveLength(1);
+  }, 20000);
+
+  it('displays and builds from a modern Commons imageinfo thumbnail after selection', async () => {
+    // The path, size and metadata correspond to a current Commons API result,
+    // with its tracking query stripped by the phone server.
+    const image = {title:'File:Elephant running.jpg',url:'https://commons.wikimedia.org/wiki/File:Elephant_running.jpg',thumbnail:'https://thumb.wikimedia.org/wikipedia/commons/thumb/8/83/Elephant_running.jpg/250px-Elephant_running.jpg',author:'Byrdyak',license_url:'https://creativecommons.org/licenses/by-sa/4.0/',license_name:'CC BY-SA 4.0'};
+    const bytes = new Uint8Array(12*12*4);
+    for (let y=0;y<12;y++) for (let x=0;x<12;x++) bytes.set(x>=3&&x<=8&&y>=2&&y<=9 ? [120,40,30,255] : [255,255,255,255], (y*12+x)*4);
+    const mock = vi.fn(async (url: string, opts: RequestInit) => {
+      if (url === '/api/online') return new Response('{"online":true}');
+      if (url === '/api/search') return new Response('{"results":[]}');
+      if (url === '/api/image-search') return new Response(JSON.stringify({results:[image]}));
+      if (url === '/api/image-pixels') { expect(JSON.parse(opts.body as string).url).toBe(image.thumbnail); return new Response(JSON.stringify({width:12,height:12,rgba:btoa(String.fromCharCode(...bytes))})); }
+      return new Response('{}');
+    });
+    vi.stubGlobal('fetch', mock); render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.change(screen.getByLabelText('Description'), {target:{value:'عالم فيه فيل'}});
+    fireEvent.click(screen.getByRole('button', {name:'Generate world'}));
+    const candidate = await screen.findByRole('button', {name:/File:Elephant running.jpg/});
+    const thumbnail = within(candidate).getByRole('img', {name:image.title});
+    expect(thumbnail.getAttribute('src')).toBe('/api/image-thumbnail?url=' + encodeURIComponent(image.thumbnail));
+    expect(mock.mock.calls.filter(([url]) => url === '/api/image-pixels')).toHaveLength(0);
+    fireEvent.click(candidate);
+    expect(await screen.findByText(/أُضيف مجسم الصورة التقريبي/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', {name:'فتح العالم في المحرر ←'}));
+    fireEvent.click(screen.getByRole('tab', {name:/^Scene$/}));
+    expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).getByText('فيل')).toBeTruthy();
+  }, 20000);
+
+  it('shows the article but refuses to invent an unsupported animal when no photo exists', async () => {
+    const article = {title:'فيل', url:'https://ar.wikipedia.org/wiki/فيل', content:'الفيل حيوان يعيش في الغابات.'};
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/search') return new Response(JSON.stringify({results:[article]}));
+      if (url === '/api/wiki-article') return new Response(JSON.stringify({article}));
+      if (url === '/api/image-search') return new Response('{"results":[]}');
+      if (url === '/api/translate-en') return new Response('{"title":null}');
+      if (url === '/api/dictionary') return new Response('{"entries":[],"complete":true}');
+      return new Response('{}');
+    }));
+    render(<App />);
+    await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
+    fireEvent.click(screen.getByRole('button', {name:/Builder/}));
+    fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), {target:{value:'أضف فيل'}});
+    fireEvent.click(screen.getByRole('button', {name:'تطبيق التعديل'}));
+    expect(await screen.findByText(/لم أجد صوراً مناسبة لـ «فيل»؛ لم يُنشأ/)).toBeTruthy();
+    expect(screen.getByText('الفيل حيوان يعيش في الغابات.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', {name:/^Scene$/}));
+    expect(within(screen.getByRole('tree', {name:'Scene hierarchy'})).queryByText('فيل')).toBeNull();
+  }, 20000);
+
 });

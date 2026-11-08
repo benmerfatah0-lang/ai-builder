@@ -6,7 +6,7 @@ import { addPhotoModels } from '../../ai/photoModel';
 import { planPhotoRequests, type PhotoRequest } from '../../ai/photoRequests';
 import { findAssetMentions, normalizeAssetText } from '../../ai/assetRequests';
 import type { WorldPlan } from '../../../core/world-plan/schema';
-import { analyzeApproximation, hasExplicitColor, matchHouseApproximation } from '../../ai/referenceUnderstanding';
+import { analyzeApproximation, hasExplicitColor, matchReferenceApproximation } from '../../ai/referenceUnderstanding';
 import { editWorldByText } from '../../ai/worldEdit';
 import type { ShapeModel } from '../../ai/shapeLearner';
 import { useEditor } from '../store';
@@ -48,7 +48,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
     const isAdd = /^(?:اضف|اضيف|ضع|اصنع|انشئ|ابني|اعمل|صمم|add|ajoute|ajouter)\s/iu.test(text.trim().replace(/[أإآ]/g, 'ا'));
     const singleTopic = report.topics.length === 1 && !report.truncated ? report.topics[0] : undefined;
     // If the images are ambiguous, ask before using one instead of coloring a house from the first hit.
-    const match = isAdd && !(singleTopic && (singleTopic.images.length > 1 || singleTopic.imageNext != null) && planPhotoRequests(text, [singleTopic]).requests.length > 0) ? matchHouseApproximation(text, report) : null;
+    const match = isAdd && !(singleTopic && (singleTopic.images.length > 1 || (singleTopic.images.length > 0 && singleTopic.imageNext != null)) && planPhotoRequests(text, [singleTopic]).requests.length > 0) ? matchReferenceApproximation(text, report) : null;
     if (!match) {
       setResearch(report); setBusy(false);
       const photos = planPhotoRequests(text, report.topics);
@@ -72,7 +72,7 @@ export function TextEditPanel({ shapeModel }: { shapeModel: ShapeModel }) {
       const edit = editWorldByText(original.plan, original.selection, approximation.rewritten, shapeModel, !hasExplicitColor(text) ? approximation.color : undefined);
       dispatch({ type: 'replacePlan', plan: edit.plan });
       setResearch({ ...report, approximation: { ...approximation, applied: true, colorApplied: Boolean(approximation.color && !hasExplicitColor(text)) } });
-      setFeedback({ text: `أُضيف «${match.term}» كنموذج بيت تقريبي من ${match.sourceKind === 'dictionary' ? 'المعجم' : 'المقالة'}. ${edit.message} يمكنك التراجع من Undo.`, error: false });
+      setFeedback({ text: `أُضيف «${match.term}» كنموذج ${match.assetLabel ?? 'بيت'} تقريبي من ${match.sourceKind === 'dictionary' ? 'المعجم' : 'المقالة'}. ${edit.message} يمكنك التراجع من Undo.`, error: false });
       setCommand('');
     } catch (error) { setFeedback({ text: error instanceof Error ? error.message : 'تعذّر تطبيق التقريب؛ لم يتغير العالم.', error: true }); }
   };

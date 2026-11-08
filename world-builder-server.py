@@ -13,7 +13,7 @@ from house_learner import HouseLearner, good_thumb, good_source, plain, LICENSE_
 from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urlsplit, parse_qs
+from urllib.parse import quote, urlencode, urlsplit, parse_qs, urlunsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 MAX_REQUEST = 64 * 1024
@@ -57,12 +57,10 @@ def search_image_references(query, offset=0):
             if not license_url.endswith('/'):
                 license_url += '/'
         author = plain(meta('Artist'))
-        thumb = info.get('thumburl')
+        thumb = normalize_api_thumbnail(info.get('thumburl'))
         source = 'https://commons.wikimedia.org/wiki/' + quote(title.replace(' ', '_'), safe='/:_()-')
         if not isinstance(license_url, str) or not LICENSE_PATTERN.fullmatch(license_url): continue
-        if not good_source(source) or len(source) > 1200 or source in seen or not good_thumb(thumb) or len(thumb) > 1200: continue
-        # Only bounded Commons-generated 240px thumbnails, never an original upload.
-        if not thumb.startswith('https://upload.wikimedia.org/wikipedia/commons/thumb/') or '/240px-' not in thumb: continue
+        if not good_source(source) or len(source) > 1200 or source in seen or not thumb: continue
         if '/licenses/' in license_url and not author: continue
         seen.add(source)
         results.append({'title': title[:120], 'url': source, 'thumbnail': thumb,
@@ -111,10 +109,33 @@ def dictionary_definitions(word):
 
 
 def valid_thumbnail(url):
-    """Allow only bounded Wikimedia-generated Commons thumbnails, never arbitrary URLs."""
-    return (isinstance(url, str) and len(url) <= 1200 and good_thumb(url)
-            and url.startswith('https://upload.wikimedia.org/wikipedia/commons/thumb/')
-            and '/240px-' in url)
+    """Fixed Wikimedia hosts and small imageinfo thumbnail sizes only."""
+    try:
+        if not isinstance(url, str) or len(url) > 1200: return False
+        p = urlsplit(url)
+        if (p.scheme != 'https' or p.hostname not in ('upload.wikimedia.org', 'thumb.wikimedia.org')
+                or p.username or p.password or p.port is not None or p.query or p.fragment): return False
+        # Reject encoded path separators and traversal, even on a trusted host.
+        if re.search(r'%2f|%5c|%00|%2e|\\', p.path, re.I): return False
+        return bool(re.fullmatch(r'/wikipedia/commons/thumb/[0-9a-f]/[0-9a-f]{2}/[^/]+/(?:20|40|60|120|240|250)px-[^/]+', p.path, re.I))
+    except (TypeError, ValueError):
+        return False
+
+
+def normalize_api_thumbnail(url):
+    """Strip only MediaWiki's known tracking parameters, preserving its returned host/path/size."""
+    try:
+        if not isinstance(url, str) or len(url) > 1600: return None
+        p = urlsplit(url)
+        if p.fragment: return None
+        if p.query:
+            params = parse_qs(p.query, strict_parsing=True, max_num_fields=3, keep_blank_values=True)
+            allowed = {'utm_source': ['commons.wikimedia.org'], 'utm_campaign': ['imageinfo'], 'utm_content': ['thumbnail']}
+            if params != allowed: return None
+        canonical = urlunsplit((p.scheme, p.netloc, p.path, '', ''))
+        return canonical if valid_thumbnail(canonical) else None
+    except (ValueError, TypeError):
+        return None
 
 
 def analyze_reference_image(url):
@@ -188,7 +209,7 @@ def get_json(request, timeout):
 
 
 def get_image(request, timeout):
-    if not good_thumb(request.full_url):
+    if not good_thumb(request.full_url) and not valid_thumbnail(request.full_url):
         raise ValueError('untrusted image URL')
     with build_opener(NoRedirects()).open(request, timeout=timeout) as response:
         if response.headers.get_content_type() not in ('image/jpeg', 'image/png'):

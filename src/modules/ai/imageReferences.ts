@@ -7,7 +7,8 @@ function safeUrl(raw: string, kind: 'source' | 'thumbnail'): boolean {
     const u = new URL(raw);
     if (u.protocol !== 'https:' || u.username || u.password || u.port || u.search || u.hash) return false;
     if (kind === 'source') return u.hostname === 'commons.wikimedia.org' && u.pathname.startsWith('/wiki/File:');
-    return u.hostname === 'upload.wikimedia.org' && u.pathname.startsWith('/wikipedia/commons/thumb/') && u.pathname.includes('/240px-');
+    if (!['upload.wikimedia.org', 'thumb.wikimedia.org'].includes(u.hostname) || /%2f|%5c|%00|%2e|\\/i.test(u.pathname)) return false;
+    return /^\/wikipedia\/commons\/thumb\/[0-9a-f]\/[0-9a-f]{2}\/[^/]+\/(?:20|40|60|120|240|250)px-[^/]+$/i.test(u.pathname);
   } catch { return false; }
 }
 export const imageReferenceSchema = z.object({
