@@ -17,6 +17,7 @@ export function ReferenceSceneWorkflow({prompt,basePlan,mode,canApply,onCancel,o
   const [searchBusy,setSearchBusy]=useState(false), [error,setError]=useState('');
   const [chosen,setChosen]=useState<{file:File;reference?:ImageReference}|null>(null);
   const [articles,setArticles]=useState<WikiArticle[]>([]), [article,setArticle]=useState<WikiArticle|null>(null);
+  const [autoBuilt,setAutoBuilt]=useState(false);
   const [wikiBusy,setWikiBusy]=useState(false), [wikiReady,setWikiReady]=useState(false), [annotating,setAnnotating]=useState(false);
   const controller=useRef<AbortController|null>(null), sequence=useRef(0), activeQuery=useRef(query);
   const begin=()=>{controller.current?.abort();const current=new AbortController();controller.current=current;return {signal:current.signal,id:++sequence.current};};
@@ -61,7 +62,7 @@ export function ReferenceSceneWorkflow({prompt,basePlan,mode,canApply,onCancel,o
   };
   return <section className="wiki-library" dir="rtl" aria-label="إنشاء أو تعديل باستخدام صورة مرجعية">
     <strong>{mode==='create'?'إنشاء العالم':'تعديل العالم'} من الوصف والصورة</strong>
-    <p>اختر صورة أولاً، ثم مقالة مناسبة. الكلمات المقترحة من المقالة لا تثبت وجودها في الصورة؛ ستحدد العناصر بنفسك. لا يحدث أي تغيير قبل التأكيد.</p>
+    <p>اختر صورة أولاً، ثم مقالة مناسبة. يمكن تحليل الصورة والبحث عن الفئات المكتشفة وبناؤها تلقائياً، أو تحديد العناصر يدوياً. المقترحات من المقالة لا تثبت وجودها في الصورة.</p>
     {!chosen && <>
       <label className="field"><span>موضوع البحث عن الصور (يمكن تعديله)</span><input aria-label="موضوع البحث عن صور المشهد" value={query} maxLength={400} onChange={(event)=>setQuery(event.target.value)} /></label>
       <button type="button" className="btn btn-small" disabled={searchBusy} onClick={()=>void search(0,query)}>البحث عن صور</button>
@@ -76,10 +77,10 @@ export function ReferenceSceneWorkflow({prompt,basePlan,mode,canApply,onCancel,o
       {wikiBusy && <p role="status">أبحث عن مقالة ويكيبيديا أو أقرأ مقدمتها…</p>}
       {wikiReady && <><p>اختر مقالة مناسبة لقراءة مقدمتها؛ ليست كل نتيجة مطابقة:</p>{articles.map((item)=><div key={item.url}><button type="button" className="btn btn-small" disabled={wikiBusy} onClick={()=>void chooseArticle(item)}>اقرأ {item.title}</button><p>{item.content}</p></div>)}{!articles.length && <p>لم تظهر مقالات؛ يمكنك المتابعة دون مقالة.</p>}
       {article && <div><p>المقالة المختارة: <a href={article.url} target="_blank" rel="noopener noreferrer">{article.title} ↗</a></p><p>{article.content}</p></div>}
-      <button type="button" className="btn btn-primary" disabled={wikiBusy} onClick={()=>setAnnotating(true)}>{article?'متابعة لتحديد العناصر':'متابعة دون مقالة'}</button></>}
+      <button type="button" className="btn btn-primary" disabled={wikiBusy} onClick={()=>setAnnotating(true)}>{article?'متابعة إلى تحليل الصورة':'متابعة دون مقالة'}</button></>}
     </>}
-    {annotating && chosen && <ImageSceneStudio embedded initialDescription={prompt} articleText={article?.content??''} initialFile={chosen.file} reference={chosen.reference} mode={mode} basePlan={basePlan} canApply={canApply} onApplied={onApplied} onOpenStudio={onOpenStudio}/>}
+    {annotating && chosen && <ImageSceneStudio embedded initialDescription={prompt} articleText={article?.content??''} initialFile={chosen.file} reference={chosen.reference} mode={mode} basePlan={basePlan} canApply={canApply} onApplied={onApplied} onAutoBuilt={()=>setAutoBuilt(true)} onOpenStudio={onOpenStudio}/>}
     {error && <p role="alert" className="online-error">{error}</p>}
-    <button type="button" className="btn btn-small" onClick={onCancel}>إلغاء واختيار أمر آخر</button>
+    <button type="button" className="btn btn-small" onClick={onCancel}>{autoBuilt?'إغلاق التقرير (تراجع بـ Undo لإلغاء البناء)':'إلغاء واختيار أمر آخر'}</button>
   </section>;
 }

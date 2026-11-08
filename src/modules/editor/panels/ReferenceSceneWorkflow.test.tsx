@@ -40,7 +40,7 @@ async function findArticle(){
   fireEvent.click(screen.getByRole('button',{name:'اقرأ غابات الأمازون'}));
   expect(await screen.findByText('المقالة المختارة:',{exact:false})).toBeTruthy();
   expect(requests[3]).toBe('/api/wiki-article');
-  fireEvent.click(screen.getByRole('button',{name:'متابعة لتحديد العناصر'}));
+  fireEvent.click(screen.getByRole('button',{name:'متابعة إلى تحليل الصورة'}));
   return screen.findByLabelText('صورة المشهد لتحديد مواقع العناصر');
 }
 describe('integrated reference workflow',()=>{

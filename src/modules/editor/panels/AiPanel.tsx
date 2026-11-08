@@ -291,8 +291,8 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio, a
         {generating ? <span className="spinner small" /> : <Icon name="sparkles" size={17} />}
         {generating ? 'جاري تحليل الوصف وبناء العالم…' : 'أنشئ العالم'} <span className="generate-arrow">←</span>
       </button>
-      <p className="generate-caption" dir="rtl">✦ يتطلب الإنترنت وخادم الهاتف في Termux، دون تنزيل نموذج كبير</p>
-      {referenceFlow && <ReferenceSceneWorkflow key={referenceFlow.id} prompt={referenceFlow.prompt} basePlan={referenceFlow.plan} mode="create" canApply={()=>currentPrompt.current.trim()===referenceFlow.prompt} onCancel={()=>setReferenceFlow(null)} onApplied={()=>{setReferenceFlow(null);notify('أُنشئ المشهد من العناصر المحددة؛ يمكن التراجع بـ Undo.','success');}} onOpenStudio={onOpenStudio}/>}
+      <p className="generate-caption" dir="rtl">✦ يتطلب الإنترنت وخادم الهاتف؛ تحليل الصورة التلقائي يحتاج نموذجاً اختيارياً</p>
+      {referenceFlow && <ReferenceSceneWorkflow key={referenceFlow.id} prompt={referenceFlow.prompt} basePlan={referenceFlow.plan} mode="create" canApply={()=>currentPrompt.current.trim()===referenceFlow.prompt} onCancel={()=>setReferenceFlow(null)} onApplied={()=>{setReferenceFlow(null);notify('أُنشئ المشهد؛ يمكن التراجع بـ Undo.','success');}} onOpenStudio={onOpenStudio}/>}
       {result && (
         <div className="ai-result">
           <div className="ai-result-head">

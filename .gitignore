@@ -32,3 +32,6 @@ wiki-map-learning.json.tmp
 # Local house image learning statistics.
 house-image-learning.json
 house-image-learning.json.tmp
+
+# Optional downloaded vision model and WASM runtime.
+vision/

@@ -2,6 +2,8 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
 const apiProxy = {
+  '/vision-worker.js': { target: 'http://127.0.0.1:8080', changeOrigin: true },
+  '/vision': { target: 'http://127.0.0.1:8080', changeOrigin: true },
   '/api': { target: 'http://127.0.0.1:8080', changeOrigin: true, headers: { origin: 'http://127.0.0.1:8080' } },
 };
 
