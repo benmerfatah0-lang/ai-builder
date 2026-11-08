@@ -78,6 +78,32 @@ class PhoneServerTests(unittest.TestCase):
         self.assertTrue(upstream.call_args.args[0].full_url.startswith('https://ar.wikipedia.org/'))
 
     @patch.object(phone_server, 'get_json')
+    def test_commons_image_search_restricts_types_sources_and_licenses(self, upstream):
+        info = {'mime': 'image/jpeg', 'thumburl': 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Castle.jpg/240px-Castle.jpg',
+                'extmetadata': {'LicenseUrl': {'value': 'http://creativecommons.org/licenses/by-sa/4.0/'},
+                                'Artist': {'value': '<b>Alice</b>'}, 'LicenseShortName': {'value': 'misleading'}}}
+        import copy
+        good = {'title': 'File:Castle.jpg', 'imageinfo': [info]}
+        bad_license = copy.deepcopy(good); bad_license['title'] = 'File:Bad.jpg'; bad_license['imageinfo'][0]['extmetadata']['LicenseUrl']['value'] = 'https://evil.example/license'
+        bad_thumb = copy.deepcopy(good); bad_thumb['title'] = 'File:Bad2.jpg'; bad_thumb['imageinfo'][0]['thumburl'] = 'https://evil.example/wikipedia/commons/thumb/a/240px-x.jpg'
+        no_author = copy.deepcopy(good); no_author['title'] = 'File:NoAuthor.jpg'; no_author['imageinfo'][0]['extmetadata']['Artist']['value'] = ''
+        wrong_mime = copy.deepcopy(good); wrong_mime['title'] = 'File:Vector.svg'; wrong_mime['imageinfo'][0]['mime'] = 'image/svg+xml'
+        original = copy.deepcopy(good); original['title'] = 'File:Original.jpg'; original['imageinfo'][0]['thumburl'] = 'https://upload.wikimedia.org/wikipedia/commons/a/a1/Original.jpg'
+        cc0 = copy.deepcopy(no_author); cc0['title'] = 'File:CC0.jpg'; cc0['imageinfo'][0]['extmetadata']['LicenseUrl']['value'] = 'https://creativecommons.org/publicdomain/zero/1.0/'
+        upstream.return_value = {'query': {'pages': [good, bad_license, bad_thumb, no_author, wrong_mime, original, cc0]}}
+        status, body = self.request('/api/image-search', body=json.dumps({'query': 'قلعة'}).encode())
+        self.assertEqual(status, 200)
+        self.assertTrue(upstream.call_args.args[0].full_url.startswith(phone_server.COMMONS_API))
+        result = json.loads(body)['results']
+        self.assertEqual([x['title'] for x in result], ['File:Castle.jpg', 'File:CC0.jpg'])
+        self.assertEqual(result[0]['author'], 'Alice')
+        self.assertEqual(result[0]['license_name'], 'CC BY-SA 4.0')
+        self.assertEqual(result[0]['license_url'], 'https://creativecommons.org/licenses/by-sa/4.0/')
+        self.assertEqual(result[1]['license_name'], 'CC0')
+        self.assertEqual(self.request('/api/image-search', body=b'{"query":""}')[0], 400)
+        self.assertEqual(self.request('/api/image-search', origin='https://evil.example')[0], 403)
+
+    @patch.object(phone_server, 'get_json')
     def test_rejects_cross_origin_host_wrong_type_and_bad_routes(self, upstream):
         self.assertEqual(self.request('/api/online', origin='https://evil.example')[0], 403)
         self.assertEqual(self.request('/api/house-learning', origin='https://evil.example')[0], 403)
@@ -92,7 +118,7 @@ class PhoneServerTests(unittest.TestCase):
 
     @patch.object(phone_server, 'get_json', side_effect=URLError('secret network error'))
     def test_no_silent_network_fallback_or_secret_leak(self, upstream):
-        for path in ('/api/online', '/api/search'):
+        for path in ('/api/online', '/api/search', '/api/image-search'):
             status, body = self.request(path)
             self.assertEqual(status, 502)
             self.assertNotIn(b'secret', body)

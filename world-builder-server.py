@@ -7,7 +7,7 @@ import re
 import sys
 from functools import partial
 from wiki_learner import WikiLearner
-from house_learner import HouseLearner, good_thumb
+from house_learner import HouseLearner, good_thumb, good_source, plain, LICENSE_PATTERN
 from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.error import HTTPError, URLError
@@ -18,6 +18,48 @@ MAX_REQUEST = 64 * 1024
 MAX_RESPONSE = 2 * 1024 * 1024
 USER_AGENT = 'AIWorldBuilder/1.0 (https://github.com/benmerfatah0-lang/ai-builder)'
 ONLINE_URL = 'https://ar.wikipedia.org/w/api.php?action=query&meta=siteinfo&siprop=general&format=json'
+COMMONS_API = 'https://commons.wikimedia.org/w/api.php?'
+
+
+def search_image_references(query):
+    # Never accept a URL from the client; the sole upstream is the fixed Commons API.
+    params = urlencode({'action': 'query', 'format': 'json', 'formatversion': 2,
+                        'generator': 'search', 'gsrnamespace': 6, 'gsrlimit': 15,
+                        'gsrsearch': query + ' filetype:bitmap', 'prop': 'imageinfo',
+                        'iiprop': 'url|mime|extmetadata', 'iiurlwidth': 240})
+    data = get_json(Request(COMMONS_API + params, headers={'User-Agent': USER_AGENT}), timeout=25)
+    if not isinstance(data, dict) or 'error' in data or not isinstance(data.get('query', {}), dict):
+        raise ValueError('invalid Commons response')
+    pages = data.get('query', {}).get('pages', [])
+    if not isinstance(pages, list): raise ValueError('invalid Commons pages')
+    results, seen = [], set()
+    for page in pages[:15]:
+        if not isinstance(page, dict): continue
+        title, infos = page.get('title'), page.get('imageinfo')
+        if not isinstance(title, str) or not title.startswith('File:') or not isinstance(infos, list) or not infos or not isinstance(infos[0], dict): continue
+        info = infos[0]
+        if info.get('mime') not in ('image/jpeg', 'image/png'): continue
+        metadata = info.get('extmetadata')
+        if not isinstance(metadata, dict): continue
+        def meta(key):
+            entry = metadata.get(key)
+            return entry.get('value', '') if isinstance(entry, dict) else ''
+        license_url = meta('LicenseUrl')
+        author = plain(meta('Artist'))
+        thumb = info.get('thumburl')
+        source = 'https://commons.wikimedia.org/wiki/' + quote(title.replace(' ', '_'), safe='/:_()-')
+        if not isinstance(license_url, str) or not LICENSE_PATTERN.fullmatch(license_url): continue
+        if not good_source(source) or len(source) > 1200 or source in seen or not good_thumb(thumb) or len(thumb) > 1200: continue
+        # Only bounded Commons-generated 240px thumbnails, never an original upload.
+        if not thumb.startswith('https://upload.wikimedia.org/wikipedia/commons/thumb/') or '/240px-' not in thumb: continue
+        if '/licenses/' in license_url and not author: continue
+        seen.add(source)
+        results.append({'title': title[:120], 'url': source, 'thumbnail': thumb,
+                        'author': author or 'Not specified', 'license_url': license_url.replace('http://', 'https://', 1),
+                        'license_name': ('CC0' if '/publicdomain/zero/' in license_url else 'CC ' + ('BY-SA' if '/by-sa/' in license_url else 'BY') + ' ' + license_url.rstrip('/').split('/')[-1])})
+        if len(results) == 8: break
+    return results
+
 
 
 class NoRedirects(HTTPRedirectHandler):
@@ -95,7 +137,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.valid_host() or self.headers.get('Origin', '') != f'http://{host}':
             self.api_result(403, {'error': 'invalid origin'})
             return
-        if self.path not in ('/api/online', '/api/search', '/api/knowledge', '/api/house-learning'):
+        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/knowledge', '/api/house-learning'):
             self.api_result(404, {'error': 'unknown endpoint'})
             return
         if self.headers.get_content_type() != 'application/json':
@@ -127,6 +169,9 @@ class Handler(SimpleHTTPRequestHandler):
             query = payload.get('query')
             if not isinstance(query, str) or not query.strip() or len(query) > 400:
                 self.api_result(400, {'error': 'invalid query'})
+                return
+            if self.path == '/api/image-search':
+                self.api_result(200, {'results': search_image_references(query.strip())})
                 return
             language = 'ar' if re.search(r'[\u0600-\u06ff]', query) else 'en'
             hostname = f'{language}.wikipedia.org'

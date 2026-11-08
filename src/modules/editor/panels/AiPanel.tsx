@@ -11,6 +11,8 @@ import { Icon } from '../../../ui/Icon';
 import { NumberField, SelectField } from '../../../ui/controls';
 import { TextEditPanel } from './TextEditPanel';
 import { WikiLibraryPanel } from './WikiLibraryPanel';
+import { ImageReferencePanel } from './ImageReferencePanel';
+import { findAssetMentions, normalizeAssetText } from '../../ai/assetRequests';
 import { applySavedWikiArticle, type WikiArticle } from '../../ai/wikiLibrary';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
 
@@ -40,6 +42,8 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   });
   const [searchWikipedia, setSearchWikipedia] = useState(false);
   const [selectedWiki, setSelectedWiki] = useState<WikiArticle | null>(null);
+  const [autoImageSearch, setAutoImageSearch] = useState(false);
+  const [imageRequest, setImageRequest] = useState<{ id: number; query: string } | null>(null);
   const [trainingMessage, setTrainingMessage] = useState('');
   const learnSelected = () => {
     try {
@@ -108,6 +112,9 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
           'لم يُستخدم تدريب الأشكال لهذا الوصف؛ جرّب وصفاً مثل: بيت وشجرة وصخرة. المزارع تحتفظ بقالبها الخاص.',
         ].slice(0, 12));
       setStats({ objects: report.plan.objects.length, groups: report.plan.groups.length });
+      if (autoImageSearch && findAssetMentions(normalizeAssetText(text)).length === 0) {
+        setImageRequest((previous) => ({ id: (previous?.id ?? 0) + 1, query: text }));
+      }
       notify(
         report.warnings.length > 0
           ? `World generated with ${report.warnings.length} warning(s). Undo restores the previous world.`
@@ -161,6 +168,8 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         <label><input type="checkbox" checked={searchWikipedia} onChange={(event) => setSearchWikipedia(event.target.checked)} /> ابحث في ويكيبيديا عن هذا الوصف</label>
       </div>
       <WikiLibraryPanel selected={selectedWiki} onSelect={setSelectedWiki} />
+      <div className="forge-search" dir="rtl"><label><input type="checkbox" checked={autoImageSearch} onChange={(event) => setAutoImageSearch(event.target.checked)} /> بعد الإنشاء، اعرض صوراً تلقائياً إذا لم أتعرف على أي اسم عنصر (يُرسل الوصف إلى Commons؛ لا تُحلَّل الصور)</label></div>
+      <ImageReferencePanel autoRequest={imageRequest} />
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
 
       <button
@@ -301,7 +310,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       <div className="online-settings" dir="rtl">
         <div className="online-heading"><span className="online-dot" /> المساعد الخفيف + ويكيبيديا</div>
         <p>يفهم كلمات محدودة ويصنع أشكالاً إجرائية للبيوت والأشجار عريضة الأوراق والصخور المستديرة. ليس نموذج لغة أو مولّد نماذج عام. يحتاج اتصالاً بالإنترنت قبل كل إنشاء.</p>
-        <p>يمكنه البحث أيضاً عند ذكر «ابحث» أو «ويكيبيديا». يقرأ كلمات محدودة من النتائج لتقدير البيئة فقط؛ البحث بحسب الوصف يقتصر على ويكيبيديا؛ تدريب صور البيوت يبحث في Wikimedia Commons.</p>
+        <p>يمكنه البحث أيضاً عند ذكر «ابحث» أو «ويكيبيديا». يقرأ كلمات محدودة من النتائج لتقدير البيئة فقط؛ بحث المقالات يقتصر على ويكيبيديا؛ مكتبة الصور وتدريب صور البيوت يستخدمان Wikimedia Commons.</p>
       </div>
       <div className="online-settings" dir="rtl">
         <div className="online-heading">التعلّم التلقائي من ويكيبيديا</div>

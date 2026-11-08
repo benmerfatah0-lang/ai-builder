@@ -1,21 +1,22 @@
 import { z } from 'zod';
+import { imageReferenceSchema, type ImageReference } from './imageReferences';
 import { parseHouseKnowledge } from './houseKnowledge';
 import { safeWikiUrl, type WikiArticle } from './wikiLibrary';
 import { applyWikiKnowledge, summarizeKnowledge } from './wikiKnowledge';
 import { interpretPromptLocally } from './promptInterpreter';
 import type { InterpretOptions, PromptInterpretation } from './types';
 
-/** Wikipedia is the only network source; all planning is rule-based on-device. */
+/** The phone server mediates Wikipedia and Commons requests; planning remains local and rule-based. */
 async function postJSON(path: string, body: object): Promise<unknown> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45000);
   try {
     const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal });
     if (!response.ok) {
-      if ((response.status === 404 || response.status === 501) && response.headers.get('X-World-Builder-Proxy') !== '1') {
+      if ((response.status === 404 || response.status === 501) && (path === '/api/image-search' || response.headers.get('X-World-Builder-Proxy') !== '1')) {
         throw new Error('شغّل خادم الهاتف الجديد world-builder-server.py بدلاً من الخادم القديم.');
       }
-      throw new Error('تعذّر الاتصال بويكيبيديا. تحقّق من الإنترنت ثم حاول مجدداً.');
+      throw new Error(path === '/api/image-search' ? 'تعذّر البحث في Wikimedia Commons. تحقّق من الإنترنت ثم حاول مجدداً.' : 'تعذّر الاتصال بويكيبيديا. تحقّق من الإنترنت ثم حاول مجدداً.');
     }
     return await response.json();
   } catch (error) {
@@ -33,6 +34,17 @@ export async function searchWikiArticles(query: string): Promise<WikiArticle[]> 
   if (!parsed.success) throw new Error('استجابت ويكيبيديا ببيانات بحث غير صالحة.');
   return parsed.data.results.filter((item) => item.title.trim() && safeWikiUrl(item.url)).slice(0, 4)
     .map((item) => ({ title: item.title.slice(0, 120), url: item.url, content: item.content.slice(0, 1200) }));
+}
+
+/** Search Commons without downloading originals or accepting arbitrary client URLs. */
+export async function searchImageReferences(query: string): Promise<ImageReference[]> {
+  const clean = query.trim();
+  if (!clean || clean.length > 400) throw new Error('اكتب موضوعاً للصور لا يتجاوز 400 حرف.');
+  const raw = await postJSON('/api/image-search', { query: clean });
+  const schema = z.object({ results: z.array(imageReferenceSchema.omit({ query: true })).max(8) });
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) throw new Error('استجاب مصدر الصور ببيانات غير صالحة.');
+  return parsed.data.results.map((result) => ({ ...result, query: clean })).filter((image, index, all) => all.findIndex((item) => item.url === image.url) === index);
 }
 
 export async function interpretOnline(prompt: string, options: InterpretOptions = {}, forceSearch = false): Promise<PromptInterpretation> {

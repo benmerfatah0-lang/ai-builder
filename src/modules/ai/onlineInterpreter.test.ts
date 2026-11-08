@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { interpretOnline, searchWikiArticles } from './onlineInterpreter';
+import { interpretOnline, searchImageReferences, searchWikiArticles } from './onlineInterpreter';
 const emptyKnowledge = { version: 1, cursor: 0, status: 'starting', classes: {
   desert: { docs: 0, tokens: {} }, forest: { docs: 0, tokens: {} }, mountains: { docs: 0, tokens: {} }, island: { docs: 0, tokens: {} },
 }, sources: [] };
@@ -18,6 +18,15 @@ describe('lightweight local planning and Wikipedia', () => {
     expect(articles).toHaveLength(1);
     expect(articles[0]!.content).toHaveLength(1200);
     await expect(searchWikiArticles('')).rejects.toThrow();
+  });
+  it('validates image search responses and reports an old phone server', async () => {
+    const mock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ results: [{
+      title: 'File:X.jpg', url: 'https://commons.wikimedia.org/wiki/File:X.jpg',
+      thumbnail: 'https://evil.example/x.jpg', author: 'a', license_name: 'CC BY 4.0', license_url: 'https://creativecommons.org/licenses/by/4.0/',
+    }] }))).mockResolvedValueOnce(new Response('', { status: 404, headers: { 'X-World-Builder-Proxy': '1' } }));
+    vi.stubGlobal('fetch', mock);
+    await expect(searchImageReferences('x')).rejects.toThrow('بيانات غير صالحة');
+    await expect(searchImageReferences('x')).rejects.toThrow('خادم الهاتف الجديد');
   });
   it('requires internet, reads the learning state, and uses no LLM', async () => {
     const mock = vi.fn().mockResolvedValueOnce(new Response('{"online":true}')).mockResolvedValueOnce(knowledge()).mockResolvedValueOnce(house());
