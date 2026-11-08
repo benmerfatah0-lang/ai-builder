@@ -53,6 +53,33 @@ class PhoneServerTests(unittest.TestCase):
         self.assertEqual(self.request('/model.gguf', method='GET')[0], 404)
         self.assertEqual(self.request('/world-builder-mobile.html', host='evil.example', method='GET')[0], 404)
 
+    def test_vision_files_are_explicitly_allowlisted_with_correct_mime_types(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as directory:
+            for path in phone_server.VISION_FILES:
+                file = Path(directory) / path.lstrip('/')
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_bytes(b'local model')
+            with patch.object(phone_server.Handler, 'translate_path', side_effect=lambda path: str(Path(directory) / path.lstrip('/'))):
+                port = self.server.server_address[1]
+                for path, mime in [('/vision-worker.js','text/javascript'),
+                    ('/vision/ort.wasm.min.js','text/javascript'),
+                    ('/vision/ort-wasm-simd-threaded.mjs','text/javascript'),
+                    ('/vision/ort-wasm-simd-threaded.wasm','application/wasm'),
+                    ('/vision/scene.onnx','application/octet-stream')]:
+                    conn=http.client.HTTPConnection('127.0.0.1',port,timeout=5)
+                    conn.request('GET',path,headers={'Host':f'127.0.0.1:{port}'})
+                    response=conn.getresponse()
+                    self.assertEqual(response.status,200,path)
+                    self.assertEqual(response.getheader('Content-Type'),mime,path)
+                    self.assertEqual(response.read(),b'local model')
+                    conn.close()
+                    self.assertEqual(self.request(path,host='evil.example',method='GET')[0],404)
+                    self.assertEqual(self.request(path+'?x=1',method='GET')[0],404)
+                for path in ['/vision/', '/vision/secret', '/vision/../world-builder-server.py', '/vision-setup.py']:
+                    self.assertEqual(self.request(path,method='GET')[0],404,path)
+
     @patch.object(phone_server, 'get_image')
     def test_thumbnail_proxy_validates_origin_url_format_size_and_does_not_redirect(self, upstream):
         from urllib.parse import urlencode

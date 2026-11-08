@@ -220,7 +220,18 @@ def get_image(request, timeout):
         return body
 
 
+VISION_FILES = frozenset({
+    '/vision-worker.js', '/vision/scene.onnx', '/vision/ort.wasm.min.js',
+    '/vision/ort-wasm-simd-threaded.mjs', '/vision/ort-wasm-simd-threaded.wasm',
+})
+STATIC_FILES = VISION_FILES | {'/world-builder-mobile.html'}
+
+
 class Handler(SimpleHTTPRequestHandler):
+    # Android Python installations can have an incomplete MIME database.
+    extensions_map = {**SimpleHTTPRequestHandler.extensions_map, '.js': 'text/javascript',
+                      '.mjs': 'text/javascript', '.wasm': 'application/wasm',
+                      '.onnx': 'application/octet-stream'}
     def log_message(self, format, *args):
         # Prompts and URLs may contain personal data; do not log requests.
         pass
@@ -282,13 +293,13 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(raw)
             return
-        if self.path != '/world-builder-mobile.html':
+        if self.path not in STATIC_FILES:
             self.send_error(404)
             return
         super().do_GET()
 
     def do_HEAD(self):
-        if not self.valid_host() or self.path != '/world-builder-mobile.html':
+        if not self.valid_host() or self.path not in STATIC_FILES:
             self.send_error(404)
             return
         super().do_HEAD()
