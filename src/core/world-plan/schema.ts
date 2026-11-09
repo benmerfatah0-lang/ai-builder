@@ -91,6 +91,8 @@ export const terrainSchema = z.object({
   heightScale: z.number().finite().min(0).max(200),
   /** Absolute Y of the water surface, or null for no water. */
   waterLevel: z.number().finite().min(-200).max(200).nullable(),
+  /** Optional depression in an otherwise flat terrain, for a local water body. */
+  lakeBasin: z.object({ x:z.number().finite().min(-256).max(256), z:z.number().finite().min(-256).max(256), radius:z.number().finite().min(1).max(256), depth:z.number().finite().min(0.1).max(50) }).strict().optional(),
   /** Vertex-color ramp used by the renderer and future exporters. */
   palette: z.object({
     low: hexColorSchema,

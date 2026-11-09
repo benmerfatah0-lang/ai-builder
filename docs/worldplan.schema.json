@@ -135,6 +135,38 @@
             }
           ]
         },
+        "lakeBasin": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number",
+              "minimum": -256,
+              "maximum": 256
+            },
+            "z": {
+              "type": "number",
+              "minimum": -256,
+              "maximum": 256
+            },
+            "radius": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 256
+            },
+            "depth": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 50
+            }
+          },
+          "required": [
+            "x",
+            "z",
+            "radius",
+            "depth"
+          ],
+          "additionalProperties": false
+        },
         "palette": {
           "type": "object",
           "properties": {

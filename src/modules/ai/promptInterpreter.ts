@@ -356,8 +356,9 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
     (/(?:نهر(?:ا)?|النهر)\s+(?:(?:يمر|يمتد)\s+)?(?:(?:في|عبر)\s+)?(?:وسط|منتصف)\s+(?:ال)?(?:قريه|قرية)/u.test(normalized) ||
      /(?:قريه|قرية).*?(?:نهر(?:ا)?|النهر)\s+(?:يمر|يمتد)\s+(?:في\s+)?(?:وسطها|منتصفها)/u.test(normalized) ||
      /\briver\b.{0,40}\bthrough\s+(?:the\s+)?(?:center\s+of\s+|centre\s+of\s+)?(?:the\s+)?village\b/u.test(normalized));
-  const positiveLandform = normalized.replace(/(?:بدون|بلا|دون|لا|\bwithout|\bno)\s+(?:(?:a|the)\s+|ال)?(?:وادي|واد|هضبه|هضبة|اخدود|بركان|فوهه(?:\s+بركاني(?:ه|ة)?)?|فوهة(?:\s+بركاني(?:ه|ة)?)?|valley|plateau|canyon|volcano|crater)(?![\p{L}])/gu, ' ');
+  const positiveLandform = normalized.replace(/(?:بدون|بلا|دون|لا|\bwithout|\bno)\s+(?:(?:a|the)\s+|ال)?(?:وادي|واد|هضبه|هضبة|اخدود|بركان|مسطح(?:ه|ة)?|فوهه(?:\s+بركاني(?:ه|ة)?)?|فوهة(?:\s+بركاني(?:ه|ة)?)?|valley|plateau|canyon|volcano|crater|flat)(?![\p{L}])/gu, ' ');
   const landforms: [RegExp, TerrainStyle][] = [
+    [/مسطح|مستوي|مستوية|\bflat\b/u, 'flat'],
     [/فوهه|فوهة|\bcrater\b/u, 'crater'], [/بركان|بركاني|\bvolcano\b|\bvolcanic\b/u, 'volcano'],
     [/اخدود|\bcanyon\b/u, 'canyon'], [/هضبه|هضبة|\bplateau\b/u, 'plateau'],
     [/وادي|\bvalley\b/u, 'valley'],

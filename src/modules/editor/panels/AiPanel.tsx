@@ -7,14 +7,14 @@ import { useEditor } from '../store';
 import { Icon } from '../../../ui/Icon';
 import { NumberField, SelectField } from '../../../ui/controls';
 import { TextEditPanel } from './TextEditPanel';
-import { ReferenceSceneWorkflow } from './ReferenceSceneWorkflow';
 import { type WorldPlan } from '../../../core/world-plan/schema';
 import { correctBuildSpelling } from '../../ai/spelling';
 import { unknownTopics } from '../../ai/unknownResearch';
-import { CloudWorldComposer } from './CloudWorldComposer';
 import { LibraryWorldComposer } from './LibraryWorldComposer';
-import { textToCloudItems, type CloudWorldItem } from '../../ai/cloudWorld';
-import { generatedGlbToWorld, requestGeneratedGlb } from '../../ai/generatedMesh';
+import { cloudWorldShell, MAX_CLOUD_OBJECTS, type CloudWorldItem } from '../../ai/cloudWorld';
+import { textWorldItems, imageWorldParts, mergeWorldItems, terrainDescription } from '../../ai/unifiedWorld';
+import { localSceneVision } from '../../ai/localVision';
+import { loadVisionImage } from '../../ai/visionImage';
 import { interpretPromptLocally } from '../../ai/promptInterpreter';
 import { seedFromPrompt } from '../../../core/world-plan/factory';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
@@ -66,56 +66,62 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   const [prompt, setPrompt] = useState('');
   const currentPrompt = useRef(prompt); currentPrompt.current = prompt;
   const [worldName, setWorldName] = useState('');
-  const [referenceFlow,setReferenceFlow]=useState<{prompt:string;plan:WorldPlan;id:number}|null>(null);
-  const referenceSequence=useRef(0);
+  const [imageFile,setImageFile]=useState<File|null>(null);
+  const imageInput=useRef<HTMLInputElement|null>(null);
+  const currentImage=useRef(imageFile);currentImage.current=imageFile;
+  const [localOnly,setLocalOnly]=useState(false);
   const [seed, setSeed] = useState<number | null>(null);
   const [style, setStyle] = useState<WorldStyle | 'auto'>('auto');
   const [scale, setScale] = useState<WorldScale | 'auto'>('auto');
   const [density, setDensity] = useState<WorldDensity | 'auto'>('auto');
   const [generating, setGenerating] = useState(false);
-  const [cloudRunning, setCloudRunning] = useState(false);
   const [batchBusy, setBatchBusy] = useState(false);
-  const [cloudDraft, setCloudDraft] = useState<{items:CloudWorldItem[];prompt:string;plan:WorldPlan;id:number}|null>(null);
-  const cloudDraftId=useRef(0);
-  const [libraryDraft,setLibraryDraft]=useState<{items:CloudWorldItem[];prompt:string;plan:WorldPlan;id:number}|null>(null);
+  const [libraryDraft,setLibraryDraft]=useState<{items:CloudWorldItem[];prompt:string;plan:WorldPlan;shell:WorldPlan;file:File|null;id:number}|null>(null);
   const libraryDraftId=useRef(0);
-  const [cloudResult, setCloudResult] = useState(false);
   const cloudController = useRef<AbortController | null>(null);
   useEffect(() => () => cloudController.current?.abort(), []);
   const [result, setResult] = useState<PromptInterpretation | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
   const [stats, setStats] = useState<{ objects: number; groups: number } | null>(null);
   const [generationError, setGenerationError] = useState('');
-  const generateCloud = async () => {
-    const text = prompt.trim();
-    if (!text || generating || batchBusy || text.length > 400) return;
-    const originalPlan = state.plan;
-    const controller = new AbortController(); cloudController.current = controller;
-    const timer = window.setTimeout(() => controller.abort(), 600_000);
-    setReferenceFlow(null); setResult(null); setCloudResult(false); setNotes([]); setStats(null); setGenerationError(''); setGenerating(true); setCloudRunning(true);
+  const generateUnified = async () => {
+    const text=prompt.trim(), file=imageFile;
+    if ((!text && !file) || generating || batchBusy) return;
+    if(localOnly && !file){void generate();return;}
+    if(text.length>400){setGenerationError('الحد الأقصى للوصف في هذا المسار 400 حرف.');return;}
+    const original=state.plan,controller=new AbortController();cloudController.current=controller;
+    setGenerationError('');setResult(null);setNotes([]);setStats(null);setLibraryDraft(null);setGenerating(true);
+    let release:(()=>void)|undefined;
     try {
-      const glb = await requestGeneratedGlb(text, controller.signal);
-      if (!alive.current || controller.signal.aborted || currentPlan.current !== originalPlan || currentPrompt.current.trim() !== text) throw new Error('تغيّر العالم أو الوصف؛ لم يُنشأ شيء.');
-      const plan = await generatedGlbToWorld(glb, text, variant === 'forge' ? worldName : undefined);
-      if (!alive.current || controller.signal.aborted || currentPlan.current !== originalPlan || currentPrompt.current.trim() !== text) throw new Error('تغيّر العالم أو الوصف؛ لم يُنشأ شيء.');
-      dispatch({type:'replacePlan',plan});
-      dispatch({type:'select',ids:[plan.objects[0]!.id]});
-      setCloudResult(true); notify('أُنشئ مجسم جديد؛ يمكن التراجع عنه.', 'success');
-    } catch (error) {
-      if (alive.current) {
-        const message = controller.signal.aborted ? 'توقف الانتظار؛ قد يستمر الطلب على الخادم السحابي حتى ينتهي.' : error instanceof Error ? error.message : 'تعذّر التوليد السحابي.';
-        setGenerationError(message); notify(message,'danger');
+      let imageItems:CloudWorldItem[]=[], hints:string[]=[], imageNotice='';
+      if(file){
+        const loaded=await loadVisionImage(file,controller.signal);release=loaded.release;
+        const labels=await localSceneVision(loaded.image,controller.signal);
+        const detected=imageWorldParts(labels);
+        if(detected.truncated)throw new Error('الصورة تحتوي مناطق أكثر من الحد المسموح. اختر صورة أبسط؛ لم يُنشأ العالم.');
+        imageItems=detected.items;hints=detected.terrainHints;
+        if(!imageItems.length && !hints.length && !text)throw new Error('لم أجد عناصر أو تضاريس واضحة في الصورة.');
+        imageNotice=`تحليل الصورة تقريبي وقد يدمج العناصر؛ ${detected.ignored.length?'عوملت بعض المناطق كخلفية.':''}`;
       }
-    } finally { window.clearTimeout(timer); if(cloudController.current===controller) cloudController.current=null; if(alive.current) {setGenerating(false);setCloudRunning(false);} }
+      if(controller.signal.aborted || !alive.current || currentPlan.current!==original || currentPrompt.current.trim()!==text || currentImage.current!==file)throw new Error('تغيّر العالم أو الوصف أو الصورة؛ لم يُنشأ شيء.');
+      const items=mergeWorldItems(textWorldItems(text),imageItems);
+      if(items.length>MAX_CLOUD_OBJECTS)throw new Error(`الطلب يتجاوز الحد ${MAX_CLOUD_OBJECTS} عنصراً في العالم الواحد. قلّل العدد وأعد المحاولة.`);
+      const terrainText=terrainDescription(text,hints);
+      const shell=cloudWorldShell(original,terrainText?'text':'image',terrainText,{
+        seed:seed ?? seedFromPrompt(text || 'image'),
+        ...(style!=='auto'?{style}:{}),...(scale!=='auto'?{scale}:{}),...(density!=='auto'?{density}:{})
+      });
+      if(worldName.trim())shell.name=worldName.trim().slice(0,80);
+      setNotes(imageNotice?[imageNotice]:[]);
+      setLibraryDraft({items,prompt:text,plan:original,shell,file,id:++libraryDraftId.current});
+    } catch(error){
+      if(alive.current){const message=controller.signal.aborted?'أُلغي التحليل؛ لم يتغير العالم.':error instanceof Error?error.message:'تعذّر تجهيز العالم.';setGenerationError(message);notify(message,'danger');}
+    } finally {release?.();if(cloudController.current===controller)cloudController.current=null;if(alive.current)setGenerating(false);}
   };
-  const generate = async (useReference = false) => {
+  const generate = async () => {
     const text = prompt.trim();
     if (!text || generating || batchBusy) return;
-    if (useReference) {
-      setResult(null);setCloudResult(false);setNotes([]);setStats(null);
-      setReferenceFlow({prompt:text,plan:state.plan,id:++referenceSequence.current});setGenerationError('');return;
-    }
-    setReferenceFlow(null); setCloudResult(false);
+    setLibraryDraft(null);
     const originalPlan = state.plan;
     setGenerationError('');setResult(null);setNotes([]);setStats(null);setGenerating(true);
     try {
@@ -175,47 +181,24 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
           onKeyDown={(event) => {
             if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
               event.preventDefault();
-              void generate();
+              void generateUnified();
             }
           }}
         />
       </label>
 
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
+      <label className="field" dir="rtl"><span className="field-label">صورة اختيارية للعالم</span><input aria-label="صورة العالم الاختيارية" ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp" disabled={generating||batchBusy} onChange={event=>{setImageFile(event.target.files?.[0]??null);setGenerationError('');}}/></label>
+      {imageFile && <p dir="rtl">الصورة: {imageFile.name} · ستُحلّل محلياً، مع الوصف إن كتبته. <button type="button" className="btn btn-small" disabled={generating||batchBusy} onClick={()=>{setImageFile(null);if(imageInput.current)imageInput.current.value='';}}>إزالة الصورة</button></p>}
       <div className="create-actions" dir="rtl">
-        <button type="button" className="btn btn-primary image-build-btn" onClick={() => void generate(true)} disabled={!prompt.trim() || generating || batchBusy}>
-          <Icon name="sparkles" size={17} /> إنشاء عالم من صورة
+        <button type="button" className="btn btn-primary generate-btn" onClick={() => void generateUnified()} disabled={(!prompt.trim()&&!imageFile)||generating||batchBusy} aria-label="إنشاء العالم">
+          <Icon name="sparkles" size={17}/>{generating||batchBusy?'جاري إنشاء العالم…':'إنشاء العالم'}
         </button>
-        <button type="button" className="btn generate-btn text-build-btn" onClick={() => void generate(false)} disabled={!prompt.trim() || generating || batchBusy} aria-label="إنشاء بالوصف فقط">
-          {generating ? 'جاري إنشاء العالم…' : 'إنشاء بالوصف فقط'}
-        </button>
+        {generating && <button type="button" className="btn" onClick={()=>cloudController.current?.abort()}>إلغاء تحليل الصورة</button>}
       </div>
-      <p className="create-actions-hint" dir="rtl">«الوصف فقط» يبني محلياً بقواعد وعناصر محدودة؛ اختر زر الصورة إذا أردت استعمالها.</p>
-      <div dir="rtl" className="callout">
-        <div>
-          <strong>مجسّم جديد من الوصف (سحابي مجاني وتجريبي)</strong>
-          <p>يرسل الزر الوصف إلى خدمة Shap-E على Hugging Face؛ لا ترسل معلومات خاصة. ينشئ مجسّماً واحداً في عالم جديد بدلاً من تركيب مكتبة، لا مشهداً متعدد العناصر. الإنجليزية قد تعطي نتائج أفضل. المجسمات تقريبية وقد تفشل التفاصيل المعقدة. الخدمة مشتركة وقد تتوقف أو تنفد حصتها المجانية.</p>
-          <button type="button" className="btn btn-primary" disabled={!prompt.trim() || prompt.trim().length > 400 || generating || batchBusy} onClick={() => void generateCloud()}>{cloudRunning ? 'ينتظر التوليد السحابي…' : 'توليد مجسّم جديد من الوصف'}</button>
-          {cloudRunning && <button type="button" className="btn" onClick={() => cloudController.current?.abort()}>إيقاف الانتظار</button>}
-          {prompt.trim().length > 400 && <p>الحد الأقصى للتوليد السحابي 400 حرف.</p>}
-          {cloudRunning && <p role="status">قد يستغرق الانتظار عدة دقائق؛ إيقاف الانتظار لا يضمن إلغاء مهمة الخدمة.</p>}
-          {cloudResult && <div><p role="status">اكتمل المجسم. يمكنك تحريكه وحفظ العالم وتصديره، والتراجع عن استبدال العالم السابق.</p>{onOpenStudio && <button type="button" className="btn" onClick={onOpenStudio}>فتح العالم في المحرر ←</button>}</div>}
-        </div>
-      </div>
-      <div className="callout" dir="rtl"><div>
-        <strong>عالم من عناصر مولّدة منفصلة</strong>
-        <p>يقترح تقسيم الوصف محلياً دون الاعتماد على أسماء المكتبة، ثم يرسل وصف كل عنصر للخدمة بعد المراجعة. التقسيم والعلاقات تقريبية؛ راجعها. التضاريس تبقى إجرائية محلية، لا مجسماً مولّداً.</p>
-        {!cloudDraft && <button type="button" className="btn btn-primary" disabled={!prompt.trim() || prompt.trim().length>400 || generating || batchBusy} onClick={()=>{setLibraryDraft(null);setCloudDraft({items:textToCloudItems(prompt),prompt:prompt.trim(),plan:state.plan,id:++cloudDraftId.current});}}>تخطيط عالم من الوصف</button>}
-      </div></div>
-      {cloudDraft && <CloudWorldComposer key={cloudDraft.id} initialItems={cloudDraft.items} initialPlan={cloudDraft.plan} description={cloudDraft.prompt} mode="text" canApply={()=>currentPrompt.current.trim()===cloudDraft.prompt} onBusyChange={setBatchBusy} onClose={()=>setCloudDraft(null)} onOpenStudio={onOpenStudio} />}
-
-      <div className="callout" dir="rtl"><div>
-        <strong>خريطة من مجسمات جاهزة مجانية</strong>
-        <p>يبحث الخادم تلقائياً في 3DAssets.dev وGobkit عن مجسمات مجانية جاهزة ويضعها في الخريطة؛ ليست توليداً بالذكاء الاصطناعي.</p>
-        {!libraryDraft && <button type="button" className="btn btn-primary" disabled={!prompt.trim() || prompt.trim().length>400 || generating || batchBusy} onClick={()=>{setCloudDraft(null);setLibraryDraft({items:textToCloudItems(prompt),prompt:prompt.trim(),plan:state.plan,id:++libraryDraftId.current});}}>بناء خريطة بمجسمات جاهزة</button>}
-      </div></div>
-      {libraryDraft && <LibraryWorldComposer key={libraryDraft.id} initialItems={libraryDraft.items} initialPlan={libraryDraft.plan} description={libraryDraft.prompt} mode="text" canApply={()=>currentPrompt.current.trim()===libraryDraft.prompt} onBusyChange={setBatchBusy} onClose={()=>setLibraryDraft(null)} onOpenStudio={onOpenStudio} />}
-      {referenceFlow && <ReferenceSceneWorkflow key={referenceFlow.id} prompt={referenceFlow.prompt} basePlan={referenceFlow.plan} mode="create" canApply={()=>currentPrompt.current.trim()===referenceFlow.prompt} onCancel={()=>setReferenceFlow(null)} onApplied={()=>{setReferenceFlow(null);notify('أُنشئ المشهد؛ يمكن التراجع بـ Undo.','success');}} onOpenStudio={onOpenStudio}/>}
+      <p className="create-actions-hint" dir="rtl">الأرض والماء من التطبيق؛ يبحث خادم الهاتف تلقائياً عن المجسمات المجانية. أضف صورة اختيارية مع الوصف أو بدونه. أسماء العناصر تُرسل للمصادر، لا الصورة. لا تكتب بيانات خاصة.</p>
+      {!result && notes.map(note=><p key={note} dir="rtl">{note}</p>)}
+      {libraryDraft && <LibraryWorldComposer key={libraryDraft.id} initialItems={libraryDraft.items} initialPlan={libraryDraft.plan} shell={libraryDraft.shell} description={libraryDraft.prompt} mode="text" canApply={()=>currentPrompt.current.trim()===libraryDraft.prompt && currentImage.current===libraryDraft.file} onBusyChange={setBatchBusy} onClose={()=>setLibraryDraft(null)} onOpenStudio={onOpenStudio}/>}
       {result && (
         <div className="ai-result">
           <div className="ai-result-head">
@@ -286,6 +269,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       </details>
       <details className="forge-disclosure" dir="rtl">
         <summary>إعدادات العالم المتقدمة</summary>
+      <label className="field" dir="rtl"><span><input type="checkbox" aria-label="استخدام البناء المحلي فقط" checked={localOnly} onChange={event=>setLocalOnly(event.target.checked)}/> استخدام البناء المحلي فقط دون البحث عن مجسمات (عند عدم إضافة صورة)</span></label>
       <div className="settings-heading" dir="rtl"><span>إعدادات متقدمة</span><span>02</span></div>
       <div className="seed-row">
         <NumberField
@@ -346,7 +330,7 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       <div className="online-settings" dir="rtl">
         <div className="online-heading"><span className="online-dot" /> المساعد الخفيف + ويكيبيديا</div>
         <p>يفهم البناء النصي مفردات محدودة ويستخدم أشكالاً إجرائية محلياً دون بحث أو صور. ليس نموذج لغة أو مولّداً عاماً.</p>
-        <p>البحث عن المراجع متاح في مسار الصورة أو التعديل، وليس في زر «إنشاء بالوصف فقط».</p>
+        <p>إنشاء العالم يبحث عن المجسمات افتراضياً؛ خيار البناء المحلي يتجاوز البحث عند عدم إضافة صورة.</p>
       </div>
       <div className="online-settings" dir="rtl">
         <div className="online-heading">التعلّم التلقائي من ويكيبيديا</div>

@@ -72,8 +72,12 @@ export function createTerrainSampler(terrain: Terrain, seed: number): TerrainSam
 
   const heightAt = (x: number, z: number): number => {
     switch (style) {
-      case 'flat':
-        return 0;
+      case 'flat': {
+        const basin=terrain.lakeBasin;
+        if(!basin)return 0;
+        const distance=Math.hypot(x-basin.x,z-basin.z)/basin.radius;
+        return -basin.depth*(1-smoothstep(clamp01(distance)));
+      }
 
       case 'hills': {
         const n = fbm(seed, x / 38, z / 38, 4);

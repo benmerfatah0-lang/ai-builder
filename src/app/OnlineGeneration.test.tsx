@@ -18,7 +18,7 @@ describe('lightweight local planning interface', () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف كوخ' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -42,7 +42,7 @@ describe('lightweight local planning interface', () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'ajoute une cabane' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -70,7 +70,7 @@ describe('lightweight local planning interface', () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف كوخ' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -91,7 +91,7 @@ describe('lightweight local planning interface', () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف فيل' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -108,7 +108,7 @@ describe('lightweight local planning interface', () => {
     expect(screen.getByRole('heading', { name: 'اصنع عالمك من الخيال' })).toBeTruthy();
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت وشجرة' } });
     fireEvent.change(screen.getByLabelText('اسم العالم (اختياري)'), { target: { value: 'عالمي الجديد' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     expect((screen.getByLabelText('World name') as HTMLInputElement).value).toBe('عالمي الجديد');
     expect(screen.getByRole('region', { name: '3D viewport' })).toBeTruthy();
@@ -144,7 +144,7 @@ describe('lightweight local planning interface', () => {
     fireEvent.change(screen.getByLabelText('Seed'), { target: { value: '7' } });
     fireEvent.blur(screen.getByLabelText('Seed'));
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'قرية' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     const tree = screen.getByRole('tree', { name: 'Scene hierarchy' });
@@ -167,7 +167,7 @@ describe('lightweight local planning interface', () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف شجرتين على يمين البيت' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -184,7 +184,7 @@ describe('lightweight local planning interface', () => {
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.click(screen.getByText('أمثلة جاهزة للإلهام'));
     fireEvent.click(screen.getByRole('button', { name: /مدينة صحراوية قديمة فيها منجم/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     expect(await screen.findByText(/المنجم مدخل زخرفي/)).toBeTruthy();
   }, 20000);
   it('learns an explicitly selected house and can delete personal training', async () => {
@@ -216,7 +216,7 @@ describe('lightweight local planning interface', () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف فيل' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -248,7 +248,7 @@ describe('lightweight local planning interface', () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف فيل' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -275,7 +275,7 @@ describe('lightweight local planning interface', () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف 2 فيل وزرافة' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -304,7 +304,7 @@ describe('lightweight local planning interface', () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'شجرة' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف فيل وزرافة' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -332,7 +332,7 @@ describe('lightweight local planning interface', () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'بيت' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.click(await screen.findByRole('button', { name: 'فتح العالم في المحرر ←' }));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), { target: { value: 'أضف فيل يمين البيت' } });
     fireEvent.click(screen.getByRole('button', { name: 'تطبيق التعديل' }));
@@ -414,7 +414,7 @@ describe('lightweight local planning interface', () => {
     render(<App />);
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fireEvent.change(screen.getByLabelText('وصف العالم'), {target:{value:'بيت'}});
-    fireEvent.click(screen.getByRole('button', {name:'إنشاء بالوصف فقط'}));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.click(await screen.findByRole('button', {name:'فتح العالم في المحرر ←'}));
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'), {target:{value:'أضف باوباب يمين البيت'}});
     fireEvent.click(screen.getByRole('button', {name:'تطبيق التعديل'}));
@@ -475,7 +475,7 @@ describe('lightweight local planning interface', () => {
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fetchMock.mockClear();
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'ابحث عن غابة فيها بيت وفيل' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     expect(await screen.findByText('World generated')).toBeTruthy();
     expect(screen.getByText(/قد لا يفهم البناء النصي.*فيل/)).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'نتائج البحث التلقائي' })).toBeNull();
@@ -489,7 +489,7 @@ describe('lightweight local planning interface', () => {
     await waitFor(() => expect((screen.getByLabelText('World name') as HTMLInputElement).value).not.toBe('Loading…'));
     fetchMock.mockClear();
     fireEvent.change(screen.getByLabelText('وصف العالم'), { target: { value: 'غابة فيها بيت و3 أشجار' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     expect(await screen.findByText('World generated')).toBeTruthy();
     expect(screen.queryByText(/قد لا يفهم البناء النصي/)).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -505,7 +505,7 @@ describe('lightweight local planning interface', () => {
     const name = (screen.getByLabelText('World name') as HTMLInputElement).value;
     const prompt = screen.getByLabelText('وصف العالم');
     fireEvent.change(prompt, { target: { value: 'غابة فيها بيت' } });
-    fireEvent.click(screen.getByRole('button', { name: 'إنشاء بالوصف فقط' }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     fireEvent.change(prompt, { target: { value: 'صحراء' } });
     expect((await screen.findByRole('alert')).textContent).toContain('تغيّر العالم أو الوصف');
     expect(screen.queryByText('World generated')).toBeNull();

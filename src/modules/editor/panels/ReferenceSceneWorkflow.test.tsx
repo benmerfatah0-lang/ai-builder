@@ -92,15 +92,6 @@ describe('integrated reference workflow',()=>{
     fireEvent.click(screen.getByRole('button',{name:'إضافة من صورة'}));expect(screen.getByRole('alert').textContent).toMatch(/أمر إضافة فقط/);
     expect(JSON.parse(screen.getByTestId('plan').textContent!).objects).toHaveLength(1);expect(requests).toEqual([]);
   });
-  it('starts the image-first path from the existing generation prompt and primary button',async()=>{
-    const initial=plan();const trainer={model:initialMapTraining(),setEnabled:()=>{},reset:()=>{},error:''};
-    render(<EditorProvider initialPlan={initial}><AiPanel variant="forge" mapTrainer={trainer} notify={()=>{}}/><Observer/></EditorProvider>);
-    fireEvent.change(screen.getByLabelText('وصف العالم'),{target:{value:'ابني غابات الأمازون'}});
-    fireEvent.click(screen.getByRole('button',{name:'إنشاء عالم من صورة'}));
-    expect(await screen.findByRole('button',{name:/اختر File:Amazon.jpg/})).toBeTruthy();
-    expect((screen.getByLabelText('موضوع البحث عن صور المشهد') as HTMLInputElement).value).toBe('غابات الأمازون');
-    expect(requests).toEqual(['/api/image-search']);expect(JSON.parse(screen.getByTestId('plan').textContent!).id).toBe(initial.id);
-  });
   it('starts the same path from the existing edit command without applying a preliminary edit',async()=>{
     const initial=plan();render(<EditorProvider initialPlan={initial}><TextEditPanel shapeModel={initialShapeModel()}/><Observer/></EditorProvider>);
     fireEvent.change(screen.getByLabelText('تعديل العالم بالكتابة'),{target:{value:'أضف غابات الأمازون'}});
@@ -123,12 +114,13 @@ describe('integrated reference workflow',()=>{
     await waitFor(()=>expect(screen.queryByText('المقالة المختارة:',{exact:false})).toBeNull());
     expect(requests).toEqual(['/api/image-search','/api/search']);
   });
-  it('shows two direct creation actions before choosing a picture',()=>{
+  it('offers one creation action and an optional image field',()=>{
     const trainer={model:initialMapTraining(),setEnabled:()=>{},reset:()=>{},error:''};
     render(<EditorProvider initialPlan={plan()}><AiPanel variant="forge" mapTrainer={trainer} notify={()=>{}}/></EditorProvider>);
-    expect(screen.getByRole('button',{name:'إنشاء عالم من صورة'})).toBeTruthy();
-    expect(screen.getByRole('button',{name:'إنشاء بالوصف فقط'}).textContent).toContain('إنشاء بالوصف فقط');
-    expect(screen.queryByRole('checkbox',{name:/صورة مرجعية/})).toBeNull();
+    expect(screen.getByRole('button',{name:'إنشاء العالم'})).toBeTruthy();
+    expect(screen.getByLabelText('صورة العالم الاختيارية')).toBeTruthy();
+    expect(screen.queryByRole('button',{name:'إنشاء عالم من صورة'})).toBeNull();
+    expect(screen.queryByRole('button',{name:'بناء خريطة بمجسمات جاهزة'})).toBeNull();
   });
   it('makes a small editable query from the command',()=>{expect(referenceSearchQuery('ابني غابات الأمازون')).toBe('غابات الأمازون');expect(referenceSearchQuery('أضف بيت')).toBe('بيت');});
 });

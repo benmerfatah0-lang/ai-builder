@@ -51,7 +51,7 @@ describe('application runtime', () => {
     fireEvent.change(prompt, {
       target: { value: 'A desert oasis village at sunset with 18 palm trees' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /إنشاء بالوصف فقط/ }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
 
     expect(await screen.findByText(/Desert settlement/i, {}, { timeout: 10000 })).toBeTruthy();
     await waitFor(() => expect(worldNameValue().toLowerCase()).toContain('desert oasis'));
@@ -223,7 +223,7 @@ describe('application runtime', () => {
           'Create a large cartoon low-poly farm with a farmhouse, barn, wheat fields, a chicken coop, fences, trees, and connected dirt paths',
       },
     });
-    fireEvent.click(screen.getByRole('button', { name: /إنشاء بالوصف فقط/ }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     expect(await screen.findByText(/Farmstead · day/i, {}, { timeout: 15000 })).toBeTruthy();
     expect(await screen.findByText(/\d+ objects · \d+ groups · plan v3/i)).toBeTruthy();
 

@@ -4,12 +4,11 @@ import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
 import {EditorProvider,useEditor} from '../store';
 import {createEmptyWorldPlan} from '../../../core/world-plan/factory';
-import {AiPanel} from './AiPanel';
+import {CloudWorldComposer} from './CloudWorldComposer';
+import {textToCloudItems} from '../../ai/cloudWorld';
 import {ImageSceneStudio} from './ImageSceneStudio';
-import {initialMapTraining} from '../../ai/mapTrainer';
 const mock=vi.hoisted(()=>({vision:vi.fn()}));
 vi.mock('../../ai/localVision',()=>({localSceneVision:mock.vision}));
-const trainer={model:initialMapTraining(),setEnabled:()=>{},reset:()=>{},error:''};
 function model(){return new Response(readFileSync('src/test/fixtures/trimesh-vertex-colors.glb'),{headers:{'Content-Type':'model/gltf-binary'}});}
 function Observer(){const {state,dispatch}=useEditor();return <><output data-testid="plan">{JSON.stringify(state.plan)}</output><button onClick={()=>dispatch({type:'undo'})}>undo-test</button><button onClick={()=>dispatch({type:'renameWorld',name:'changed'})}>change-test</button></>;}
 function initial(){return createEmptyWorldPlan({name:'original',seed:4});}
@@ -25,9 +24,7 @@ describe('multi-object cloud workflows',()=>{
   it('sends each text object sequentially, retains success on failure, retries and undoes',async()=>{
     const before=initial();const calls:string[]=[];let attempt=0;
     vi.stubGlobal('fetch',vi.fn(async(url:string,options:RequestInit)=>{expect(url).toBe('/api/text-to-3d');calls.push(JSON.parse(options.body as string).query);attempt++;return attempt===2?new Response('{"error":"quota"}',{status:502}):model();}));
-    render(<EditorProvider initialPlan={before}><AiPanel variant="forge" mapTrainer={trainer} notify={()=>{}}/><Observer/></EditorProvider>);
-    fireEvent.change(screen.getByLabelText('وصف العالم'),{target:{value:'a dragon and a robot'}});
-    fireEvent.click(screen.getByRole('button',{name:'تخطيط عالم من الوصف'}));
+    render(<EditorProvider initialPlan={before}><CloudWorldComposer initialItems={textToCloudItems("a dragon and a robot")} initialPlan={before} description="a dragon and a robot" mode="text" onClose={()=>{}}/><Observer/></EditorProvider>);
     expect(calls).toHaveLength(0);expect((screen.getByLabelText('وصف العنصر 1') as HTMLInputElement).value).toBe('a dragon');
     fireEvent.click(screen.getByRole('button',{name:'توليد العناصر وبناء العالم'}));
     expect((await screen.findByRole('alert')).textContent).toContain('احتُفظ بالعناصر المكتملة');
@@ -69,9 +66,7 @@ describe('multi-object cloud workflows',()=>{
     vi.stubGlobal('fetch',vi.fn((_url:string, init:RequestInit)=>new Promise<Response>((_resolve,reject)=>{
       init.signal!.addEventListener('abort',()=>reject(new DOMException('cancelled','AbortError')));
     })));
-    render(<EditorProvider initialPlan={before}><AiPanel variant="forge" mapTrainer={trainer} notify={()=>{}}/><Observer/></EditorProvider>);
-    fireEvent.change(screen.getByLabelText('وصف العالم'),{target:{value:'a robot and a dragon'}});
-    fireEvent.click(screen.getByRole('button',{name:'تخطيط عالم من الوصف'}));
+    render(<EditorProvider initialPlan={before}><CloudWorldComposer initialItems={textToCloudItems("a robot and a dragon")} initialPlan={before} description="a robot and a dragon" mode="text" onClose={()=>{}}/><Observer/></EditorProvider>);
     fireEvent.click(screen.getByRole('button',{name:'توليد العناصر وبناء العالم'}));
     fireEvent.click(screen.getByRole('button',{name:'إيقاف الانتظار للعالم'}));
     expect((await screen.findByRole('alert')).textContent).toContain('توقف الانتظار');
@@ -80,8 +75,7 @@ describe('multi-object cloud workflows',()=>{
   it('never applies late results if the world is edited while waiting',async()=>{
     const before=initial();let resolve!:(value:Response)=>void;
     vi.stubGlobal('fetch',vi.fn(()=>new Promise<Response>(r=>{resolve=r;})));
-    render(<EditorProvider initialPlan={before}><AiPanel variant="forge" mapTrainer={trainer} notify={()=>{}}/><Observer/></EditorProvider>);
-    fireEvent.change(screen.getByLabelText('وصف العالم'),{target:{value:'a robot'}});fireEvent.click(screen.getByRole('button',{name:'تخطيط عالم من الوصف'}));
+    render(<EditorProvider initialPlan={before}><CloudWorldComposer initialItems={textToCloudItems("a robot")} initialPlan={before} description="a robot" mode="text" onClose={()=>{}}/><Observer/></EditorProvider>);
     fireEvent.click(screen.getByRole('button',{name:'توليد العناصر وبناء العالم'}));fireEvent.click(screen.getByRole('button',{name:'change-test'}));resolve(model());
     await waitFor(()=>expect(screen.getByRole('alert').textContent).toContain('تغيّر العالم أو الوصف'));
     const plan=JSON.parse(screen.getByTestId('plan').textContent!);expect(plan.name).toBe('changed');expect(plan.objects).toHaveLength(0);

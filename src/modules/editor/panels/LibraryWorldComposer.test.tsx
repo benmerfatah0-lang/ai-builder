@@ -24,7 +24,7 @@ describe('automatic online model composition',()=>{
     await screen.findByText(/أُضيفت 2 مجسمات جاهزة/);
     const plan=JSON.parse(screen.getByTestId('plan').textContent!);
     expect(plan.objects).toHaveLength(2);expect(plan.objects.map((o:any)=>o.name)).toEqual(['tree','tree 2']);expect(plan.objects[0].transform.position).not.toEqual(plan.objects[1].transform.position);
-    expect(calls.filter(c=>c.url.endsWith('/search'))).toHaveLength(2);
+    expect(calls.filter(c=>c.url.endsWith('/search'))).toHaveLength(1);
     expect(calls.filter(c=>c.url.endsWith('/model')&&c.body.source==='gobkit')).toHaveLength(1);
     expect(screen.getByText(/تعذّر الاتصال بهذه المصادر/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button',{name:'undo-test'}));expect(JSON.parse(screen.getByTestId('plan').textContent!).id).toBe(before.id);

@@ -1,21 +1,23 @@
 import * as THREE from 'three';
 import { createId } from '../../core/utils/id';
 import { createTerrainSampler } from '../../core/generation/terrain';
+import {makeTerrainRiver} from '../../core/generation/villageRiver';
 import { createEmptyWorldPlan } from '../../core/world-plan/factory';
 import { base64ToBytes, bytesToBase64, MAX_GENERATED_DATA, type GeneratedMeshData } from '../../core/world-plan/generatedMesh';
 import { validateWorldPlan, type WorldObject, type WorldPlan } from '../../core/world-plan/schema';
 import { interpretPromptLocally } from './promptInterpreter';
 import { generateWorldPlanWithReport } from '../../core/generation/generateWorld';
 import { generatedGlbToWorld, requestGeneratedGlb } from './generatedMesh';
-import { parseCountToken, normalizeAssetText } from './assetRequests';
+import { parseCountToken, normalizeAssetText, parseAssetRequests } from './assetRequests';
 import type { SemanticRegion } from './semanticScene';
+import type { InterpretOptions } from './types';
 
 /** Shared free quota and phone memory make this an intentionally small, reviewable batch. */
 export const MAX_CLOUD_OBJECTS = 16;
-export interface CloudWorldItem { id:string; prompt:string; x:number; z:number; size:number; height:number }
+export interface CloudWorldItem { id:string; prompt:string; search?:string; x:number; z:number; size:number; height:number }
 
 /** Very limited local segmentation of text, independent of the asset catalog. */
-export function textToCloudItems(description:string):CloudWorldItem[] {
+export function textToCloudItems(description:string, maxItems=MAX_CLOUD_OBJECTS+1):CloudWorldItem[] {
   let text=description.trim().slice(0,400);
   // Drop an introductory landscape phrase, but do not lose the subject of
   // descriptions like "a robot with a sword".
@@ -32,11 +34,17 @@ export function textToCloudItems(description:string):CloudWorldItem[] {
     if(negateNext || /^(?:بدون|دون|بلا|لا|without|no)\s+/iu.test(part)) {negateNext=false;continue;}
     const normalized=normalizeAssetText(part);
     const match=/^(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|واحد|واحدة|اثنين|اثنان|ثلاثة|ثلاث|اربعة|اربع|خمسة|خمس)\s+(.+)$/u.exec(normalized);
-    const count=match ? parseCountToken(match[1]) ?? 1 : 1;
-    const objectText=match ? part.replace(/^\S+\s+/u,'').trim() : part;
-    for(let i=0;i<Math.min(count,MAX_CLOUD_OBJECTS+1) && items.length<=MAX_CLOUD_OBJECTS;i++) {
+    const recognized=parseAssetRequests(part);
+    const many=/^(?:الكثير من|العديد من|عدد من|عدة|عده|many|several|lots of|a lot of)\s+(.+)$/u.exec(normalized);
+    const bare=normalizeAssetText(part).replace(/^(?:ال)/u,'');
+    const pluralUnknown=/^(?:سيارات|تنانين|طيور|سفن|زوارق|طائرات|روبوتات|cars|dragons|robots|airplanes|planes|boats|ships|bicycles|statues)$/u.test(bare);
+    const count=match ? parseCountToken(match[1]) ?? 1 : many ? 3 : recognized?.length===1 ? recognized[0]!.count : pluralUnknown ? 3 : 1;
+    const objectText=(match ? part.replace(/^\S+\s+/u,'') : many ? part.replace(/^(?:الكثير من|العديد من|عدد من|عدة|عده|many|several|lots of|a lot of)\s+/iu,'') : part).trim();
+    const common=normalizeAssetText(objectText).replace(/^(?:ال)/u,'');
+    const commonSearch=({سيارات:'car',سيارة:'car',سياره:'car',تنانين:'dragon',تنين:'dragon',روبوتات:'robot',روبوت:'robot',طيور:'bird',طائر:'bird',سفن:'ship',سفينة:'ship',زوارق:'boat',قارب:'boat',طائرات:'airplane',طائرة:'airplane'} as Record<string,string>)[common];
+    for(let i=0;i<Math.min(count,MAX_CLOUD_OBJECTS+1) && items.length<Math.min(maxItems,256);i++) {
       const n=items.length;
-      const item={id:createId('cloud'),prompt:objectText.slice(0,200),x:(n%4-1.5)*6,z:(Math.floor(n/4)-1.5)*6,size:6,height:0};
+      const item:CloudWorldItem={id:createId('cloud'),prompt:objectText.slice(0,200),search:recognized?.length===1 ? (({boulder:'rock',tree:'tree',house:'house'} as Record<string,string>)[recognized[0]!.assetId] ?? recognized[0]!.assetId.replace(/-/g,' ')) : commonSearch ?? objectText.replace(/^(?:a|an|the)\s+/i,''),x:(n%4-1.5)*6,z:(Math.floor(n/4)-1.5)*6,size:6,height:0};
       items.push(item);
       if(i===0 && relation && prior){
         if(/left|يسار/iu.test(relation)) {prior.x=item.x-8;prior.z=item.z;}
@@ -113,28 +121,63 @@ export async function generateCloudObject(item:CloudWorldItem,signal:AbortSignal
 }
 
 /** Only terrain/environment use the old local interpreter; all drawable objects are removed. */
-export function cloudWorldShell(base:WorldPlan, mode:'text'|'image'|'append', description:string):WorldPlan {
+export function cloudWorldShell(base:WorldPlan, mode:'text'|'image'|'append', description:string, options:InterpretOptions={}):WorldPlan {
   if(mode==='append') return base;
-  if(mode==='text') {
-    const interpreted=interpretPromptLocally(description,{seed:base.seed});
-    const generated=generateWorldPlanWithReport(interpreted.intent).plan;
-    return {...generated,groups:[],objects:[],description:`Cloud scene: ${description}`.slice(0,500)};
+  if(mode==='text' || description.trim()) {
+    const interpreted=interpretPromptLocally(description,{seed:base.seed,...options});
+    const intent=interpreted.intent;
+    const farmWater=intent.features?.farm ? !/(?:بدون|بلا|دون|without|no)\s+(?:ال)?(?:ماء|مياه|water)(?![\p{L}])/iu.test(description) && /(?:بحير|بحر|محيط|واحه|واحة|\blake\b|\bsea\b|\bocean\b|\bpond\b|\boasis\b)/iu.test(description.replace(/(?:بدون|بلا|دون|without|no)\s+(?:ال)?(?:بحير\S*|بحر|محيط|lake|sea|ocean|pond|oasis)/giu,'')) : intent.water;
+    const report=generateWorldPlanWithReport({...intent,water:farmWater,features:undefined,assets:undefined,settlement:false,landscape:false,villageRiver:false,river:intent.river || intent.features?.river,counts:{trees:0,rocks:0,buildings:0,lanterns:0}});
+    let shell={...report.plan,groups:[],objects:report.plan.objects.filter(o=>o.kind==='river').map(o=>({...o,parentId:null})),description:`Scene: ${description}`.slice(0,500)};
+    if(shell.terrain.style==='flat' && farmWater){
+      // Flat land remains flat outside the shallow depression instead of flooding the whole map.
+      const radius=shell.terrain.size*.18;
+      shell={...shell,terrain:{...shell.terrain,waterLevel:-.35,lakeBasin:{x:0,z:0,radius,depth:2}}};
+    }
+    // Rivers are local water geometry and must not disappear with the discarded props.
+    if(intent.river || intent.features?.river){
+      const river=makeTerrainRiver(shell,'z',0,-shell.terrain.size*.36,shell.terrain.size*.36);
+      shell={...shell,objects:[{...river,parentId:null}]};
+    }
+    return shell;
   }
-  const plan=createEmptyWorldPlan({name:'مشهد مولّد من صورة',seed:base.seed,description:`Cloud image scene: ${description}`.slice(0,500)});
+  const plan=createEmptyWorldPlan({name:'مشهد من صورة',seed:base.seed,description:'مشهد من صورة'});
   return {...plan,terrain:{...plan.terrain,style:'flat',size:64,heightScale:0,waterLevel:null}};
 }
 
 /** Assemble only successfully generated objects; caller must require a complete batch. */
-export function composeCloudWorld(base:WorldPlan, items:CloudWorldItem[], objects:WorldObject[], mode:'text'|'image'|'append', description:string):WorldPlan {
-  if(!items.length || items.length>MAX_CLOUD_OBJECTS || items.length!==objects.length)throw new Error('يجب اكتمال جميع المجسمات قبل تطبيق العالم.');
-  const plan=cloudWorldShell(base,mode,description);
+export function composeCloudWorld(base:WorldPlan, items:CloudWorldItem[], objects:WorldObject[], mode:'text'|'image'|'append', description:string, shell?:WorldPlan):WorldPlan {
+  if(items.length>MAX_CLOUD_OBJECTS || items.length!==objects.length)throw new Error('يجب اكتمال جميع المجسمات قبل تطبيق العالم.');
+  const plan=shell ?? cloudWorldShell(base,mode,description);
   const terrain=createTerrainSampler(plan.terrain,plan.seed), half=plan.terrain.size/2;
+  const occupied:{x:number;z:number;size:number}[]=[];
+  const rivers=plan.objects.filter(o=>o.kind==='river');
+  const nearRiver=(x:number,z:number,size:number)=>rivers.some(river=>{
+    const pts=river.points;
+    for(let j=1;j<pts.length;j++){
+      const a=pts[j-1]!,b=pts[j]!,ax=a[0]+river.transform.position[0],az=a[2]+river.transform.position[2],bx=b[0]+river.transform.position[0],bz=b[2]+river.transform.position[2];
+      const dx=bx-ax,dz=bz-az,denom=dx*dx+dz*dz,t=denom?Math.max(0,Math.min(1,((x-ax)*dx+(z-az)*dz)/denom)):0;
+      if(Math.hypot(x-(ax+t*dx),z-(az+t*dz))<(river.width+size)/2+.4)return true;
+    }
+    return false;
+  });
   const placed=objects.map((object,i)=>{
     const item=items[i]!;
     if(!item.prompt.trim() || ![item.x,item.z,item.size,item.height].every(Number.isFinite) || Math.abs(item.x)+item.size/2>half-1 || Math.abs(item.z)+item.size/2>half-1 || item.size<.5 || item.size>12 || item.height<0 || item.height>20 || !object.meta.generatedMesh || object.kind!=='primitive' || object.primitive!=='generated-mesh') throw new Error('بيانات العناصر أو المواقع غير صالحة؛ لم يُطبّق العالم.');
-    const ground=terrain.heightAt(item.x,item.z);
-    const y=Math.max(ground,plan.terrain.waterLevel ?? ground)+item.height, s=item.size/8;
-    return {...object,id:createId('obj'),name:item.prompt.trim().slice(0,80),transform:{...object.transform,position:[item.x,y,item.z] as [number,number,number],scale:[s,s,s] as [number,number,number]}};
+    // Prefer the requested position, but move to dry, unoccupied land away from rivers.
+    let x=item.x,z=item.z,ground=terrain.heightAt(x,z),found=false;
+    const fits=(xx:number,zz:number)=>Math.abs(xx)+item.size/2<=half-1 && Math.abs(zz)+item.size/2<=half-1 &&
+      (plan.terrain.waterLevel===null || terrain.heightAt(xx,zz)>=plan.terrain.waterLevel+.35) &&
+      !nearRiver(xx,zz,item.size) && occupied.every(o=>Math.hypot(xx-o.x,zz-o.z)>=(item.size+o.size)/2);
+    if(fits(x,z))found=true;
+    for(let radius=3;radius<half*2 && !found;radius+=3)for(let a=0;a<16;a++){
+      const xx=item.x+Math.cos(a*Math.PI/8)*radius,zz=item.z+Math.sin(a*Math.PI/8)*radius;
+      if(fits(xx,zz)){x=xx;z=zz;ground=terrain.heightAt(x,z);found=true;break;}
+    }
+    if(!found)throw new Error('لم أجد مساحة جافة كافية للعنصر؛ لم يُطبّق العالم.');
+    occupied.push({x,z,size:item.size});
+    const y=ground+item.height, s=item.size/8;
+    return {...object,id:createId('obj'),name:item.prompt.trim().slice(0,80),transform:{...object.transform,position:[x,y,z] as [number,number,number],scale:[s,s,s] as [number,number,number]}};
   });
   const result={...plan,objects:[...plan.objects,...placed]};
   if(!validateWorldPlan(result).success)throw new Error('تتجاوز المجسمات سعة المشروع؛ لم يُطبّق العالم.');
