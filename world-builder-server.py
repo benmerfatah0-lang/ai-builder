@@ -370,6 +370,233 @@ def download_free_model(ident, version):
     return model
 
 
+# ── Optional free local language model ────────────────────────────────────────
+# The world planner is fully deterministic and works offline without this. When
+# the operator starts the server with --llm-url pointing at a model runtime on
+# the same device (Ollama's /api/generate, or any OpenAI-compatible
+# /v1/chat/completions such as the llama.cpp server), the planner may ask it to
+# fill gaps only. The URL must be loopback HTTP, so this proxy can never reach a
+# paid cloud service, and every answer is re-validated by the app.
+LLM_URL = ''
+LLM_TIMEOUT = 45
+LLM_LOCK = threading.Lock()
+LLM_MAX_PROMPT = 4000
+
+LLM_ENUMS = {
+    'language': ('ar', 'en', 'mixed'),
+    'biome': ('meadow', 'forest', 'mountains', 'desert', 'island', 'ruins'),
+    'landform': ('flat', 'hills', 'mountains', 'dunes', 'islands', 'valley', 'plateau', 'canyon', 'volcano', 'crater'),
+    'timeOfDay': ('day', 'sunset', 'night'),
+    'scale': ('small', 'medium', 'large'),
+    'density': ('sparse', 'normal', 'dense'),
+    'style': ('cartoon', 'natural', 'stylized'),
+}
+LLM_SELECTORS = ('north', 'south', 'east', 'west', 'center', 'edge', 'summit', 'base', 'slope', 'waterfront')
+LLM_HEX_COLOR = re.compile(r'^#[0-9a-fA-F]{6}$')
+
+
+def llm_configured(url=None):
+    """True only for a loopback HTTP URL, so no cloud endpoint can be proxied."""
+    target = LLM_URL if url is None else url
+    if not target:
+        return False
+    parts = urlsplit(target)
+    return parts.scheme == 'http' and parts.hostname in ('127.0.0.1', 'localhost', '::1')
+
+
+def llm_flavour(url):
+    return 'ollama' if url.rstrip('/').endswith('/api/generate') else 'openai'
+
+
+def llm_base(url):
+    parts = urlsplit(url)
+    path = parts.path
+    for suffix in ('/api/generate', '/v1/chat/completions', '/chat/completions', '/completion'):
+        if path.rstrip('/').endswith(suffix):
+            path = path[:len(path) - len(suffix)]
+            break
+    return urlunsplit((parts.scheme, parts.netloc, path.rstrip('/'), '', ''))
+
+
+def llm_call(url, payload=None, timeout=None):
+    """One loopback JSON call: no redirects, capped body, no retries."""
+    opener = build_opener(NoRedirects())
+    if payload is None:
+        request = Request(url, headers={'User-Agent': USER_AGENT})
+    else:
+        request = Request(url, data=json.dumps(payload).encode('utf-8'),
+                          headers={'User-Agent': USER_AGENT, 'Content-Type': 'application/json'}, method='POST')
+    with opener.open(request, timeout=timeout or LLM_TIMEOUT) as response:
+        body = response.read(MAX_RESPONSE + 1)
+        if len(body) > MAX_RESPONSE:
+            raise ValueError('response too large')
+        return json.loads(body)
+
+
+def llm_names(entries, key):
+    if not isinstance(entries, list):
+        return []
+    return [entry[key] for entry in entries if isinstance(entry, dict) and isinstance(entry.get(key), str) and entry[key].strip()]
+
+
+def llm_models():
+    """Model ids the local runtime offers; empty means the tier is unavailable."""
+    base = llm_base(LLM_URL)
+    if llm_flavour(LLM_URL) == 'ollama':
+        data = llm_call(base + '/api/tags')
+        return llm_names(data.get('models') if isinstance(data, dict) else None, 'name')
+    data = llm_call(base + '/v1/models')
+    return llm_names(data.get('data') if isinstance(data, dict) else None, 'id')
+
+
+def llm_model_ok(model, available):
+    if not model:
+        return False
+    if not available:
+        return True
+    return any(name == model or name.split(':')[0] == model.split(':')[0] for name in available)
+
+
+def llm_complete(prompt, model):
+    if llm_flavour(LLM_URL) == 'ollama':
+        data = llm_call(LLM_URL, {'model': model, 'prompt': prompt, 'stream': False,
+                                  'format': 'json', 'options': {'temperature': 0}})
+        text = data.get('response') if isinstance(data, dict) else None
+    else:
+        data = llm_call(LLM_URL, {'model': model, 'temperature': 0, 'stream': False,
+                                  'messages': [{'role': 'user', 'content': prompt}]})
+        choices = data.get('choices') if isinstance(data, dict) else None
+        first = choices[0] if isinstance(choices, list) and choices else None
+        message = first.get('message') if isinstance(first, dict) else None
+        text = message.get('content') if isinstance(message, dict) else None
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError('model returned no text')
+    return text[:64_000]
+
+
+def llm_prompt(description, language, known_terms, gaps):
+    """Asks only about the gaps, and only in the planner's own vocabulary."""
+    return (
+        'You fill gaps in a structured world specification for an offline 3D world builder. '
+        f'Description language: {language}. Fields still missing: {", ".join(gaps) or "none"}. '
+        f'Vocabulary ids you may use: {", ".join(known_terms) or "none"}.\n'
+        'Reply with ONE JSON object and nothing else. Include a key only when the description '
+        'implies it; omit anything uncertain. Allowed keys and values:\n'
+        '{"biome":"meadow|forest|mountains|desert|island|ruins",'
+        '"landform":"flat|hills|mountains|dunes|islands|valley|plateau|canyon|volcano|crater",'
+        '"timeOfDay":"day|sunset|night","scale":"small|medium|large",'
+        '"density":"sparse|normal|dense","style":"cartoon|natural|stylized",'
+        '"weather":["rain"|"snow"|"fog"|"storm"],"architecture":["medieval"|"modern"|...],'
+        '"materials":{"wall":"#rrggbb","roof":"#rrggbb"},'
+        '"regions":[{"name":"short name","selector":"north|south|east|west|center|edge|summit|base|slope|waterfront"}],'
+        '"animals":[{"id":"known id","count":1}],"clarifications":["one short question"],"name":"short world name"}\n'
+        'Never invent counts of trees, rocks or buildings, never place objects, and never use a '
+        'term outside the vocabulary above.\n'
+        f'Description: {description}'
+    )
+
+
+def llm_extract_json(text):
+    cleaned = text.strip()
+    if cleaned.startswith('```'):
+        cleaned = re.sub(r'^```[a-zA-Z]*\s*|\s*```$', '', cleaned).strip()
+    start, end = cleaned.find('{'), cleaned.rfind('}')
+    if start < 0 or end <= start:
+        raise ValueError('no JSON object in model output')
+    value = json.loads(cleaned[start:end + 1])
+    if not isinstance(value, dict):
+        raise ValueError('model output is not an object')
+    return value
+
+
+def llm_short_list(value, limit, size):
+    if not isinstance(value, list):
+        return []
+    return [item.strip()[:size] for item in value[:limit] if isinstance(item, str) and item.strip()]
+
+
+def llm_sanitize(value):
+    """Keeps only fields the app's strict schema also accepts."""
+    out = {}
+    for key, allowed in LLM_ENUMS.items():
+        item = value.get(key)
+        if isinstance(item, str) and item.strip().lower() in allowed:
+            out[key] = item.strip().lower()
+    for key in ('weather', 'architecture'):
+        items = llm_short_list(value.get(key), 6, 24)
+        if items:
+            out[key] = items
+    materials = value.get('materials')
+    if isinstance(materials, dict):
+        clean = {side: materials[side].strip() for side in ('wall', 'roof')
+                 if isinstance(materials.get(side), str) and LLM_HEX_COLOR.match(materials[side].strip())}
+        palette = materials.get('palette')
+        if isinstance(palette, str) and palette.strip():
+            clean['palette'] = palette.strip()[:24]
+        if clean:
+            out['materials'] = clean
+    regions = value.get('regions')
+    if isinstance(regions, list):
+        clean = []
+        for region in regions[:8]:
+            if not isinstance(region, dict):
+                continue
+            name, selector = region.get('name'), region.get('selector')
+            if not (isinstance(name, str) and name.strip()):
+                continue
+            if not (isinstance(selector, str) and selector.strip().lower() in LLM_SELECTORS):
+                continue
+            entry = {'name': name.strip()[:40], 'selector': selector.strip().lower()}
+            biome = region.get('biome')
+            if isinstance(biome, str) and biome.strip().lower() in LLM_ENUMS['biome']:
+                entry['biome'] = biome.strip().lower()
+            clean.append(entry)
+        if clean:
+            out['regions'] = clean
+    animals = value.get('animals')
+    if isinstance(animals, list):
+        clean = []
+        for animal in animals[:12]:
+            if not isinstance(animal, dict):
+                continue
+            ident, count = animal.get('id'), animal.get('count')
+            if isinstance(ident, str) and ident.strip() and type(count) is int and 1 <= count <= 200:
+                clean.append({'id': ident.strip()[:24], 'count': count})
+        if clean:
+            out['animals'] = clean
+    questions = llm_short_list(value.get('clarifications'), 4, 200)
+    if questions:
+        out['clarifications'] = questions
+    for key, size in (('name', 80), ('summary', 400)):
+        item = value.get(key)
+        if isinstance(item, str) and item.strip():
+            out[key] = item.strip()[:size]
+    return out
+
+
+def llm_enrich(payload):
+    """One guarded completion; returns (enrichment, model) or raises."""
+    description, language = payload.get('prompt'), payload.get('language')
+    if not isinstance(description, str) or not description.strip() or len(description) > LLM_MAX_PROMPT:
+        raise ValueError('invalid prompt')
+    if not isinstance(language, str) or language not in LLM_ENUMS['language']:
+        raise ValueError('invalid language')
+    known_terms = llm_short_list(payload.get('knownTerms'), 200, 24)
+    gaps = llm_short_list(payload.get('gaps'), 20, 24)
+    if not LLM_LOCK.acquire(blocking=False):
+        raise ValueError('busy')
+    try:
+        available = llm_models()
+        model = payload.get('model')
+        model = model.strip() if isinstance(model, str) and model.strip() else (available[0] if available else '')
+        if not llm_model_ok(model, available):
+            raise ValueError('unknown local model')
+        text = llm_complete(llm_prompt(description.strip(), language, known_terms, gaps), model)
+        return llm_sanitize(llm_extract_json(text)), model
+    finally:
+        LLM_LOCK.release()
+
+
 VISION_FILES = frozenset({
     '/vision-worker.js', '/vision/scene.onnx', '/vision/ort.wasm.min.js',
     '/vision/ort-wasm-simd-threaded.mjs', '/vision/ort-wasm-simd-threaded.wasm',
@@ -459,7 +686,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.valid_host() or self.headers.get('Origin', '') != f'http://{host}':
             self.api_result(403, {'error': 'invalid origin'})
             return
-        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/image-analyze', '/api/image-pixels', '/api/translate-en', '/api/wiki-article', '/api/dictionary', '/api/knowledge', '/api/house-learning', '/api/text-to-3d', '/api/asset-library/search', '/api/asset-library/model'):
+        if self.path not in ('/api/online', '/api/search', '/api/image-search', '/api/image-analyze', '/api/image-pixels', '/api/translate-en', '/api/wiki-article', '/api/dictionary', '/api/knowledge', '/api/house-learning', '/api/text-to-3d', '/api/asset-library/search', '/api/asset-library/model', '/api/local-llm'):
             self.api_result(404, {'error': 'unknown endpoint'})
             return
         if self.headers.get_content_type() != 'application/json':
@@ -476,6 +703,27 @@ class Handler(SimpleHTTPRequestHandler):
             self.api_result(400, {'error': 'invalid request'})
             return
         try:
+            if self.path == '/api/local-llm':
+                if not llm_configured():
+                    self.api_result(404, {'error': 'llm disabled'})
+                    return
+                if not set(payload) <= {'probe', 'prompt', 'language', 'knownTerms', 'gaps', 'model'}:
+                    self.api_result(400, {'error': 'invalid request'})
+                    return
+                try:
+                    if payload.get('probe') is True:
+                        models = llm_models()
+                        if not models:
+                            self.api_result(200, {'ok': False, 'error': 'no local model'})
+                            return
+                        self.api_result(200, {'ok': True, 'models': models[:40]})
+                        return
+                    enrichment, model = llm_enrich(payload)
+                    self.api_result(200, {'ok': True, 'model': model, 'enrichment': enrichment})
+                except (HTTPError, URLError, TimeoutError, OSError, ValueError, UnicodeError):
+                    # The planner stays on its deterministic tier; this is not an error for it.
+                    self.api_result(200, {'ok': False, 'error': 'llm unavailable'})
+                return
             if self.path == '/api/asset-library/search':
                 query = payload.get('query')
                 if set(payload) != {'query'} or not isinstance(query,str) or not query.strip() or len(query) > 200:
@@ -635,7 +883,17 @@ def main():
     parser = argparse.ArgumentParser(description='World Builder local phone server')
     parser.add_argument('--port', type=int, default=8080)
     parser.add_argument('--directory', default=os.path.dirname(os.path.abspath(__file__)))
+    parser.add_argument('--llm-url', default='',
+                        help='loopback URL of a free local model runtime (Ollama /api/generate or an '
+                             'OpenAI-compatible /v1/chat/completions); empty keeps the planner on rules only')
+    parser.add_argument('--llm-timeout', type=int, default=45, help='seconds to wait for the local model')
     args = parser.parse_args()
+    global LLM_URL, LLM_TIMEOUT
+    LLM_URL = args.llm_url.strip()
+    LLM_TIMEOUT = max(5, min(300, args.llm_timeout))
+    if LLM_URL and not llm_configured():
+        print('رُفض --llm-url: يُسمح فقط بعنوان محلي مثل http://127.0.0.1:11434/api/generate لنموذج مجاني على جهازك.', flush=True)
+        return 2
     handler = partial(Handler, directory=args.directory)
     with ThreadingHTTPServer(('127.0.0.1', args.port), handler) as server:
         server.wiki_learner = WikiLearner(args.directory, get_json, USER_AGENT)
@@ -643,6 +901,8 @@ def main():
         server.house_learner = HouseLearner(args.directory, get_json, get_image, USER_AGENT)
         server.house_learner.start()
         print('التعلم المحدود من ويكيبيديا وصور البيوت يعمل أثناء بقاء Termux شغالاً (يتطلب الصور python-pillow).', flush=True)
+        if LLM_URL:
+            print(f'المخطط قد يستشير نموذجاً لغوياً محلياً مجانياً عبر {LLM_URL} عند الطلب؛ التطبيق يعمل بدونه دون اتصال.', flush=True)
         print(f'افتح http://127.0.0.1:{args.port}/world-builder-mobile.html', flush=True)
         print('لإيقاف الخادم اضغط Ctrl+C.', flush=True)
         try:

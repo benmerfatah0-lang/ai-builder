@@ -16,6 +16,11 @@ import { textWorldItems, imageWorldParts, mergeWorldItems, terrainDescription } 
 import { localSceneVision } from '../../ai/localVision';
 import { loadVisionImage } from '../../ai/visionImage';
 import { interpretPromptLocally } from '../../ai/promptInterpreter';
+import { PlannerBlockedError, planAndBuildWorld, plannerTierLabel, planWorld, type PlannerResult, type PlannerStage } from '../../planner/planner';
+import { describeExecution, describePreflight, describeSpec, summarizeSpec, type SpecSection } from '../../planner/specSummary';
+import { applySpecToShell } from '../../planner/realize';
+import type { Clarification } from '../../planner/worldSpec';
+import type { ClarificationAnswers } from '../../planner/contradictions';
 import { seedFromPrompt } from '../../../core/world-plan/factory';
 import type { WorldDensity, WorldScale, WorldStyle } from '../../ai/types';
 
@@ -31,6 +36,32 @@ const EXAMPLES = [
 
 function randomSeed(): number {
   return Math.floor(Math.random() * 0xffffffff);
+}
+
+/** Arabic label of the planner stage currently running, for the progress line. */
+const STAGE_LABEL: Record<PlannerStage, string> = {
+  interpret: 'قراءة الوصف',
+  frames: 'استخراج العناصر والعلاقات المكانية',
+  solve: 'حل القيود والأعداد والميزانية',
+  clarify: 'فحص التناقضات',
+  enrich: 'استشارة النموذج اللغوي المحلي',
+  layout: 'حل مواضع العناصر',
+  generate: 'توليد العالم',
+  validate: 'التحقق من المشهد',
+};
+
+interface PlanReport {
+  summary: string;
+  tier: string;
+  preflight: string[];
+  sections: SpecSection[];
+  steps: { order: number; title: string; detail: string; status: string }[];
+}
+
+interface PendingQuestions {
+  description: string;
+  flow: 'local' | 'library';
+  items: Clarification[];
 }
 
 export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }: {
@@ -70,6 +101,14 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   const imageInput=useRef<HTMLInputElement|null>(null);
   const currentImage=useRef(imageFile);currentImage.current=imageFile;
   const [localOnly,setLocalOnly]=useState(false);
+  const [usePlanner,setUsePlanner]=useState(true);
+  const [useLocalLlm,setUseLocalLlm]=useState(false);
+  const [plannerStage,setPlannerStage]=useState<PlannerStage|''>('');
+  const [questions,setQuestions]=useState<PendingQuestions|null>(null);
+  const [answers,setAnswers]=useState<{description:string;values:ClarificationAnswers}>({description:'',values:{}});
+  const [planReport,setPlanReport]=useState<PlanReport|null>(null);
+  const plannerController=useRef<AbortController|null>(null);
+  useEffect(()=>()=>plannerController.current?.abort(),[]);
   const [seed, setSeed] = useState<number | null>(null);
   const [style, setStyle] = useState<WorldStyle | 'auto'>('auto');
   const [scale, setScale] = useState<WorldScale | 'auto'>('auto');
@@ -84,14 +123,32 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
   const [notes, setNotes] = useState<string[]>([]);
   const [stats, setStats] = useState<{ objects: number; groups: number } | null>(null);
   const [generationError, setGenerationError] = useState('');
-  const generateUnified = async () => {
+  /** UI settings stay authoritative; answers are only the ones already given. */
+  const plannerOptions = (given: ClarificationAnswers, signal?: AbortSignal) => ({
+    ...(seed !== null ? { seed } : {}),
+    ...(style !== 'auto' ? { style } : {}),
+    ...(scale !== 'auto' ? { scale } : {}),
+    ...(density !== 'auto' ? { density } : {}),
+    ...(Object.keys(given).length ? { answers: given } : {}),
+    // The neural tier is optional, free and local; the planner works without it.
+    ...(useLocalLlm ? { llm: { enabled: true } } : {}),
+    ...(signal ? { signal } : {}),
+    onStage: (stage: PlannerStage) => { if (alive.current) setPlannerStage(stage); },
+  });
+
+  /** Answers belong to one description; a new description starts clean. */
+  const answersFor = (text: string, given?: ClarificationAnswers): ClarificationAnswers =>
+    given ?? (answers.description === text ? answers.values : {});
+
+  const generateUnified = async (given?: ClarificationAnswers) => {
     const text=prompt.trim(), file=imageFile;
     if ((!text && !file) || generating || batchBusy) return;
-    if(localOnly && !file){void generate();return;}
+    if(localOnly && !file){void generate(given);return;}
     if(text.length>400){setGenerationError('الحد الأقصى للوصف في هذا المسار 400 حرف.');return;}
     const original=state.plan,controller=new AbortController();cloudController.current=controller;
-    setGenerationError('');setResult(null);setNotes([]);setStats(null);setLibraryDraft(null);setGenerating(true);
+    setGenerationError('');setResult(null);setNotes([]);setStats(null);setLibraryDraft(null);setQuestions(null);setPlanReport(null);setGenerating(true);
     let release:(()=>void)|undefined;
+    let planned:PlannerResult|null=null;
     try {
       let imageItems:CloudWorldItem[]=[], hints:string[]=[], imageNotice='';
       if(file){
@@ -104,6 +161,13 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         imageNotice=`تحليل الصورة تقريبي وقد يدمج العناصر؛ ${detected.ignored.length?'عوملت بعض المناطق كخلفية.':''}`;
       }
       if(controller.signal.aborted || !alive.current || currentPlan.current!==original || currentPrompt.current.trim()!==text || currentImage.current!==file)throw new Error('تغيّر العالم أو الوصف أو الصورة؛ لم يُنشأ شيء.');
+      if(usePlanner && text){
+        // The library path still fetches its own models, but the ground, water,
+        // light and weather come from the same plan the offline path uses, and a
+        // contradiction is asked about before anything is downloaded.
+        planned=await planWorld(text,plannerOptions(answersFor(text,given),controller.signal));
+        if(planned.blocking.length)throw new PlannerBlockedError(planned.blocking);
+      }
       const items=mergeWorldItems(textWorldItems(text),imageItems);
       if(items.length>MAX_CLOUD_OBJECTS)throw new Error(`الطلب يتجاوز الحد ${MAX_CLOUD_OBJECTS} عنصراً في العالم الواحد. قلّل العدد وأعد المحاولة.`);
       const terrainText=terrainDescription(text,hints);
@@ -112,23 +176,73 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         ...(style!=='auto'?{style}:{}),...(scale!=='auto'?{scale}:{}),...(density!=='auto'?{density}:{})
       });
       if(worldName.trim())shell.name=worldName.trim().slice(0,80);
-      setNotes(imageNotice?[imageNotice]:[]);
-      setLibraryDraft({items,prompt:text,plan:original,shell,file,id:++libraryDraftId.current});
+      const grounded=planned?applySpecToShell(shell,planned.spec):null;
+      const plannerNotes=grounded&&planned?[...grounded.warnings,...planned.spec.notices]:[];
+      if(planned)setPlanReport({summary:summarizeSpec(planned.spec),tier:plannerTierLabel(planned.tier),preflight:describePreflight(planned.spec),sections:describeSpec(planned.spec),steps:[]});
+      setNotes([...(imageNotice?[imageNotice]:[]),...plannerNotes]);
+      setLibraryDraft({items,prompt:text,plan:original,shell:grounded?.plan??shell,file,id:++libraryDraftId.current});
     } catch(error){
-      if(alive.current){const message=controller.signal.aborted?'أُلغي التحليل؛ لم يتغير العالم.':error instanceof Error?error.message:'تعذّر تجهيز العالم.';setGenerationError(message);notify(message,'danger');}
-    } finally {release?.();if(cloudController.current===controller)cloudController.current=null;if(alive.current)setGenerating(false);}
+      if(error instanceof PlannerBlockedError){
+        setQuestions({description:text,flow:'library',items:error.clarifications});
+        setAnswers({description:text,values:answersFor(text,given)});
+        const message='يحتاج المخطط توضيحاً قبل تجهيز العالم؛ اختر جواباً أدناه.';
+        setGenerationError(message);notify(message,'neutral');
+      } else if(alive.current){const message=controller.signal.aborted?'أُلغي التحليل؛ لم يتغير العالم.':error instanceof Error?error.message:'تعذّر تجهيز العالم.';setGenerationError(message);notify(message,'danger');}
+    } finally {release?.();if(cloudController.current===controller)cloudController.current=null;if(alive.current){setPlannerStage('');setGenerating(false);}}
   };
-  const generate = async () => {
+  const generate = async (given?: ClarificationAnswers) => {
     const text = prompt.trim();
     if (!text || generating || batchBusy) return;
-    setLibraryDraft(null);
+    const replies = answersFor(text, given);
+    setLibraryDraft(null);setQuestions(null);setPlanReport(null);
     const originalPlan = state.plan;
     setGenerationError('');setResult(null);setNotes([]);setStats(null);setGenerating(true);
+    const controller = new AbortController();plannerController.current = controller;
     try {
       // Give the phone a frame to display progress before procedural generation.
       await new Promise((resolve) => window.setTimeout(resolve, 16));
       if (!alive.current) return;
       if (currentPlan.current !== originalPlan || currentPrompt.current.trim() !== text) throw new Error('تغيّر العالم أو الوصف؛ لم يُنشأ شيء. أعد المحاولة.');
+      const unknown = unknownTopics(correctBuildSpelling(text).text).terms;
+      const unknownNote = unknown.length ? [`قد لا يفهم البناء النصي هذه الكلمات أو الأسماء: ${unknown.slice(0,10).map(term=>`«${term}»`).join('، ')}${unknown.length>10?' وغيرها':''}. لم تُستخدم صور لتخمينها.`] : [];
+      const styleNote = /بكسل|فوكسل|ناعم|pixel|voxel|smooth/i.test(text) ? ['لا يغيّر منشئ الوصف حالياً سطح كل الأصول إلى بكسلي أو ناعم؛ راجع النتيجة وعدّلها في المحرر.'] : [];
+
+      if (usePlanner) {
+        // The whole plan — dimensions, biomes, regions, relations, budgets,
+        // negations and the execution order — is settled before a single object
+        // exists; the existing generators then build exactly that plan.
+        const built = await planAndBuildWorld(
+          text,
+          plannerOptions(replies, controller.signal),
+          variant === 'forge' && worldName.trim() ? { name: worldName.trim() } : {},
+        );
+        if (controller.signal.aborted) throw new Error('أُلغي التخطيط؛ لم يتغير العالم.');
+        if (!alive.current || currentPlan.current !== originalPlan || currentPrompt.current.trim() !== text) throw new Error('تغيّر العالم أو الوصف؛ لم يُنشأ شيء. أعد المحاولة.');
+        if (!built.validation.valid) throw new Error(`تعذّر بناء العالم: ${built.validation.errors[0]?.message ?? 'خطة غير صالحة'}`);
+        const spec = built.spec;
+        const hasMine = built.plan.objects.some((object) => object.kind === 'primitive' && object.primitive === 'mine-entrance');
+        dispatch({ type:'replacePlan', plan: built.plan });
+        setResult(built.result.interpretation);
+        setPlanReport({
+          summary: summarizeSpec(spec),
+          tier: plannerTierLabel(built.result.tier),
+          preflight: describePreflight(spec),
+          sections: describeSpec(spec),
+          steps: describeExecution(spec),
+        });
+        setAnswers({ description: text, values: replies });
+        setNotes([
+          ...built.warnings,
+          ...spec.notices,
+          ...unknownNote,
+          ...styleNote,
+          ...(hasMine ? ['المنجم مدخل زخرفي؛ لا توجد أنفاق محفورة أو قابلة للدخول.'] : []),
+        ]);
+        setStats({objects:built.plan.objects.length,groups:built.plan.groups.length});
+        notify('أُنشئ العالم محلياً عبر المخطط المتقدم؛ يمكن التراجع عنه.', 'success');
+        return;
+      }
+
       const interpretation = interpretPromptLocally(text, {
         ...(seed !== null ? { seed } : {}),
         ...(style !== 'auto' ? { style } : {}),
@@ -139,23 +253,44 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       if (!report.validation.valid) throw new Error(`تعذّر بناء العالم: ${report.validation.errors[0]?.message ?? 'خطة غير صالحة'}`);
       if (!alive.current || currentPlan.current !== originalPlan || currentPrompt.current.trim() !== text) throw new Error('تغيّر العالم أو الوصف؛ لم يُنشأ شيء. أعد المحاولة.');
       const plan = variant === 'forge' && worldName.trim() ? { ...report.plan, name: worldName.trim() } : report.plan;
-      const unknown = unknownTopics(correctBuildSpelling(text).text).terms;
       const hasMine = plan.objects.some((object) => object.kind === 'primitive' && object.primitive === 'mine-entrance');
       dispatch({ type:'replacePlan', plan });
       setResult(interpretation);
       setNotes([
         ...report.warnings,
         ...(interpretation.notes ?? []),
-        ...(unknown.length ? [`قد لا يفهم البناء النصي هذه الكلمات أو الأسماء: ${unknown.slice(0,10).map(term=>`«${term}»`).join('، ')}${unknown.length>10?' وغيرها':''}. لم تُستخدم صور لتخمينها.`] : []),
-        ...(/بكسل|فوكسل|ناعم|pixel|voxel|smooth/i.test(text) ? ['لا يغيّر منشئ الوصف حالياً سطح كل الأصول إلى بكسلي أو ناعم؛ راجع النتيجة وعدّلها في المحرر.'] : []),
+        ...unknownNote,
+        ...styleNote,
         ...(hasMine ? ['المنجم مدخل زخرفي؛ لا توجد أنفاق محفورة أو قابلة للدخول.'] : []),
       ]);
       setStats({objects:plan.objects.length,groups:plan.groups.length});
       notify('أُنشئ العالم محلياً من الوصف؛ يمكن التراجع عنه.', 'success');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'تعذّر إنشاء العالم. حاول مجدداً.';
-      setGenerationError(message);notify(message,'danger');
-    } finally {if(alive.current)setGenerating(false);}
+      if (error instanceof PlannerBlockedError) {
+        // Nothing was generated: the planner asks instead of guessing.
+        setQuestions({ description: text, flow: 'local', items: error.clarifications });
+        setAnswers({ description: text, values: replies });
+        const message = 'يحتاج المخطط توضيحاً قبل إنشاء العالم؛ اختر جواباً أدناه.';
+        setGenerationError(message);notify(message,'neutral');
+      } else {
+        const message = controller.signal.aborted ? 'أُلغي التخطيط؛ لم يتغير العالم.' : error instanceof Error ? error.message : 'تعذّر إنشاء العالم. حاول مجدداً.';
+        setGenerationError(message);notify(message,'danger');
+      }
+    } finally {
+      if(plannerController.current===controller)plannerController.current=null;
+      if(alive.current){setPlannerStage('');setGenerating(false);}
+    }
+  };
+
+  /** Merges one answer in and re-runs the flow that asked the question. */
+  const answerQuestion = (questionId: string, optionId: string) => {
+    const pending = questions;
+    if (!pending || generating || batchBusy) return;
+    const next: ClarificationAnswers = { ...answersFor(pending.description), [questionId]: optionId };
+    const remaining = pending.items.filter((item) => item.id !== questionId);
+    setAnswers({ description: pending.description, values: next });
+    setQuestions(remaining.length ? { ...pending, items: remaining } : null);
+    if (pending.flow === 'library') void generateUnified(next); else void generate(next);
   };
 
   return (
@@ -188,13 +323,40 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       </label>
 
       {generationError && <p className="online-error" role="alert" dir="rtl">{generationError}</p>}
+      {generating && plannerStage && <p className="hint-text" dir="rtl" role="status">المخطط المتقدم: {STAGE_LABEL[plannerStage]}…</p>}
+      {questions && (
+        <div className="ai-warnings" dir="rtl">
+          <span className="field-label">يحتاج المخطط توضيحاً قبل البناء</span>
+          <p className="hint-text">لم يُنشأ أي عالم بعد. وصفك يحوي طلبين متعارضين؛ اختر جواباً ليبني المخطط العالم مرة واحدة وبلا تخمين.</p>
+          {questions.items.map((item) => (
+            <div className="callout" key={item.id}>
+              <strong>{item.question}</strong>
+              {item.reason && <p className="hint-text">{item.reason}</p>}
+              <div className="create-actions">
+                {item.options.map((option) => (
+                  <button
+                    type="button"
+                    key={option.id}
+                    className={option.id === item.defaultOption ? 'btn btn-primary btn-small' : 'btn btn-small'}
+                    disabled={generating || batchBusy}
+                    onClick={() => answerQuestion(item.id, option.id)}
+                  >
+                    {option.label}{option.id === item.defaultOption ? ' (الافتراضي)' : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          <button type="button" className="btn btn-small" disabled={generating || batchBusy} onClick={() => { setQuestions(null); setAnswers({ description: '', values: {} }); }}>تجاهل الأسئلة ومتابعة لاحقاً</button>
+        </div>
+      )}
       <label className="field" dir="rtl"><span className="field-label">صورة اختيارية للعالم</span><input aria-label="صورة العالم الاختيارية" ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp" disabled={generating||batchBusy} onChange={event=>{setImageFile(event.target.files?.[0]??null);setGenerationError('');}}/></label>
       {imageFile && <p dir="rtl">الصورة: {imageFile.name} · ستُحلّل محلياً، مع الوصف إن كتبته. <button type="button" className="btn btn-small" disabled={generating||batchBusy} onClick={()=>{setImageFile(null);if(imageInput.current)imageInput.current.value='';}}>إزالة الصورة</button></p>}
       <div className="create-actions" dir="rtl">
         <button type="button" className="btn btn-primary generate-btn" onClick={() => void generateUnified()} disabled={(!prompt.trim()&&!imageFile)||generating||batchBusy} aria-label="إنشاء العالم">
           <Icon name="sparkles" size={17}/>{generating||batchBusy?'جاري إنشاء العالم…':'إنشاء العالم'}
         </button>
-        {generating && <button type="button" className="btn" onClick={()=>cloudController.current?.abort()}>إلغاء تحليل الصورة</button>}
+        {generating && <button type="button" className="btn" onClick={()=>{cloudController.current?.abort();plannerController.current?.abort();}}>إلغاء</button>}
       </div>
       <p className="create-actions-hint" dir="rtl">الأرض والماء من التطبيق؛ يبحث خادم الهاتف تلقائياً عن المجسمات المجانية. أضف صورة اختيارية مع الوصف أو بدونه. أسماء العناصر تُرسل للمصادر، لا الصورة. لا تكتب بيانات خاصة.</p>
       {!result && notes.map(note=><p key={note} dir="rtl">{note}</p>)}
@@ -247,6 +409,33 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
         </div>
       )}
 
+      {planReport && (
+        <details className="forge-disclosure" dir="rtl" open>
+          <summary>خطة تنفيذ العالم · {planReport.tier}</summary>
+          <p className="ai-summary">{planReport.summary}</p>
+          {planReport.preflight.length > 0 && (
+            <div className="ai-warnings">
+              <span className="field-label">فحص ما قبل البناء</span>
+              <ul>{planReport.preflight.map((line) => <li key={line}>{line}</li>)}</ul>
+            </div>
+          )}
+          {planReport.steps.length > 0 && (
+            <div className="online-settings">
+              <div className="online-heading">خطوات التنفيذ بالترتيب</div>
+              <ol>{planReport.steps.map((step) => <li key={step.order}>{step.order}. {step.title} — {step.detail} ({step.status})</li>)}</ol>
+            </div>
+          )}
+          {planReport.sections.map((section) => (
+            <details className="forge-disclosure" key={section.title}>
+              <summary>{section.title}</summary>
+              <div className="online-settings">
+                {section.rows.map((row) => <p key={`${row.label}:${row.value}`}><strong>{row.label}:</strong> {row.value}</p>)}
+              </div>
+            </details>
+          ))}
+        </details>
+      )}
+
       <details className="forge-disclosure extra-tools" dir="rtl">
         <summary>إعدادات وأدوات إضافية</summary>
       {variant === 'forge' && <label className="field forge-name"><span>اسم العالم (اختياري)</span><input className="input" aria-label="اسم العالم (اختياري)" value={worldName} onChange={(event) => setWorldName(event.target.value)} maxLength={80} placeholder="مثلاً: أرض الأحلام" /></label>}
@@ -270,6 +459,8 @@ export function AiPanel({ notify, mapTrainer, variant = 'panel', onOpenStudio }:
       <details className="forge-disclosure" dir="rtl">
         <summary>إعدادات العالم المتقدمة</summary>
       <label className="field" dir="rtl"><span><input type="checkbox" aria-label="استخدام البناء المحلي فقط" checked={localOnly} onChange={event=>setLocalOnly(event.target.checked)}/> استخدام البناء المحلي فقط دون البحث عن مجسمات (عند عدم إضافة صورة)</span></label>
+      <label className="field" dir="rtl"><span><input type="checkbox" aria-label="استخدام المخطط المتقدم للعالم" checked={usePlanner} onChange={event=>{setUsePlanner(event.target.checked);setQuestions(null);setPlanReport(null);}}/> المخطط المتقدم للعالم: يفهم العلاقات المكانية (قلعة فوق جبل، قرية تحيط ببحيرة، بيوت تربطها طرق) والمقاييس والكثافة والأساليب والتعليمات السالبة، ويضع خطة تنفيذ كاملة ويسألك عند التناقض بدل التخمين</span></label>
+      <label className="field" dir="rtl"><span><input type="checkbox" aria-label="استخدام نموذج لغوي محلي مجاني عند توفره" checked={useLocalLlm} onChange={event=>setUseLocalLlm(event.target.checked)}/> نموذج لغوي محلي مجاني (اختياري): يُستشار عبر خادم جهازك فقط لسدّ ما عجزت عنه القواعد، ولا يغيّر الأعداد أو المواضع أو النفي. يعمل المخطط بدونه دون اتصال</span></label>
       <div className="settings-heading" dir="rtl"><span>إعدادات متقدمة</span><span>02</span></div>
       <div className="seed-row">
         <NumberField

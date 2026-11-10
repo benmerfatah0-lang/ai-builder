@@ -9,6 +9,17 @@ export interface AssetRequest {
   referenceColor?: string;
   size?: 'small' | 'large' | 'tall' | 'wide';
   relation?: { target: number; direction: AssetDirection };
+  /**
+   * Preferred (x, z) positions in terrain units, one per instance, produced by
+   * the advanced planner when it resolved a spatial relation ("a castle on top
+   * of the mountain", "houses surrounding the lake"). Purely advisory: the
+   * layout code still rejects water, overlap and out-of-bounds spots and falls
+   * back to its own sampling, so requests without positions behave exactly as
+   * before.
+   */
+  positions?: [number, number][];
+  /** Logical region name recorded on `meta.region` for regional regeneration. */
+  region?: string;
 }
 
 export interface AssetMatch { id: string; start: number; end: number; text: string }

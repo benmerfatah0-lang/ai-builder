@@ -86,9 +86,15 @@ export function buildAssetLayout(
         const colored = shaped.kind === 'building' && shaped.variant === 'house' && request.referenceColor && /^#[0-9a-f]{6}$/i.test(request.referenceColor) ? { ...shaped, color: request.referenceColor } : shaped;
         const object: WorldObject = { ...colored, transform: { ...shaped.transform, ...(intent.river && shaped.kind === 'bridge' ? { rotation: [0, 90, 0] as [number, number, number] } : {}), scale: shaped.transform.scale.map((value, axis) => value * factors[axis]!) as [number, number, number] } };
         let position: [number, number, number] | undefined;
+        // A planner-resolved position is tried first for this instance; every
+        // safety check below still applies and later attempts fall back to the
+        // original sampling, so requests without positions behave as before.
+        const wanted = request.positions?.[n];
         for (let attempt = 0; attempt < 120; attempt += 1) {
           if (request.relation?.direction === 'near' && attempt >= 48) break;
-          let [x, z] = candidate(request.relation?.direction, anchor, attempt);
+          let [x, z] = attempt === 0 && wanted
+            ? [wanted[0], wanted[1]]
+            : candidate(request.relation?.direction, anchor, attempt);
           if (intent.river && object.kind === 'bridge') x = 0;
           // Reserve the whole central strip for the decorative river.
           if (intent.river && object.kind !== 'bridge' && object.kind !== 'path' && Math.abs(x) < 7 + object.meta.dimensions[0] * object.transform.scale[0] / 2) continue;
@@ -110,6 +116,9 @@ export function buildAssetLayout(
           id: `obj_${intent.seed.toString(36)}_${preserveExisting ? 'extra_' : ''}${objects.length.toString(36)}`,
           name: `${asset.label} ${number}`,
           transform: { ...object.transform, position },
+          // The planner tags objects with their logical region so regional
+          // regeneration and the hierarchy can group them later.
+          ...(request.region ? { meta: { ...object.meta, region: request.region } } : {}),
         };
         objects.push(placedObject);
         if (!anchors.has(index)) anchors.set(index, position);

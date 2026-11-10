@@ -7,7 +7,7 @@ import threading
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import unittest
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 from urllib.request import Request
@@ -423,6 +423,173 @@ class PhoneServerTests(unittest.TestCase):
 
     def test_redirects_are_not_followed(self):
         self.assertIsNone(phone_server.NoRedirects().redirect_request(None, None, 302, '', {}, 'https://example.com'))
+
+
+    # ── optional free local language model ────────────────────────────────────
+    def llm_server(self, responses):
+        """A loopback stand-in for Ollama: /api/tags and /api/generate."""
+        seen = []
+
+        class Upstream(BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(('GET', self.path, None))
+                body = json.dumps(responses.get(self.path, {'models': [{'name': 'qwen2.5:1.5b'}]})).encode('utf-8')
+                self.send_response(200 if self.path in responses or self.path == '/api/tags' else 404)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_POST(self):
+                length = int(self.headers.get('Content-Length', '0'))
+                payload = json.loads(self.rfile.read(length) or b'{}')
+                seen.append(('POST', self.path, payload))
+                answer = responses.get('POST ' + self.path, {'response': '{}'})
+                if isinstance(answer, Exception):
+                    raise answer
+                body = json.dumps(answer).encode('utf-8')
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Upstream)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        # Cleanups run last-in-first-out: stop the loop, then join, then close.
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join)
+        self.addCleanup(server.shutdown)
+        return f'http://127.0.0.1:{server.server_address[1]}/api/generate', seen
+
+    def test_local_llm_endpoint_is_disabled_by_default(self):
+        status, body = self.request('/api/local-llm', body=json.dumps({'probe': True}).encode('utf-8'))
+        self.assertEqual(status, 404)
+        self.assertEqual(json.loads(body), {'error': 'llm disabled'})
+        self.assertFalse(phone_server.llm_configured())
+        self.assertFalse(phone_server.llm_configured('https://api.openai.com/v1/chat/completions'))
+        self.assertFalse(phone_server.llm_configured('http://10.0.0.5:11434/api/generate'))
+        self.assertTrue(phone_server.llm_configured('http://127.0.0.1:11434/api/generate'))
+        self.assertTrue(phone_server.llm_configured('http://localhost:8080/v1/chat/completions'))
+
+    def test_local_llm_probe_lists_the_models_the_device_offers(self):
+        url, seen = self.llm_server({'/api/tags': {'models': [{'name': 'qwen2.5:1.5b'}, {'name': 'llama3.2:1b'}]}})
+        with patch.object(phone_server, 'LLM_URL', url):
+            status, body = self.request('/api/local-llm', body=json.dumps({'probe': True}).encode('utf-8'))
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), {'ok': True, 'models': ['qwen2.5:1.5b', 'llama3.2:1b']})
+        self.assertEqual(seen[0][1], '/api/tags')
+
+    def test_local_llm_probe_reports_unavailable_when_no_model_is_installed(self):
+        url, _ = self.llm_server({'/api/tags': {'models': []}})
+        with patch.object(phone_server, 'LLM_URL', url):
+            status, body = self.request('/api/local-llm', body=json.dumps({'probe': True}).encode('utf-8'))
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)['ok'], False)
+
+    def test_local_llm_enrichment_is_sanitized_before_it_reaches_the_app(self):
+        url, seen = self.llm_server({'POST /api/generate': {'response': (
+            '```json\n' + json.dumps({
+                'biome': ' Desert ', 'landform': 'atlantis', 'timeOfDay': 'sunset', 'scale': 'huge',
+                'weather': ['fog', '', 7], 'architecture': ['medieval'],
+                'materials': {'wall': '#A8A294', 'roof': 'brown', 'palette': 'stone'},
+                'regions': [{'name': 'واحة', 'selector': 'North', 'biome': 'desert'}, {'name': '', 'selector': 'west'}, 'junk'],
+                'animals': [{'id': 'deer', 'count': 3}, {'id': 'dragon', 'count': 1}, {'id': 'x', 'count': 0}],
+                'clarifications': ['هل تريد جسراً؟'], 'name': 'عالم الواحة', 'counts': {'trees': 999},
+            }) + '\n```'
+        )}})
+        payload = {'prompt': 'صحراء فيها واحة', 'language': 'ar', 'knownTerms': ['desert', 'palm'], 'gaps': ['weather']}
+        with patch.object(phone_server, 'LLM_URL', url):
+            status, body = self.request('/api/local-llm', body=json.dumps(payload).encode('utf-8'))
+        self.assertEqual(status, 200)
+        data = json.loads(body)
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['model'], 'qwen2.5:1.5b')
+        self.assertEqual(data['enrichment'], {
+            'biome': 'desert', 'timeOfDay': 'sunset',
+            'weather': ['fog'], 'architecture': ['medieval'],
+            'materials': {'wall': '#A8A294', 'palette': 'stone'},
+            'regions': [{'name': 'واحة', 'selector': 'north', 'biome': 'desert'}],
+            # Shape is all the proxy can check; the app drops ids outside its lexicon.
+            'animals': [{'id': 'deer', 'count': 3}, {'id': 'dragon', 'count': 1}],
+            'clarifications': ['هل تريد جسراً؟'], 'name': 'عالم الواحة',
+        })
+        sent = seen[-1][2]
+        self.assertEqual(sent['model'], 'qwen2.5:1.5b')
+        self.assertEqual(sent['stream'], False)
+        self.assertIn('صحراء فيها واحة', sent['prompt'])
+        self.assertIn('weather', sent['prompt'])
+        self.assertNotIn('counts', json.dumps(data['enrichment']))
+
+    def test_local_llm_honours_the_requested_model_and_rejects_an_unknown_one(self):
+        url, seen = self.llm_server({'/api/tags': {'models': [{'name': 'llama3.2:1b'}]}})
+        with patch.object(phone_server, 'LLM_URL', url):
+            payload = {'prompt': 'غابة', 'language': 'ar', 'knownTerms': [], 'gaps': [], 'model': 'llama3.2'}
+            self.assertTrue(json.loads(self.request('/api/local-llm', body=json.dumps(payload).encode('utf-8'))[1])['ok'])
+            self.assertEqual(seen[-1][2]['model'], 'llama3.2')
+            payload['model'] = 'gpt-4o-mini'
+            data = json.loads(self.request('/api/local-llm', body=json.dumps(payload).encode('utf-8'))[1])
+        self.assertEqual(data, {'ok': False, 'error': 'llm unavailable'})
+
+    def test_local_llm_openai_compatible_runtime_is_supported_too(self):
+        url, seen = self.llm_server({
+            '/v1/models': {'data': [{'id': 'local-model'}]},
+            'POST /v1/chat/completions': {'choices': [{'message': {'content': '{"biome":"forest"}'}}]},
+        })
+        url = url.replace('/api/generate', '/v1/chat/completions')
+        with patch.object(phone_server, 'LLM_URL', url):
+            status, body = self.request('/api/local-llm', body=json.dumps({'probe': True}).encode('utf-8'))
+            self.assertEqual(json.loads(body), {'ok': True, 'models': ['local-model']})
+            payload = {'prompt': 'غابة', 'language': 'ar', 'knownTerms': ['tree'], 'gaps': ['biome']}
+            data = json.loads(self.request('/api/local-llm', body=json.dumps(payload).encode('utf-8'))[1])
+        self.assertEqual(status, 200)
+        self.assertEqual(data['enrichment'], {'biome': 'forest'})
+        self.assertIn('غابة', seen[-1][2]['messages'][0]['content'])
+
+    def test_local_llm_never_fails_the_request_when_the_model_is_gone_or_rude(self):
+        payload = json.dumps({'prompt': 'غابة', 'language': 'ar', 'knownTerms': [], 'gaps': []}).encode('utf-8')
+        for responses in ({'/api/tags': {'models': []}}, {'POST /api/generate': {'response': 'I cannot help with that'}}):
+            url, _ = self.llm_server(responses)
+            with patch.object(phone_server, 'LLM_URL', url):
+                status, body = self.request('/api/local-llm', body=payload)
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(body), {'ok': False, 'error': 'llm unavailable'})
+
+    def test_local_llm_drops_every_field_it_cannot_vouch_for(self):
+        url, _ = self.llm_server({'POST /api/generate': {'response': '{"biome": 12, "weather": "fog", "animals": "deer"}'}})
+        with patch.object(phone_server, 'LLM_URL', url):
+            status, body = self.request('/api/local-llm', body=json.dumps(
+                {'prompt': 'غابة', 'language': 'ar', 'knownTerms': [], 'gaps': []}).encode('utf-8'))
+        self.assertEqual(status, 200)
+        data = json.loads(body)
+        self.assertTrue(data['ok'])
+        # Nothing usable came back, and the app says so instead of inventing a world.
+        self.assertEqual(data['enrichment'], {})
+
+    def test_local_llm_rejects_a_malformed_request(self):
+        url, _ = self.llm_server({})
+        with patch.object(phone_server, 'LLM_URL', url):
+            self.assertEqual(json.loads(self.request('/api/local-llm', body=json.dumps(
+                {'prompt': 'غابة', 'secret': 'x'}).encode('utf-8'))[1]), {'error': 'invalid request'})
+            for payload in ({}, {'prompt': 'غابة'}, {'prompt': 'x' * 5000, 'language': 'ar'},
+                            {'prompt': 'غابة', 'language': 'klingon'}):
+                data = json.loads(self.request('/api/local-llm', body=json.dumps(payload).encode('utf-8'))[1])
+                self.assertEqual(data, {'ok': False, 'error': 'llm unavailable'})
+
+    def test_local_llm_helpers_read_both_runtime_shapes(self):
+        self.assertEqual(phone_server.llm_flavour('http://127.0.0.1:11434/api/generate'), 'ollama')
+        self.assertEqual(phone_server.llm_flavour('http://127.0.0.1:8080/v1/chat/completions'), 'openai')
+        self.assertEqual(phone_server.llm_base('http://127.0.0.1:11434/api/generate'), 'http://127.0.0.1:11434')
+        self.assertEqual(phone_server.llm_base('http://127.0.0.1:8080/v1/chat/completions'), 'http://127.0.0.1:8080')
+        self.assertTrue(phone_server.llm_model_ok('qwen2.5', ['qwen2.5:1.5b']))
+        self.assertFalse(phone_server.llm_model_ok('gpt-4o', ['qwen2.5:1.5b']))
+        self.assertEqual(phone_server.llm_extract_json('```json\n{"a":1}\n```'), {'a': 1})
+        with self.assertRaises(ValueError):
+            phone_server.llm_extract_json('no json here')
 
 
 class Cloud3DTests(unittest.TestCase):
