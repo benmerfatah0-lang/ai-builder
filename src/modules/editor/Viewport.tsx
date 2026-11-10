@@ -13,7 +13,10 @@ import {
   applyTransform,
   clearObject3DGroup,
   createGrid,
+  createTerrainChunks,
   createTerrainMesh,
+  updateTerrainLod,
+  type TerrainLodState,
   createWaterMesh,
   createWorldGroupObject,
   createWorldObjectGroup,
@@ -117,6 +120,8 @@ export function Viewport({
   const [stats, setStats] = useState({ fps: 0, calls: 0, triangles: 0 });
   const [notice, setNotice] = useState('');
   const waterRef = useRef<WaterAnimation | null>(null);
+  /** Chunk/LOD bookkeeping, present only for worlds baked by the landscape engine. */
+  const terrainLodRef = useRef<TerrainLodState | null>(null);
   const walkingRef = useRef(walkMode); walkingRef.current = walkMode;
   const walkButtons = useRef<Record<keyof WalkInput, boolean>>({ forward:false, back:false, left:false, right:false });
 
@@ -321,6 +326,9 @@ export function Viewport({
     const clock = new THREE.Clock();
 
     let walkPose: WalkPose | null = null;
+    // Last camera position the terrain LOD was evaluated at.
+    let lastLodX = Number.NaN;
+    let lastLodZ = Number.NaN;
     let savedOrbit: { position: THREE.Vector3; target: THREE.Vector3; near: number; planId:string } | null = null;
     const keys = new Set<string>();
     let lookPointer: { id:number; x:number; y:number } | null = null;
@@ -351,6 +359,20 @@ export function Viewport({
         camera.position.set(walkPose.x,walkPose.y,walkPose.z);
         camera.rotation.set(walkPose.pitch,walkPose.yaw,0,'YXZ');
       } else controls.update();
+
+      // Level of detail: only re-evaluated after the camera has moved half a
+      // chunk, and at most two chunks are rebuilt per frame.
+      const lod = terrainLodRef.current;
+      if (lod) {
+        const threshold = Math.max(2, lod.layout.chunkSize * 0.5);
+        const movedX = camera.position.x - lastLodX;
+        const movedZ = camera.position.z - lastLodZ;
+        if (!(movedX * movedX + movedZ * movedZ < threshold * threshold)) {
+          lastLodX = camera.position.x;
+          lastLodZ = camera.position.z;
+          updateTerrainLod(lod, camera.position.x, camera.position.z, 2);
+        }
+      }
 
       const elapsed = clock.getElapsedTime();
       waterRef.current?.update(elapsed);
@@ -557,6 +579,7 @@ export function Viewport({
       scene.remove(gizmoHelper);
       controls.dispose();
       clearObject3DGroup(terrainGroup);
+      terrainLodRef.current = null;
       clearObject3DGroup(objectsGroup);
       clearObject3DGroup(lightsGroup);
       clearObject3DGroup(overlayGroup);
@@ -619,7 +642,20 @@ export function Viewport({
     waterRef.current?.dispose();
     waterRef.current = null;
     clearObject3DGroup(runtime.terrainGroup);
-    runtime.terrainGroup.add(createTerrainMesh(current, isNarrowViewport() ? 128 : 192));
+    terrainLodRef.current = null;
+    const terrainCap = isNarrowViewport() ? 128 : 192;
+    // A baked landscape on a large map is drawn as chunks with per-chunk level of
+    // detail; anything else keeps the single classic mesh.
+    const chunks = createTerrainChunks(current, terrainCap, {
+      x: runtime.camera.position.x,
+      z: runtime.camera.position.z,
+    });
+    if (chunks) {
+      runtime.terrainGroup.add(chunks.group);
+      terrainLodRef.current = chunks.state;
+    } else {
+      runtime.terrainGroup.add(createTerrainMesh(current, terrainCap));
+    }
     const water = createWaterMesh(current);
     waterRef.current = water ? animateWater(water) : null;
     if (water) runtime.terrainGroup.add(water);

@@ -1,6 +1,7 @@
 import { createRiver } from '../assets/structures';
 import { footprintFromObject, footprintsOverlap, type Footprint } from './placement';
 import { createTerrainSampler } from './terrain';
+import { resampleSpine } from '../terrain/geometry';
 import { isEffectivelyVisible, worldTransformOf } from '../world-plan/hierarchy';
 import { MAX_WORLD_OBJECTS, type RiverObject, type WorldPlan } from '../world-plan/schema';
 
@@ -25,7 +26,17 @@ function makeRiverFromPath(plan: WorldPlan, path: [number, number][]): RiverObje
     for (let k = 1; k <= n; k++) coordinates.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]);
   }
   const side = BANK / 2;
-  const points: Point[] = coordinates.map(([x, z]) => [x, Math.max(sampler.heightAt(x, z), sampler.heightAt(x - side, z), sampler.heightAt(x + side, z), sampler.heightAt(x, z - side), sampler.heightAt(x, z + side)) + 0.12, z]);
+  const baked = sampler.landscape;
+  const points: Point[] = coordinates.map(([x, z]) => {
+    if (baked) {
+      // The engine already cut a channel here, so the ribbon lies *in* it: the
+      // centre height plus a lift that keeps the wide edge clear of a bank.
+      // Sampling the neighbourhood maximum instead would float it over the bed.
+      const slope = sampler.slopeAt?.(x, z) ?? 0;
+      return [x, sampler.heightAt(x, z) + 0.12 + Math.min(0.6, slope * side * 0.5), z];
+    }
+    return [x, Math.max(sampler.heightAt(x, z), sampler.heightAt(x - side, z), sampler.heightAt(x + side, z), sampler.heightAt(x, z - side), sampler.heightAt(x, z + side)) + 0.12, z];
+  });
   const origin = points[0]!;
   const local: Point[] = points.map(([x, y, z]) => [x - origin[0], y - origin[1], z - origin[2]]);
   return createRiver(local, origin, { name: 'Village river', width: WIDTH, color: '#4f8ca5', region: 'village-water' });
@@ -33,6 +44,33 @@ function makeRiverFromPath(plan: WorldPlan, path: [number, number][]): RiverObje
 
 export function makeTerrainRiver(plan: WorldPlan, axis: 'x' | 'z', center: number, start: number, end: number): RiverObject {
   return makeRiverFromPath(plan, axis === 'z' ? [[center, start], [center, end]] : [[start, center], [end, center]]);
+}
+
+/**
+ * A ribbon that follows a channel the landscape engine actually carved.
+ *
+ * Returns `null` for a classic terrain, so callers fall back to the decorative
+ * ribbon. Because the path is the drainage network itself, the water runs
+ * downhill the whole way, its bed is below the ground on both banks, and it
+ * cannot cut through a building: the engine kept a corridor clear when it carved.
+ */
+export function makeBakedRiver(plan: WorldPlan, index = 0): RiverObject | null {
+  const sampler = createTerrainSampler(plan.terrain, plan.seed);
+  const river = sampler.landscape?.rivers[index];
+  if (!river || river.points.length < 2) return null;
+  const total = river.points.slice(1).reduce(
+    (sum, point, i) => sum + Math.hypot(point[0] - river.points[i]![0], point[1] - river.points[i]![1]),
+    0,
+  );
+  // Keep the ribbon inside the 64-point budget the schema allows.
+  const count = Math.max(8, Math.min(60, Math.round(total / Math.max(2, plan.terrain.size / 60))));
+  const path = resampleSpine(river.points, count);
+  if (path.length < 2) return null;
+  const points: Point[] = path.map(([x, z]) => [x, sampler.heightAt(x, z) + 0.1, z]);
+  const origin = points[0]!;
+  const local: Point[] = points.map(([x, y, z]) => [x - origin[0], y - origin[1], z - origin[2]]);
+  const width = Math.max(WIDTH, Math.min(14, river.width ?? plan.terrain.size * 0.02));
+  return createRiver(local, origin, { name: 'نهر', width, color: '#4f8ca5', region: 'landscape-water' });
 }
 
 /** Bounded grid search for a polyline through the central region of the village. */

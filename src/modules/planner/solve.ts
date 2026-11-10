@@ -12,6 +12,7 @@ import type {
   MaterialSpec, NegationSpec, PlacementSpec, RegionSpec, SpatialRelation, TerrainConfig, WorldSpec,
 } from './worldSpec';
 import { WORLD_SPEC_VERSION } from './worldSpec';
+import { buildLandscapeRecipe } from './landscape';
 
 /**
  * The constraint solver: frames → structured `WorldSpec`.
@@ -180,6 +181,28 @@ export function solveSpec(frames: Frames, base: PromptInterpretation, options: S
       ? { ignored: [intent.landform] }
       : {}),
   };
+
+  // ── Landscape recipe ──────────────────────────────────────────────────────
+  // Landforms the description implies, expressed as geometry the terrain engine
+  // bakes. When nothing here applies the field stays absent and the world keeps
+  // the classic analytic surface exactly as before.
+  const landscape = buildLandscapeRecipe({
+    size: dimensions.size,
+    resolution: dimensions.resolution,
+    heightScale,
+    roughness: terrain.roughness,
+    style,
+    water: terrain.water,
+    waterLevel: null,
+    ...(terrain.lake ? { lake: terrain.lake } : {}),
+    ...(terrain.river ? { river: terrain.river } : {}),
+    biomes,
+    primaryBiome,
+    mentions: live.map((mention) => mention.entry.id),
+    negated: [...negated],
+    seed: intent.seed,
+  });
+  if (landscape) terrain.landscape = landscape;
 
   // ── Regions ───────────────────────────────────────────────────────────────
   const regions: RegionSpec[] = frames.regions.map((region) => ({

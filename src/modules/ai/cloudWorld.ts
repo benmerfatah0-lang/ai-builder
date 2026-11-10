@@ -167,6 +167,7 @@ export function composeCloudWorld(base:WorldPlan, items:CloudWorldItem[], object
     // Prefer the requested position, but move to dry, unoccupied land away from rivers.
     let x=item.x,z=item.z,ground=terrain.heightAt(x,z),found=false;
     const fits=(xx:number,zz:number)=>Math.abs(xx)+item.size/2<=half-1 && Math.abs(zz)+item.size/2<=half-1 &&
+      terrain.blockedAt?.(xx,zz)!==true &&
       (plan.terrain.waterLevel===null || terrain.heightAt(xx,zz)>=plan.terrain.waterLevel+.35) &&
       !nearRiver(xx,zz,item.size) && occupied.every(o=>Math.hypot(xx-o.x,zz-o.z)>=(item.size+o.size)/2);
     if(fits(x,z))found=true;

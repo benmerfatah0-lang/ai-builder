@@ -84,8 +84,19 @@ export class WorldLayout {
   }
 
   private isDry(x: number, z: number, clearance = 0.35): boolean {
+    if (this.isBlocked(x, z)) return false;
     if (this.waterLevel === null) return true;
     return this.sampler.heightAt(x, z) >= this.waterLevel + clearance;
+  }
+
+  /**
+   * Ground the landscape engine reserved: a carved river corridor, a cave mouth,
+   * or anything under water. Placement refuses it, which is what keeps a river
+   * from being dug through a house and a house from landing in a channel.
+   * Absent on a classic terrain, where nothing is reserved.
+   */
+  private isBlocked(x: number, z: number): boolean {
+    return this.sampler.blockedAt?.(x, z) === true;
   }
 
   /** Coarse height survey of a region, highest first. */

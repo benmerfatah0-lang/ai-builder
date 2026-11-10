@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { BiomeId, TimeOfDay, WorldDensity, WorldScale, WorldStyle } from '../ai/types';
-import type { PathStyle, TerrainStyle } from '../../core/world-plan/schema';
+import type { LandscapeSpec, PathStyle, TerrainStyle } from '../../core/world-plan/schema';
 import type { RelationPredicate } from './frames';
 
 /**
@@ -53,6 +53,13 @@ export interface TerrainConfig {
   palette: { low: string; high: string };
   /** Landform words that were understood but not applied, for the report. */
   ignored?: string[];
+  /**
+   * Procedural landscape recipe for the terrain engine, present only when the
+   * description implies landforms the classic analytic styles cannot build
+   * (ranges, canyons, volcanoes, archipelagos, carved rivers, several biomes).
+   * Absent means the world keeps the classic terrain, unchanged.
+   */
+  landscape?: LandscapeSpec;
 }
 
 /** How much of the world a biome covers, and where. */

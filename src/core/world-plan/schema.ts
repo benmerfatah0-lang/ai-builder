@@ -81,6 +81,208 @@ export const terrainStyleSchema = z.enum([
   'valley', 'plateau', 'canyon', 'volcano', 'crater',
 ]);
 
+/** A polyline in world XZ coordinates, used for ridges, valleys and rivers. */
+const spineSchema = z.array(z.tuple([finiteNumber, finiteNumber])).min(2).max(24);
+
+/**
+ * Procedural landscape descriptors (v1).
+ *
+ * Every field is optional: a document without `landscape` keeps the classic
+ * analytic terrain exactly as before, and a document with one is baked by the
+ * chunked landscape engine. Descriptors are data, not geometry — the engine is
+ * deterministic, so (terrain, seed) always reproduces the same surface, which is
+ * what keeps saved worlds, exports and regional regeneration stable.
+ */
+export const landscapeSchema = z.object({
+  /** Engine version; a bump means older bakes may be re-generated differently. */
+  version: z.literal(1).optional(),
+  /** Internal bake resolution, independent of the rendered mesh resolution. */
+  cells: z.number().int().min(16).max(512).optional(),
+  /** Long mountain ranges built along a spine with ridged multifractal relief. */
+  ranges: z.array(z.object({
+    id: z.string().min(1).max(40).optional(),
+    spine: spineSchema,
+    width: z.number().finite().min(4).max(512),
+    height: z.number().finite().min(0).max(200),
+    roughness: z.number().finite().min(0).max(1).optional(),
+    /** 0 = smooth dome, 1 = sharp crest; controls how the ridge mask falls off. */
+    sharpness: z.number().finite().min(0).max(2).optional(),
+    snowLine: z.number().finite().min(-200).max(200).optional(),
+  }).strict()).max(12).optional(),
+  /** Rounded hill fields. */
+  hills: z.array(z.object({
+    id: z.string().min(1).max(40).optional(),
+    center: z.tuple([finiteNumber, finiteNumber]),
+    radius: z.number().finite().min(2).max(512),
+    height: z.number().finite().min(0).max(200),
+    roughness: z.number().finite().min(0).max(1).optional(),
+  }).strict()).max(16).optional(),
+  /** Valleys: lowered corridors with a V or U cross-section. */
+  valleys: z.array(z.object({
+    id: z.string().min(1).max(40).optional(),
+    spine: spineSchema,
+    width: z.number().finite().min(2).max(512),
+    depth: z.number().finite().min(0).max(200),
+    /** 0 = sharp V, 1 = wide flat U floor. */
+    floor: z.number().finite().min(0).max(1).optional(),
+  }).strict()).max(12).optional(),
+  /** Terraced high ground with steep edges. */
+  plateaus: z.array(z.object({
+    id: z.string().min(1).max(40).optional(),
+    center: z.tuple([finiteNumber, finiteNumber]),
+    radius: z.number().finite().min(2).max(512),
+    height: z.number().finite().min(0).max(200),
+    terraces: z.number().int().min(1).max(12).optional(),
+    /** Horizontal extent of the cliff at the plateau edge, in world units. */
+    edge: z.number().finite().min(0.5).max(120).optional(),
+  }).strict()).max(12).optional(),
+  /** Canyons: deep, narrow, steep-walled channels. */
+  canyons: z.array(z.object({
+    id: z.string().min(1).max(40).optional(),
+    spine: spineSchema,
+    width: z.number().finite().min(1).max(256),
+    depth: z.number().finite().min(0).max(200),
+    meander: z.number().finite().min(0).max(1).optional(),
+  }).strict()).max(12).optional(),
+  /** Volcanoes: cone, crater or caldera, with radial drainage gullies. */
+  volcanoes: z.array(z.object({
+    id: z.string().min(1).max(40).optional(),
+    center: z.tuple([finiteNumber, finiteNumber]),
+    radius: z.number().finite().min(4).max(512),
+    height: z.number().finite().min(0).max(200),
+    /** Crater radius as a fraction of `radius`. */
+    crater: z.number().finite().min(0).max(0.8).optional(),
+    /** Collapse the summit into a caldera instead of a small crater. */
+    caldera: z.boolean().optional(),
+    gullies: z.number().int().min(0).max(24).optional(),
+  }).strict()).max(8).optional(),
+  /** Impact craters: rim, ejecta blanket and optional central peak. */
+  craters: z.array(z.object({
+    id: z.string().min(1).max(40).optional(),
+    center: z.tuple([finiteNumber, finiteNumber]),
+    radius: z.number().finite().min(2).max(256),
+    depth: z.number().finite().min(0).max(200),
+    rim: z.number().finite().min(0).max(100).optional(),
+    centralPeak: z.number().finite().min(0).max(1).optional(),
+  }).strict()).max(12).optional(),
+  /** Archipelagos: several islands with noise-broken coastlines. */
+  islands: z.array(z.object({
+    id: z.string().min(1).max(40).optional(),
+    center: z.tuple([finiteNumber, finiteNumber]),
+    radius: z.number().finite().min(2).max(256),
+    height: z.number().finite().min(0).max(200),
+    /** 0 = round, 1 = heavily broken coastline. */
+    irregularity: z.number().finite().min(0).max(1).optional(),
+    /** Smaller satellite islands scattered around the main one. */
+    satellites: z.number().int().min(0).max(24).optional(),
+  }).strict()).max(16).optional(),
+  /** Ocean: drops the map border below the water line. */
+  ocean: z.object({
+    /** Fraction of the half-size where the falloff starts, 0..1. */
+    start: z.number().finite().min(0).max(1).optional(),
+    depth: z.number().finite().min(0).max(200).optional(),
+  }).strict().optional(),
+  /** Lakes beyond the single legacy `lakeBasin`. */
+  lakes: z.array(z.object({
+    id: z.string().min(1).max(40).optional(),
+    center: z.tuple([finiteNumber, finiteNumber]),
+    radius: z.number().finite().min(1).max(256),
+    depth: z.number().finite().min(0.1).max(80),
+    /** Fill the basin up to this absolute Y instead of carving only. */
+    level: finiteNumber.nullable().optional(),
+  }).strict()).max(12).optional(),
+  /** Rivers with real downhill paths, carved into their own bed. */
+  rivers: z.array(z.object({
+    id: z.string().min(1).max(40).optional(),
+    /** Optional fixed source; otherwise the engine picks high ground. */
+    source: z.tuple([finiteNumber, finiteNumber]).optional(),
+    /** Optional fixed mouth; otherwise the river runs to the lowest sink. */
+    mouth: z.tuple([finiteNumber, finiteNumber]).optional(),
+    width: z.number().finite().min(0.5).max(40).optional(),
+    depth: z.number().finite().min(0).max(20).optional(),
+    meander: z.number().finite().min(0).max(2).optional(),
+    /** Carve the bed so the water ribbon never floats above the ground. */
+    carve: z.boolean().optional(),
+    /** Keep buildings out of the corridor by this many world units. */
+    corridor: z.number().finite().min(0).max(80).optional(),
+  }).strict()).max(8).optional(),
+  /** Natural caves: galleries carved into rock, with a recorded entrance. */
+  caves: z.array(z.object({
+    id: z.string().min(1).max(40).optional(),
+    entrance: z.tuple([finiteNumber, finiteNumber]).optional(),
+    radius: z.number().finite().min(1).max(60).optional(),
+    depth: z.number().finite().min(1).max(80).optional(),
+    chambers: z.number().int().min(1).max(8).optional(),
+    /** Heading in degrees; 0 = +Z. Chosen automatically when omitted. */
+    heading: z.number().finite().min(0).max(360).optional(),
+  }).strict()).max(12).optional(),
+  /** Cliff and rock formation treatment for steep ground. */
+  cliffs: z.object({
+    /** Slope (rise/run) above which ground is treated as a cliff face. */
+    minSlope: z.number().finite().min(0.1).max(4).optional(),
+    /** Extra steepening applied to cliff faces, 0..1. */
+    sharpen: z.number().finite().min(0).max(1).optional(),
+    /** Fraction of eligible cells that become exposed rock, 0..1. */
+    coverage: z.number().finite().min(0).max(1).optional(),
+  }).strict().optional(),
+  /** Beaches and coastline flattening. */
+  beaches: z.object({
+    /** Horizontal width of the beach band, in world units. */
+    width: z.number().finite().min(0).max(60).optional(),
+    /** Only flatten ground gentler than this slope. */
+    maxSlope: z.number().finite().min(0.01).max(3).optional(),
+    /** Beach crest height above the water line. */
+    elevation: z.number().finite().min(0).max(10).optional(),
+  }).strict().optional(),
+  /** Interconnected biomes with blended borders. */
+  biomes: z.array(z.object({
+    id: z.string().min(1).max(40),
+    biome: z.string().min(1).max(40),
+    center: z.tuple([finiteNumber, finiteNumber]).optional(),
+    radius: z.number().finite().min(1).max(512).optional(),
+    weight: z.number().finite().min(0).max(1).optional(),
+    /** Border softness in world units; 0 would be a hard line. */
+    transition: z.number().finite().min(0).max(256).optional(),
+    palette: z.object({ low: hexColorSchema, high: hexColorSchema }).optional(),
+  }).strict()).max(12).optional(),
+  /** Erosion-inspired detail. All work is bounded and seeded. */
+  erosion: z.object({
+    /** Number of simulated rain droplets; 0 disables hydraulic erosion. */
+    droplets: z.number().int().min(0).max(200000).optional(),
+    /** Path length of each droplet. */
+    iterations: z.number().int().min(1).max(200).optional(),
+    inertia: z.number().finite().min(0).max(1).optional(),
+    sedimentCapacity: z.number().finite().min(0).max(40).optional(),
+    erosionRate: z.number().finite().min(0).max(1).optional(),
+    depositionRate: z.number().finite().min(0).max(1).optional(),
+    evaporation: z.number().finite().min(0).max(1).optional(),
+    /** Talus smoothing passes; 0 disables thermal erosion. */
+    thermalPasses: z.number().int().min(0).max(12).optional(),
+    /** Maximum stable slope (rise/run) used by the thermal pass. */
+    talus: z.number().finite().min(0.01).max(4).optional(),
+  }).strict().optional(),
+  /** High-frequency surface detail added on top of the baked grid. */
+  detail: z.object({
+    amplitude: z.number().finite().min(0).max(40).optional(),
+    scale: z.number().finite().min(1).max(400).optional(),
+    octaves: z.number().int().min(1).max(6).optional(),
+  }).strict().optional(),
+  /** Chunked generation and level-of-detail settings. */
+  chunks: z.object({
+    /** Chunk edge length in world units. */
+    size: z.number().finite().min(8).max(512).optional(),
+    /** Distance bands, nearest first: beyond `distance` a chunk uses `cells`. */
+    lod: z.array(z.object({
+      distance: z.number().finite().min(0).max(4096),
+      cells: z.number().int().min(2).max(256),
+    }).strict()).max(8).optional(),
+    /** Overlap in world units so neighbouring chunks share edge vertices. */
+    skirt: z.number().finite().min(0).max(16).optional(),
+  }).strict().optional(),
+}).strict();
+
+export type LandscapeSpec = z.infer<typeof landscapeSchema>;
+
 export const terrainSchema = z.object({
   style: terrainStyleSchema,
   /** Width and depth of the terrain in world units. */
@@ -98,6 +300,11 @@ export const terrainSchema = z.object({
     low: hexColorSchema,
     high: hexColorSchema,
   }),
+  /**
+   * Optional procedural landscape recipe. Absent means the classic analytic
+   * terrain; present means the surface is baked by the landscape engine.
+   */
+  landscape: landscapeSchema.optional(),
 });
 
 const nodeBaseShape = {

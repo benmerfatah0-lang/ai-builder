@@ -13,7 +13,8 @@ import type {
   WorldObject,
   WorldPlan,
 } from '../../core/world-plan/schema';
-import { createTerrainSampler } from '../../core/generation/terrain';
+import { createTerrainSampler, type TerrainSampler } from '../../core/generation/terrain';
+import { lodCells, type ChunkLayout, type ChunkSpec } from '../../core/terrain/chunks';
 import { isEffectivelyVisible } from '../../core/world-plan/hierarchy';
 import { addMesh, material, mergeStaticMeshes } from './kit';
 import { getSurfaceTexture } from './textures';
@@ -105,53 +106,252 @@ function applyMaterialSettings(object: THREE.Object3D, settings?: MaterialSettin
   });
 }
 
-export function createTerrainMesh(plan: WorldPlan, resolutionCap = 192): THREE.Mesh {
-  const segments = Math.max(
-    8,
-    Math.min(plan.terrain.resolution, resolutionCap),
-  );
-  const geometry = new THREE.PlaneGeometry(
-    plan.terrain.size,
-    plan.terrain.size,
-    segments,
-    segments,
-  );
-  geometry.rotateX(-Math.PI / 2);
+const TERRAIN_ROCK = new THREE.Color('#7d7b73');
+const TERRAIN_SAND = new THREE.Color('#d9c9a1');
+const TERRAIN_SNOW = new THREE.Color('#f2f6f8');
+const TERRAIN_BED = new THREE.Color('#48564e');
 
-  const sampler = createTerrainSampler(plan.terrain, plan.seed);
-  const position = geometry.attributes.position as THREE.BufferAttribute;
-  for (let index = 0; index < position.count; index += 1) {
-    const x = position.getX(index);
-    const z = position.getZ(index);
-    position.setY(index, sampler.heightAt(x, z));
-  }
-  position.needsUpdate = true;
-  geometry.computeVertexNormals();
+function terrainSurfaceTexture(plan: WorldPlan): THREE.Texture {
+  const style = plan.terrain.style;
+  if (style === 'dunes' || style === 'islands') return getSurfaceTexture('sand');
+  if (['mountains', 'canyon', 'plateau', 'volcano', 'crater'].includes(style)) return getSurfaceTexture('stone');
+  return getSurfaceTexture('grass');
+}
 
-  const normal = geometry.attributes.normal as THREE.BufferAttribute;
-  const colors = new Float32Array(position.count * 3);
+function terrainMaterial(plan: WorldPlan): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.97,
+    metalness: 0,
+    map: terrainSurfaceTexture(plan),
+  });
+}
+
+/**
+ * Vertex colours for a terrain surface.
+ *
+ * Without a baked landscape this is exactly the classic two-colour ramp. With
+ * one, the colour at a vertex is the biome blend at that point, pushed towards
+ * rock on cliff faces, sand on shores and dunes, snow above the snow line, and a
+ * silty bed colour below the water line. Every one of those weights comes from
+ * the same bake that produced the heights, so colour and shape always agree.
+ */
+function paintTerrainColors(
+  plan: WorldPlan,
+  sampler: TerrainSampler,
+  position: THREE.BufferAttribute,
+  normal: THREE.BufferAttribute,
+  colors: Float32Array,
+  center: { x: number; z: number },
+): void {
   const low = new THREE.Color(plan.terrain.palette.low);
   const high = new THREE.Color(plan.terrain.palette.high);
   const scratch = new THREE.Color();
+  const landscape = sampler.landscape;
+  const biomeColors = landscape
+    ? landscape.biomes.entries.map((entry) => ({ low: new THREE.Color(entry.palette.low), high: new THREE.Color(entry.palette.high) }))
+    : [];
+  const waterLevel = plan.terrain.waterLevel;
 
   for (let index = 0; index < position.count; index += 1) {
-    const ratio = sampler.normalizedHeightAt(position.getX(index), position.getZ(index));
-    scratch.copy(low).lerp(high, ratio);
+    // Vertex positions are local to the piece being painted; colours are sampled
+    // in world space so neighbouring chunks agree at their shared edge.
+    const x = position.getX(index) + center.x;
+    const z = position.getZ(index) + center.z;
+    const ratio = sampler.normalizedHeightAt(x, z);
+
+    if (!landscape || biomeColors.length === 0) {
+      scratch.copy(low).lerp(high, ratio);
+    } else {
+      const weights = landscape.biomes.weightsAt(x, z);
+      let total = 0;
+      let lowR = 0;
+      let lowG = 0;
+      let lowB = 0;
+      let highR = 0;
+      let highG = 0;
+      let highB = 0;
+      for (const entry of weights) {
+        const palette = biomeColors[entry.index];
+        if (!palette) continue;
+        total += entry.weight;
+        lowR += palette.low.r * entry.weight;
+        lowG += palette.low.g * entry.weight;
+        lowB += palette.low.b * entry.weight;
+        highR += palette.high.r * entry.weight;
+        highG += palette.high.g * entry.weight;
+        highB += palette.high.b * entry.weight;
+      }
+      if (total > 0) {
+        // Blending happens in the renderer's working colour space, matching the
+        // way three.js mixes any two `Color` values.
+        scratch.setRGB(
+          (lowR + (highR - lowR) * ratio) / total,
+          (lowG + (highG - lowG) * ratio) / total,
+          (lowB + (highB - lowB) * ratio) / total,
+        );
+      } else {
+        scratch.copy(low).lerp(high, ratio);
+      }
+
+      const { field, masks } = landscape;
+      const rock = masks.rock.sample(field, x, z);
+      if (rock > 0.01) scratch.lerp(TERRAIN_ROCK, Math.min(0.85, rock));
+      const sand = masks.sand.sample(field, x, z);
+      if (sand > 0.01) scratch.lerp(TERRAIN_SAND, Math.min(0.9, sand));
+      const snow = masks.snow.sample(field, x, z);
+      if (snow > 0.01) scratch.lerp(TERRAIN_SNOW, Math.min(0.92, snow));
+      if (waterLevel !== null) {
+        const depth = waterLevel - sampler.heightAt(x, z);
+        if (depth > 0) {
+          const bed = Math.min(0.6, (depth / Math.max(1, plan.terrain.heightScale * 0.6)) * 0.6);
+          scratch.lerp(TERRAIN_BED, bed);
+        }
+      }
+    }
+
     // Steep slopes read darker, which gives the low-poly terrain more depth.
     const slope = 0.82 + Math.max(0, normal.getY(index)) * 0.18;
     colors[index * 3] = scratch.r * slope;
     colors[index * 3 + 1] = scratch.g * slope;
     colors[index * 3 + 2] = scratch.b * slope;
   }
-  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+}
 
-  const mesh = new THREE.Mesh(
-    geometry,
-    new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.97, metalness: 0, map: getSurfaceTexture(plan.terrain.style === 'dunes' || plan.terrain.style === 'islands' ? 'sand' : ['mountains', 'canyon', 'plateau', 'volcano', 'crater'].includes(plan.terrain.style) ? 'stone' : 'grass') }),
+/** Displaces a plane onto the terrain surface and paints it. */
+function buildTerrainGeometry(
+  plan: WorldPlan,
+  sampler: TerrainSampler,
+  width: number,
+  depth: number,
+  cells: number,
+  center: { x: number; z: number },
+  skirt = 0,
+): THREE.BufferGeometry {
+  const geometry = new THREE.PlaneGeometry(width, depth, cells, cells);
+  geometry.rotateX(-Math.PI / 2);
+  const position = geometry.attributes.position as THREE.BufferAttribute;
+  const halfWidth = width / 2 - 1e-4;
+  const halfDepth = depth / 2 - 1e-4;
+  for (let index = 0; index < position.count; index += 1) {
+    const localX = position.getX(index);
+    const localZ = position.getZ(index);
+    let height = sampler.heightAt(center.x + localX, center.z + localZ);
+    // Drop the border ring so seams between levels of detail stay hidden.
+    if (skirt > 0 && (Math.abs(localX) >= halfWidth || Math.abs(localZ) >= halfDepth)) height -= skirt;
+    position.setY(index, height);
+  }
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+
+  const colors = new Float32Array(position.count * 3);
+  paintTerrainColors(plan, sampler, position, geometry.attributes.normal as THREE.BufferAttribute, colors, center);
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geometry;
+}
+
+export function createTerrainMesh(plan: WorldPlan, resolutionCap = 192): THREE.Mesh {
+  const segments = Math.max(
+    8,
+    Math.min(plan.terrain.resolution, resolutionCap),
   );
+  const sampler = createTerrainSampler(plan.terrain, plan.seed);
+  const geometry = buildTerrainGeometry(plan, sampler, plan.terrain.size, plan.terrain.size, segments, { x: 0, z: 0 });
+
+  const mesh = new THREE.Mesh(geometry, terrainMaterial(plan));
   mesh.name = 'terrain';
   mesh.receiveShadow = true;
   return mesh;
+}
+
+export interface TerrainChunkEntry {
+  chunk: ChunkSpec;
+  mesh: THREE.Mesh;
+  cells: number;
+}
+
+export interface TerrainLodState {
+  plan: WorldPlan;
+  sampler: TerrainSampler;
+  layout: ChunkLayout;
+  entries: TerrainChunkEntry[];
+  material: THREE.MeshStandardMaterial;
+  resolutionCap: number;
+}
+
+/**
+ * Builds the terrain as a grid of chunks with per-chunk level of detail.
+ *
+ * Returns `null` when the world has no baked landscape or is too small to gain
+ * anything from chunking, so callers keep the single classic mesh. Chunks are
+ * separate objects, which means three.js culls the ones behind the camera for
+ * free, and only the chunks near the camera pay for fine geometry.
+ */
+export function createTerrainChunks(
+  plan: WorldPlan,
+  resolutionCap = 192,
+  camera: { x: number; z: number } = { x: 0, z: 0 },
+): { group: THREE.Group; state: TerrainLodState } | null {
+  const sampler = createTerrainSampler(plan.terrain, plan.seed);
+  const landscape = sampler.landscape;
+  if (!landscape || !landscape.chunked) return null;
+
+  const layout = landscape.chunks;
+  const material = terrainMaterial(plan);
+  const group = new THREE.Group();
+  group.name = 'terrain';
+  const entries: TerrainChunkEntry[] = [];
+  for (const chunk of layout.chunks) {
+    const cells = Math.max(2, Math.min(resolutionCap, lodCells(Math.hypot(chunk.x - camera.x, chunk.z - camera.z), layout.lod)));
+    const geometry = buildTerrainGeometry(plan, sampler, chunk.size, chunk.size, cells, { x: chunk.x, z: chunk.z }, chunk.skirt);
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = chunk.id;
+    mesh.position.set(chunk.x, 0, chunk.z);
+    mesh.receiveShadow = true;
+    entries.push({ chunk, mesh, cells });
+    group.add(mesh);
+  }
+  return { group, state: { plan, sampler, layout, entries, material, resolutionCap } };
+}
+
+/**
+ * Rebuilds only the chunks whose level of detail changed.
+ *
+ * Called from the render loop; the common case costs one distance test per
+ * chunk and returns 0. `maxRebuilds` spreads the work over several frames so a
+ * fast camera move cannot stall a frame on a large map.
+ */
+export function updateTerrainLod(state: TerrainLodState, cameraX: number, cameraZ: number, maxRebuilds = Infinity): number {
+  let rebuilt = 0;
+  for (const entry of state.entries) {
+    if (rebuilt >= maxRebuilds) break;
+    const cells = Math.max(2, Math.min(state.resolutionCap, lodCells(Math.hypot(entry.chunk.x - cameraX, entry.chunk.z - cameraZ), state.layout.lod)));
+    if (cells === entry.cells) continue;
+    const geometry = buildTerrainGeometry(
+      state.plan,
+      state.sampler,
+      entry.chunk.size,
+      entry.chunk.size,
+      cells,
+      { x: entry.chunk.x, z: entry.chunk.z },
+      entry.chunk.skirt,
+    );
+    entry.mesh.geometry.dispose();
+    entry.mesh.geometry = geometry;
+    entry.cells = cells;
+    rebuilt += 1;
+  }
+  return rebuilt;
+}
+
+/** Releases every chunk geometry and the shared material. */
+export function disposeTerrainLod(state: TerrainLodState): void {
+  for (const entry of state.entries) {
+    entry.mesh.geometry.dispose();
+    entry.mesh.removeFromParent();
+  }
+  state.material.dispose();
+  state.entries.length = 0;
 }
 
 export function createWaterMesh(plan: WorldPlan): THREE.Mesh | null {

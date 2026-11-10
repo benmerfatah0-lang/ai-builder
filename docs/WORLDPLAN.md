@@ -61,10 +61,14 @@ exporters all operate on this format.
 | `waterLevel` | number \| null | −200 – 200 | Absolute Y of the water surface. `null` = no water. |
 | `palette.low` | hex | — | Vertex colour at the lowest terrain. |
 | `palette.high` | hex | — | Vertex colour at the highest terrain. |
+| `lakeBasin` | object \| absent | see schema | Local depression (`x`, `z`, `radius` 1–256, `depth` 0.1–50) carved into an otherwise flat terrain so it can hold water. |
+| `landscape` | object \| absent | see schema | Optional **procedural landscape recipe**. Absent = classic analytic terrain; present = the surface is baked by the landscape engine (ranges, valleys, plateaus, canyons, volcanoes, craters, islands, ocean, lakes, carved rivers, caves, cliffs, beaches, weighted biomes, erosion, detail, chunks). Documented in [`TERRAIN_ENGINE.md`](./TERRAIN_ENGINE.md). |
 
-Terrain height is a pure function of `(style, size, heightScale, seed)` and is
-**not** stored per-vertex. This keeps documents small and makes regeneration and
-GLB export reproducible. New enum values are accepted by this version but older builds may reject projects containing them. Changing terrain parameters therefore does not move
+Terrain height is a pure function of `(style, size, heightScale, seed)` — plus the
+`landscape` recipe when one is present — and is **not** stored per-vertex. This keeps
+documents small and makes regeneration and GLB export reproducible. A recipe stores
+**absolute** coordinates, so it is only valid for the `size` it was derived for;
+resizing the world drops it instead of leaving landforms in the wrong place. New enum values are accepted by this version but older builds may reject projects containing them. Changing terrain parameters therefore does not move
 existing objects; use “Snap to ground” in the inspector.
 
 ---

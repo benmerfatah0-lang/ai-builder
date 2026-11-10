@@ -273,14 +273,23 @@ const TERRAIN_STYLES: TerrainStyle[] = ['flat', 'hills', 'mountains', 'dunes', '
 function updateTerrain(plan: WorldPlan, patch: Partial<Terrain>): WorldPlan {
   const current = plan.terrain;
   const candidate = patch;
+  const size = Math.round(finiteOr(candidate.size, current.size, 32, 512));
+  // A landscape recipe holds absolute coordinates, so it survives every edit
+  // except a resize, where its landforms would sit in the wrong place.
+  const landscape = current.landscape && Math.abs(size - current.size) <= 1 ? current.landscape : undefined;
   return {
     ...plan,
     terrain: {
+      // Spread first: rebuilding the terrain field by field is what silently
+      // dropped `lakeBasin` (and would drop `landscape`) on every edit.
+      ...current,
+      // Always written, so a resize really does clear the stale recipe.
+      landscape,
       style:
         candidate.style && TERRAIN_STYLES.includes(candidate.style)
           ? candidate.style
           : current.style,
-      size: Math.round(finiteOr(candidate.size, current.size, 32, 512)),
+      size,
       resolution: Math.round(finiteOr(candidate.resolution, current.resolution, 16, 256)),
       heightScale: finiteOr(candidate.heightScale, current.heightScale, 0, 200),
       // Only touch water when the patch mentions it.

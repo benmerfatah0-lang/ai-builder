@@ -4,6 +4,7 @@ import { MAX_WORLD_OBJECTS, type Terrain, type WorldObject, type WorldPlan } fro
 import { validateScenePlan } from '../../core/world-plan/validateScene';
 import { interpretPromptLocally } from '../ai/promptInterpreter';
 import { extractFrames } from './frames';
+import { createTerrainSampler } from '../../core/generation/terrain';
 import { applySpecToPlan, applySpecToShell, terrainPolyline } from './realize';
 import { solveSpec } from './solve';
 import type { WorldSpec } from './worldSpec';
@@ -95,14 +96,51 @@ describe('applySpecToPlan: water', () => {
     expect(result.plan.terrain.lakeBasin).toEqual(existing);
   });
 
-  it('adds a river ribbon once and admits that it is decorative', () => {
+  it('adds one river and says whether the engine carved it', () => {
     const spec = clone(specFor(BIG));
     spec.terrain.river = { axis: 'z', width: 3, excavates: false };
     const result = applySpecToPlan(planWith([]), spec);
     expect(result.plan.objects.filter((object) => object.kind === 'river')).toHaveLength(1);
-    expect(result.warnings.join(' ')).toContain('زخرفي');
+    // A mountain world is baked by the landscape engine, so the river is a real
+    // carved channel and the report must not call it decorative.
+    expect(result.plan.terrain.landscape).toBeDefined();
+    expect(result.warnings.join(' ')).toContain('محفور');
     // Running it again on the result must not stack a second river.
     expect(applySpecToPlan(result.plan, spec).plan.objects.filter((object) => object.kind === 'river')).toHaveLength(1);
+  });
+
+  it('keeps the classic decorative ribbon when the terrain was not baked', () => {
+    const spec = clone(specFor(BIG));
+    spec.terrain.river = { axis: 'z', width: 3, excavates: false };
+    spec.terrain.landscape = undefined;
+    const result = applySpecToPlan(planWith([]), spec);
+    expect(result.plan.objects.filter((object) => object.kind === 'river')).toHaveLength(1);
+    expect(result.plan.terrain.landscape).toBeUndefined();
+    expect(result.warnings.join(' ')).toContain('زخرفي');
+  });
+
+  it('lays a carved river inside its own channel instead of floating over it', () => {
+    const spec = clone(specFor(BIG));
+    spec.terrain.river = { axis: 'z', width: 3, excavates: false };
+    const plan = applySpecToPlan(planWith([]), spec).plan;
+    const river = plan.objects.find((object) => object.kind === 'river') as
+      | { points: [number, number, number][]; transform: { position: [number, number, number] }; width: number }
+      | undefined;
+    expect(river).toBeDefined();
+    expect(river!.points.length).toBeGreaterThanOrEqual(2);
+    expect(river!.points.length).toBeLessThanOrEqual(64);
+    expect(river!.width).toBeGreaterThanOrEqual(0.5);
+    expect(river!.width).toBeLessThanOrEqual(40);
+    const sampler = createTerrainSampler(plan.terrain, plan.seed);
+    const [originX, originY, originZ] = river!.transform.position;
+    for (const [x, y, z] of river!.points) {
+      const ground = sampler.heightAt(x + originX, z + originZ);
+      // The water surface rides just above the bed it was carved into.
+      expect(y + originY).toBeLessThanOrEqual(ground + 0.4);
+      expect(y + originY).toBeGreaterThan(ground - 3);
+      expect(Number.isFinite(ground)).toBe(true);
+    }
+    expect(validateScenePlan(plan).errors).toEqual([]);
   });
 });
 

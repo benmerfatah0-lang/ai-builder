@@ -1,8 +1,8 @@
 import { createTerrainSampler } from '../../core/generation/terrain';
 import { createBridge, createPath } from '../../core/assets/structures';
-import { makeTerrainRiver } from '../../core/generation/villageRiver';
+import { makeBakedRiver, makeTerrainRiver } from '../../core/generation/villageRiver';
 import { isEffectivelyLocked } from '../../core/world-plan/hierarchy';
-import { MAX_WORLD_OBJECTS, type PathStyle, type WorldObject, type WorldPlan } from '../../core/world-plan/schema';
+import { MAX_WORLD_OBJECTS, type PathStyle, type Terrain, type WorldObject, type WorldPlan } from '../../core/world-plan/schema';
 import { worldTransformOf } from '../../core/world-plan/hierarchy';
 import { WorldLayout } from './layout';
 import { pathStyleFor, type SpatialRelation, type WorldSpec } from './worldSpec';
@@ -59,14 +59,22 @@ export function applySpecToPlan(plan: WorldPlan, spec: WorldSpec): RealizeResult
   const warnings: string[] = [];
   let next: WorldPlan = plan;
 
+  // ── Landscape ─────────────────────────────────────────────────────────────
+  next = applyLandscape(next, spec, warnings);
+
   // ── Lake basin ────────────────────────────────────────────────────────────
   next = applyLakeBasin(next, spec, warnings);
 
   // ── River ─────────────────────────────────────────────────────────────────
   if (spec.terrain.river && !next.objects.some((object) => object.kind === 'river') && next.objects.length < MAX_WORLD_OBJECTS) {
-    const river = makeTerrainRiver(next, spec.terrain.river.axis, 0, -next.terrain.size * 0.36, next.terrain.size * 0.36);
+    // A baked landscape already carved a real channel, so the ribbon follows it;
+    // otherwise the classic decorative ribbon is used, unchanged.
+    const baked = makeBakedRiver(next);
+    const river = baked ?? makeTerrainRiver(next, spec.terrain.river.axis, 0, -next.terrain.size * 0.36, next.terrain.size * 0.36);
     next = { ...next, objects: [...next.objects, { ...river, id: `obj_${next.seed.toString(36)}_pl_river` }] };
-    warnings.push('النهر شريط زخرفي يتبع التضاريس؛ لا يحفر مجرى ولا يحاكي تدفق الماء.');
+    warnings.push(baked
+      ? 'النهر محفور في التضاريس ويتبع مسار تصريف حقيقياً نحو المصب؛ لا يطفو فوق الأرض ولا يخترق المباني.'
+      : 'النهر شريط زخرفي يتبع التضاريس؛ لا يحفر مجرى ولا يحاكي تدفق الماء.');
   }
 
   // ── Connector roads and bridges ───────────────────────────────────────────
@@ -145,6 +153,31 @@ export function applySpecToPlan(plan: WorldPlan, spec: WorldSpec): RealizeResult
   }
 
   return { plan: next, warnings };
+}
+
+/**
+ * Attaches the planned landscape recipe to the terrain.
+ *
+ * A recipe holds absolute coordinates, so it is only applied to the terrain it
+ * was derived for; if the plan's size changed in the meantime the world keeps
+ * the classic surface and says so, rather than baking landforms in the wrong
+ * place. When the recipe asks for an ocean and the plan has no water level, the
+ * engine is asked what level the baked ground implies.
+ */
+export function applyLandscape(plan: WorldPlan, spec: WorldSpec, warnings: string[]): WorldPlan {
+  const recipe = spec.terrain.landscape;
+  if (!recipe) return plan;
+  if (Math.abs(plan.terrain.size - spec.dimensions.size) > 1) {
+    warnings.push('تغيّر حجم التضاريس بعد حلّ المواصفة؛ أبقيت التضاريس الكلاسيكية لأن وصفة المحرك تستخدم إحداثيات مطلقة.');
+    return plan;
+  }
+  const terrain: Terrain = { ...plan.terrain, landscape: recipe };
+  if (terrain.waterLevel === null && recipe.ocean) {
+    const suggested = createTerrainSampler(terrain, plan.seed).landscape?.suggestedWaterLevel ?? null;
+    if (suggested !== null && Number.isFinite(suggested)) terrain.waterLevel = clamp(suggested, -200, 200);
+    else warnings.push('طلبت محيطاً لكن لم يُشتق مستوى ماء؛ بقيت اليابسة دون غمر.');
+  }
+  return { ...plan, terrain };
 }
 
 /** Adds the planned lake basin, spreading the existing terrain so no field is lost. */

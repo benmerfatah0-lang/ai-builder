@@ -5,11 +5,11 @@
 كاملة** تُنجز قبل إنشاء أي عنصر. بعدها تتولّى أنظمة التوليد القائمة البناء كما
 هي، بلا تعديل في سلوكها.
 
-- الشيفرة: `src/modules/planner/` (12 وحدة، ~4560 سطراً)
-- الاختبارات: 12 ملفاً شقيقاً، **248 اختباراً** (`npx vitest run src/modules/planner`)
+- الشيفرة: `src/modules/planner/` (13 وحدة، ~5020 سطراً)
+- الاختبارات: 13 ملفاً شقيقاً، **264 اختباراً** (`npx vitest run src/modules/planner`)
 - الواجهة: `src/modules/editor/panels/AiPanel.tsx`
 - الخادم المحلي: `world-builder-server.py` (مسار `/api/local-llm` اختياري)
-- وثيقة صيغة العالم: [`WORLDPLAN.md`](./WORLDPLAN.md) · المعمارية: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
+- محرك التضاريس: [`TERRAIN_ENGINE.md`](./TERRAIN_ENGINE.md) · وثيقة صيغة العالم: [`WORLDPLAN.md`](./WORLDPLAN.md) · المعمارية: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 
 ---
 
@@ -32,12 +32,13 @@
   ├─ 1. normalize + lexicon           تطبيع النص + معجم ثنائي اللغة
   ├─ 2. extractFrames                 عناصر، أعداد، صفات، أحجام، علاقات، نفي، أوقات
   ├─ 3. solveSpec                     قيود ← WorldSpec (أبعاد، تضاريس، مناطق، مبانٍ، ميزانيات)
+  │      └─ buildLandscapeRecipe      «وصفة» تضاريس إجرائية (جبال، أنهار، جزر…) إن طلبتها الجملة
   ├─ 4. detectContradictions          أسئلة حاجبة واستشارية + تطبيق الأجوبة
   ├─ 5. النموذج المحلي (اختياري)       سدّ النقص فقط، مُتحقَّق منه بمخطط صارم
   ├─ 6. buildExecutionPlan            16 خطوة مرتّبة + تبعيات + preflight
   │                                   ── لا شيء يُولَّد قبل هذه النقطة ──
   ├─ 7. generateWorldPlanWithReport   تضاريس أولية (الأعداد صفر) لعينة الارتفاعات
-  ├─ 8. resolveLayout                 العلاقات ← إحداثيات على التضاريس الفعلية
+  ├─ 8. applyLandscape + resolveLayout الوصفة ← سطح مخبوز، ثم العلاقات ← إحداثيات عليه
   ├─ 9. generateWorldPlanWithReport   التوليد القائم نفسه، بنيةً من المواصفات
   ├─ 10. applySpecToPlan              طرق وجسور، حوض بحيرة، مواد، إضاءة، جو، مناطق
   └─ 11. validateScenePlan            التحقق القائم، مع إسقاط ما يمكن استرداده
@@ -60,7 +61,8 @@
 | `solve.ts` | حلّ القيود: أبعاد، تضاريس، بحيرة، بيئات، مناطق، مبانٍ، عناصر، مواد، إضاءة، جو، علاقات، نفي، ميزانيات، `clampToBudget`، `intentFromSpec`. |
 | `executionPlan.ts` | الخطوات الـ16، الترتيب الطوبولوجي، الميزانيات، `preflight` (أخطاء حاجبة وتحذيرات)، `countRequested`. |
 | `layout.ts` | `WorldLayout`: عيّنات على التضاريس الفعلية (أعلى/أخفض نقطة، حافة الماء، حلقة، خط، نثر، سلسلة)، و`resolveLayout` لتحويل العلاقات إلى إحداثيات. |
-| `realize.ts` | `applySpecToPlan` و`applySpecToShell`: ما لا يحمله `WorldIntent` (طرق، جسور، حوض بحيرة، مواد، إضاءة، جو، وسم المناطق). |
+| `landscape.ts` | ترجمة `WorldSpec` إلى **وصفة تضاريس** (`buildLandscapeRecipe`): بوابة صريحة، احترام النفي، تقييد كل رقم بحدود المخطط، تحقق `safeParse`، و`describeLandscape` للتقرير. |
+| `realize.ts` | `applyLandscape` (تطبيق الوصفة على الخطة النهائية) و`applySpecToPlan` و`applySpecToShell`: ما لا يحمله `WorldIntent` (طرق، جسور، حوض بحيرة، مواد، إضاءة، جو، وسم المناطق). |
 | `backends.ts` | `ruleBackend` (دائماً متاح) و`createLocalLlmBackend` (اختياري) و`mergeEnrichment` و`enrichmentGaps`. |
 | `planner.ts` | الواجهة العامة: `planWorld`، `executePlannerResult`، `planAndBuildWorld`، `PlannerBlockedError`. |
 | `specSummary.ts` | العرض العربي: `describeSpec` (14 قسماً)، `describeExecution`، `summarizeSpec`، `describePreflight`. |
@@ -115,8 +117,13 @@
 ### ما لا يفعله المخطط
 
 لا يخمّن حيوانات: تُسجَّل في `WorldSpec` مع عددها وتسميتها العربية، ويُعلن صراحة أنه
-لا يوجد باني إجرائي محلي لها بعد، فلا تظهر في المشهد. والأنهار أشرطة زخرفية تتبع
-التضاريس (كما في المولّد القائم) ويُقال ذلك في التحذيرات.
+لا يوجد باني إجرائي محلي لها بعد، فلا تظهر في المشهد.
+
+الأنهار **لم تعد دائماً** أشرطة زخرفية: إذا طلبت الجملة تضاريس (جبال، وديان، جزيرة،
+نهر، بحيرة…) بنى المخطط وصفةً يخْبزها [محرك التضاريس](./TERRAIN_ENGINE.md)، فيصبح
+النهر مجرىً محفوراً في الأرض على مسار تصريف حقيقي، ويصبح السطح نفسه مكوّناً من
+سلاسل وهضبات وأخاديد وفوهات وشواطئ وكهوف. أما العالم البسيط أو المسطّح فيبقى على
+المسار التحليلي القديم حرفياً، والنهر فيه شريط زخرفي — والتقرير يقول أيّهما حدث.
 
 ---
 

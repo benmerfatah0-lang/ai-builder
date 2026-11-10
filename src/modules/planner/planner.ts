@@ -6,7 +6,7 @@ import type { WorldPlan } from '../../core/world-plan/schema';
 import { extractFrames } from './frames';
 import { solveSpec, intentFromSpec, type SolveOptions } from './solve';
 import { resolveLayout } from './layout';
-import { applySpecToPlan } from './realize';
+import { applyLandscape, applySpecToPlan } from './realize';
 import { advance } from './executionPlan';
 import { labelFor } from './lexicon';
 import { materialLabel, terrainLabel } from './specSummary';
@@ -187,8 +187,14 @@ export function executePlannerResult(result: PlannerResult, overrides: { name?: 
     counts: { trees: 0, rocks: 0, buildings: 0, lanterns: 0 },
   }).plan;
 
+  // Stage: landscape. When the specification describes real landforms, the same
+  // recipe is attached to the shell terrain, so the resolver samples exactly the
+  // surface the final world will have — peaks, valley floors, shores and the
+  // corridors a carved river keeps clear of buildings.
+  const shellTerrain = applyLandscape(shell, spec, []).terrain;
+
   // Stage: spatial resolution. Relations become coordinates on that terrain.
-  const resolved = resolveLayout(spec, shell.terrain);
+  const resolved = resolveLayout(spec, shellTerrain);
 
   // Stage: generation, through the untouched existing pipeline.
   const intent = intentFromSpec(resolved, interpretation);
@@ -222,7 +228,7 @@ function markExecution(
   let next = execution;
   const detail: Record<string, string> = {
     'validate-input': `${outcome.resolved.cues.length} إشارة · ${outcome.resolved.relations.length} علاقة`,
-    'resolve-terrain': `${terrainLabel(outcome.plan.terrain.style)} · ${outcome.plan.terrain.size} وحدة · ماء ${outcome.plan.terrain.waterLevel === null ? 'لا' : 'نعم'}`,
+    'resolve-terrain': `${terrainLabel(outcome.plan.terrain.style)} · ${outcome.plan.terrain.size} وحدة · ماء ${outcome.plan.terrain.waterLevel === null ? 'لا' : 'نعم'} · ${outcome.plan.terrain.landscape ? 'تضاريس إجرائية مخبوزة' : 'تضاريس تحليلية'}`,
     'resolve-biomes': outcome.resolved.biomes.map((zone) => labelFor(zone.biome)).join('، '),
     'resolve-regions': `${outcome.resolved.regions.length} منطقة`,
     'resolve-positions': `${outcome.resolved.relations.filter((relation) => relation.status === 'resolved').length} علاقة محلولة`,
@@ -231,7 +237,7 @@ function markExecution(
     'place-assets': `${outcome.plan.objects.length} عنصر إجمالاً`,
     'place-vegetation': `${outcome.plan.objects.filter((object) => object.kind === 'tree').length} شجرة · ${outcome.plan.objects.filter((object) => object.kind === 'rock').length} صخرة`,
     'connect-paths': `${outcome.plan.objects.filter((object) => object.kind === 'path').length} طريق · ${outcome.plan.objects.filter((object) => object.kind === 'bridge').length} جسر`,
-    'add-water': `${outcome.plan.objects.filter((object) => object.kind === 'river').length} نهر · حوض بحيرة ${outcome.plan.terrain.lakeBasin ? 'نعم' : 'لا'}`,
+    'add-water': `${outcome.plan.objects.filter((object) => object.kind === 'river').length} نهر${outcome.plan.terrain.landscape ? ' محفور' : ''} · حوض بحيرة ${outcome.plan.terrain.lakeBasin ? 'نعم' : 'لا'}`,
     'apply-materials': materialLabel(outcome.resolved.materials.palette),
     'apply-lighting': `شمس ${outcome.plan.environment.sunIntensity.toFixed(2)} · محيط ${outcome.plan.environment.ambientIntensity.toFixed(2)}`,
     'apply-environment': `ضباب ${outcome.plan.environment.fogDensity.toFixed(4)} · ${outcome.resolved.environment.weather.map(labelFor).join('، ') || 'صافٍ'}`,

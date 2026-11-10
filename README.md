@@ -48,7 +48,7 @@ as a project file or a glTF 2.0 model for Godot and Unity.
 
 الزر الموحد يقسّم الوصف تقريبياً ويدعم أعداداً وصيغ جمع وتثنية محدودة، مثل «جزيرة فيها بحر و٣ أشجار وشجرتين». صيغة «الكثير من» تُقدّر بثلاثة إن لم يُذكر عدد. الأوصاف المعقدة قد تُفهم خطأ؛ راجع أسماء العناصر والنتيجة. الحد 16 مجسماً في المحاولة؛ عند تجاوزه يُرفض الطلب بدلاً من اختصاره بصمت.
 
-التضاريس والإضاءة والبحر أو البحيرة والنهر ينشئها التطبيق محلياً من الكلمات المدعومة، بما فيها الجبال والصحراء والجزر والوادي والهضبة والأخدود والبركان والفوهة والأرض المسطحة. البحيرة على أرض مسطحة تستخدم منخفضاً محلياً في الأرض. النهر شريط مرئي زخرفي يتبع ارتفاع الأرض ولا يحاكي تدفق الماء؛ أشكال الماء والمناظر تقريبية. يبحث الخادم عن بقية العناصر في [3DAssets.dev](https://3dassets.dev/docs/api) و[Gobkit](https://gobkit.com/api/free)، ويحاول وضعها على أرض جافة ومتباعدة وبعيدة عن النهر، وقد يغيّر مواضعها إذا لم تتسع. مواضعها والعلاقات تقديرية.
+التضاريس والإضاءة والبحر أو البحيرة والنهر ينشئها التطبيق محلياً من الكلمات المدعومة، بما فيها الجبال والصحراء والجزر والوادي والهضبة والأخدود والبركان والفوهة والأرض المسطحة. البحيرة على أرض مسطحة تستخدم منخفضاً محلياً في الأرض. إذا طلبت الجملة تضاريس (جبال، وديان، هضبات، أخاديد، براكين، فوهات، جزر، نهر، بحيرة) يبني التطبيق **سطحاً إجرائياً مخبوزاً**: سلاسل ممتدة، تعرية هيدروليكية وحرارية، أنهار محفورة في الأرض على مسارات تصريف حقيقية، بحيرات تتكوّن حيث يجتمع الماء، شواطئ، كهوف، وخريطة بيومات ملوّنة بأوزان (انظر [`docs/TERRAIN_ENGINE.md`](docs/TERRAIN_ENGINE.md)). أما العالم البسيط أو المسطّح فيبقى على المسار التحليلي السابق، والنهر فيه شريط مرئي زخرفي يتبع ارتفاع الأرض ولا يحاكي تدفق الماء؛ أشكال الماء والمناظر تقريبية. يبحث الخادم عن بقية العناصر في [3DAssets.dev](https://3dassets.dev/docs/api) و[Gobkit](https://gobkit.com/api/free)، ويحاول وضعها على أرض جافة ومتباعدة وبعيدة عن النهر، وقد يغيّر مواضعها إذا لم تتسع. مواضعها والعلاقات تقديرية.
 
 عند إضافة صورة يحللها نموذج الرؤية محلياً ويضيف الفئات المكتشفة وتلميحات الجبل والماء إلى الوصف. إن تطابقت فئة مع عنصر في الوصف يُستخدم عدد الوصف بدلاً من إضافة نسخ مكررة من الصورة. لا تُرسل الصورة، لكن أسماء العناصر تُرسل إلى مصادر المجسمات وقد يُطلب عنوان إنجليزي من ويكيبيديا؛ لا تكتب معلومات خاصة. إذا فشل التحليل أو لم يُعثر على أحد المجسمات المتوافقة فلا يُطبّق عالم ناقص؛ يمكن تعديل الاسم وإعادة المحاولة أو إلغاء العملية. التطبيق ليس مولّداً ثلاثي الأبعاد من الصورة أو النص.
 
@@ -281,6 +281,8 @@ src/
     generation/        seeded RNG, terrain sampler, biomes, scatter generator, farm planner,
                        spatial placement ledger, per-object/region regeneration, starter
     assets/            procedural asset library, structures (barn/coop/silo/path/fence/field/river/bridge)
+    terrain/           procedural terrain engine (noise, heightfields, features, erosion,
+                     hydrology, biome maps, caves, chunks/LOD, baker + cache)
     persistence/       IndexedDB/memory repositories, project file I/O
     export/            glTF 2.0 (.glb) exporter + export target metadata
     scene/             shared Three.js scene builder (viewport + exporter), kit + Phase 3 geometry
@@ -293,7 +295,8 @@ src/
   test/                Vitest setup (fake IndexedDB, GLB FileReader shim)
 scripts/               schema export, offline preview renderer
 website/               project site (static page + in-browser playground + static server)
-docs/                  architecture report, WorldPlan reference, JSON Schema
+docs/                  architecture report, WorldPlan reference, world planner,
+                       terrain engine, JSON Schema
 ```
 
 Key design rule: the **WorldPlan document is the only source of truth**, and the

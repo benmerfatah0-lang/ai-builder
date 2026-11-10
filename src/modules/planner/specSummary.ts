@@ -1,4 +1,5 @@
 import { labelFor } from './lexicon';
+import { describeLandscape } from './landscape';
 import type { WorldSpec } from './worldSpec';
 
 /**
@@ -34,8 +35,16 @@ export function describeSpec(spec: WorldSpec): SpecSection[] {
         { label: 'أقصى ارتفاع', value: `${spec.terrain.heightScale} وحدة` },
         { label: 'الوعورة', value: `${Math.round(spec.terrain.roughness * 100)}%` },
         { label: 'الماء', value: spec.terrain.water ? 'موجود' : 'لا يوجد' },
+        { label: 'محرك التضاريس', value: describeLandscape(spec.terrain.landscape) },
         ...(spec.terrain.lake ? [{ label: 'بحيرة', value: `نصف قطر ${spec.terrain.lake.radius} · عمق ${spec.terrain.lake.depth}` }] : []),
-        ...(spec.terrain.river ? [{ label: 'نهر', value: `شريط زخرفي بعرض ${spec.terrain.river.width} (لا يحفر مجرى)` }] : []),
+        ...(spec.terrain.river ? [{
+          label: 'نهر',
+          // Honest about what will happen: carved into the baked terrain, or a
+          // decorative ribbon on a classic one.
+          value: spec.terrain.landscape
+            ? `بعرض ${spec.terrain.river.width} محفور في التضاريس على مسار تصريف حقيقي`
+            : `شريط زخرفي بعرض ${spec.terrain.river.width} (لا يحفر مجرى)`,
+        }] : []),
       ],
     },
     {
