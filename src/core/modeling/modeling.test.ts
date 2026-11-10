@@ -16,6 +16,10 @@ import {
   arcade, balcony, chimney, conicalRoof, cornice, dome, flatRoof, floorSlab, gableRoof, hipRoof,
   leanToRoof, machicolation, parapetRun, porch, timberFrame, towerShaft, wallFace,
 } from './components/shell';
+import {
+  bamboo, bush, cactus, deadTree, fallenLog, fern, fernFrond, flower, flowerCluster, grassTuft,
+  hedge, leafLitter, mushroom, mushroomCluster, reed, treeStump,
+} from './components/nature';
 import { getModelTexture, cachedModelTextures, type ModelTextureKind } from './textures';
 import { SURFACES, getModelMaterial, materialsFor, pickSurface, PALETTES, surfaceTexel } from './materials';
 import { REFERENCE, dimensionsOf, normalize, scaleWarnings, seatOnGround, referenceSize } from './scale';
@@ -1119,3 +1123,322 @@ function countDiagonalMembers(data: MeshData): number {
 function porchChimney(): MeshData {
   return chimney({ width: 0.7, depth: 0.5, height: 1.6, pots: 2, seed: 21 }).build();
 }
+
+/* ------------------------------------------------------- nature components */
+
+/**
+ * Triangles whose winding faces up (or down) inside a height band.
+ *
+ * Read from the winding, not from the stored normals, because the normals are
+ * authored and can be wrong while the winding is what the rasteriser obeys. This
+ * is how a cut stump proves it has a top and a mushroom cap proves it has an
+ * underside.
+ */
+function facingIn(data: MeshData, band: [number, number], up: boolean): number {
+  let count = 0;
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const cross = new THREE.Vector3();
+  for (let corner = 0; corner + 2 < data.indices.length; corner += 3) {
+    a.set(...vertexAt(data, corner));
+    b.set(...vertexAt(data, corner + 1));
+    c.set(...vertexAt(data, corner + 2));
+    const y = (a.y + b.y + c.y) / 3;
+    if (y < band[0] || y > band[1]) continue;
+    cross.subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+    if ((up && cross.y > 0) || (!up && cross.y < 0)) count += 1;
+  }
+  return count;
+}
+
+describe('nature components', () => {
+  const plants: [string, MeshBuilder][] = [
+    ['flower/daisy', flower({ style: 'daisy', seed: 3 })],
+    ['flower/rose', flower({ style: 'rose', seed: 4 })],
+    ['flower/tulip', flower({ style: 'tulip', seed: 5 })],
+    ['flower/bell', flower({ style: 'bell', seed: 6 })],
+    ['flower/thistle', flower({ style: 'thistle', seed: 7 })],
+    ['flower/lily', flower({ style: 'lily', seed: 8 })],
+    ['flower/umbel', flower({ style: 'umbel', seed: 9 })],
+    ['flowerCluster', flowerCluster({ seed: 10, count: 6 })],
+    ['mushroom/toadstool', mushroom({ style: 'toadstool', seed: 11 })],
+    ['mushroom/amanita', mushroom({ style: 'amanita', seed: 12 })],
+    ['mushroom/oyster', mushroom({ style: 'oyster', seed: 13 })],
+    ['mushroom/morel', mushroom({ style: 'morel', seed: 14 })],
+    ['mushroom/puffball', mushroom({ style: 'puffball', seed: 15 })],
+    ['mushroom/shelf', mushroom({ style: 'shelf', seed: 16 })],
+    ['mushroomCluster', mushroomCluster({ seed: 17, count: 6 })],
+    ['fernFrond', fernFrond({ length: 0.6, seed: 18 })],
+    ['fern', fern({ height: 0.8, seed: 19 })],
+    ['reed', reed({ height: 1.6, seed: 20 })],
+    ['bamboo', bamboo({ height: 3.6, seed: 21 })],
+    ['grassTuft', grassTuft({ height: 0.45, seed: 22 })],
+    ['cactus/saguaro', cactus({ style: 'saguaro', seed: 23 })],
+    ['cactus/barrel', cactus({ style: 'barrel', seed: 24 })],
+    ['cactus/pad', cactus({ style: 'pad', seed: 25 })],
+    ['cactus/column', cactus({ style: 'column', spines: true, flower: true, seed: 26 })],
+    ['bush', bush({ height: 1.2, seed: 27 })],
+    ['bush/bare', bush({ height: 1.2, bare: true, berries: true, seed: 28 })],
+    ['hedge', hedge({ length: 4, seed: 29, posts: true })],
+    ['treeStump', treeStump({ seed: 30 })],
+    ['treeStump/hollow', treeStump({ seed: 31, hollow: 0.5 })],
+    ['fallenLog', fallenLog({ length: 3, seed: 32 })],
+    ['deadTree', deadTree({ height: 6, seed: 33 })],
+    ['leafLitter', leafLitter({ radius: 1, seed: 34 })],
+  ];
+
+  // A frond is a part, not a plant: it is attached to a crown at its base, and
+  // its lowest pinnae curl a little below that attachment. Everything else is
+  // placed by its base and must not sink.
+  const parts = new Set(['fernFrond']);
+
+  it.each(plants)('builds %s as sane geometry sitting on the ground', (name, builder) => {
+    const { data, tris, bounds } = report(builder);
+    expect(isSane(data)).toBe(true);
+    expect(tris).toBeGreaterThan(20);
+    expect(bounds.min[1], name).toBeGreaterThanOrEqual(parts.has(name) ? -0.02 : -1e-6);
+    expect(bounds.size[1]).toBeGreaterThan(0.005);
+    expect(new Set(data.materials).size).toBeLessThanOrEqual(10);
+    for (const id of data.materials) expect(SURFACES[id]).toBeDefined();
+  });
+
+  it('makes the same plant from the same seed and a different one from another', () => {
+    const first = fern({ height: 0.9, seed: 77 }).build();
+    const again = fern({ height: 0.9, seed: 77 }).build();
+    const other = fern({ height: 0.9, seed: 78 }).build();
+    expect(Array.from(again.positions)).toEqual(Array.from(first.positions));
+    expect(Array.from(other.positions)).not.toEqual(Array.from(first.positions));
+  });
+
+  it('treats the requested height as a contract, not a hint', () => {
+    // A plant that overshoots or undershoots its nominal height breaks the
+    // footprint a world plan records for it, so each generator is fitted.
+    const cases: [string, number, MeshData][] = [
+      ['daisy', 0.42, flower({ style: 'daisy', height: 0.42, seed: 3 }).build()],
+      ['bell', 0.42, flower({ style: 'bell', height: 0.42, seed: 6 }).build()],
+      ['thistle', 0.42, flower({ style: 'thistle', height: 0.42, seed: 7 }).build()],
+      ['umbel', 0.42, flower({ style: 'umbel', height: 0.42, seed: 9 }).build()],
+      ['toadstool', 0.12, mushroom({ height: 0.12, seed: 11 }).build()],
+      ['amanita', 0.12, mushroom({ style: 'amanita', height: 0.12, seed: 12 }).build()],
+      ['oyster', 0.12, mushroom({ style: 'oyster', height: 0.12, seed: 13 }).build()],
+      ['morel', 0.12, mushroom({ style: 'morel', height: 0.12, seed: 14 }).build()],
+      ['puffball', 0.12, mushroom({ style: 'puffball', height: 0.12, seed: 15 }).build()],
+      ['fern', 0.8, fern({ height: 0.8, seed: 19 }).build()],
+      ['reed', 1.6, reed({ height: 1.6, seed: 20 }).build()],
+      ['bamboo', 3.6, bamboo({ height: 3.6, seed: 21 }).build()],
+      ['grassTuft', 0.45, grassTuft({ height: 0.45, seed: 22 }).build()],
+      ['saguaro', 2.8, cactus({ style: 'saguaro', height: 2.8, seed: 23 }).build()],
+      ['barrel', 0.6, cactus({ style: 'barrel', height: 0.6, seed: 24 }).build()],
+      ['pad', 1.1, cactus({ style: 'pad', height: 1.1, seed: 25 }).build()],
+      ['bush', 1.2, bush({ height: 1.2, seed: 27 }).build()],
+      ['treeStump', 0.5, treeStump({ height: 0.5, seed: 30 }).build()],
+      ['deadTree', 6, deadTree({ height: 6, seed: 33 }).build()],
+    ];
+    for (const [name, asked, data] of cases) {
+      const bounds = boundsOf(data);
+      const ratio = bounds.max[1] / asked;
+      expect(ratio, `${name} height ratio`).toBeGreaterThan(0.9);
+      expect(ratio, `${name} height ratio`).toBeLessThan(1.03);
+    }
+  });
+
+  it('spends what it is given and no more', () => {
+    // Every generator must come in under its budget. Overshooting is how one
+    // hero asset eats a whole scene's triangle allowance.
+    const builders: [string, (budget: number) => MeshBuilder][] = [
+      ['bush', (budget) => bush({ height: 1.2, seed: 27, budget })],
+      ['fern', (budget) => fern({ height: 0.8, seed: 19, budget })],
+      ['reed', (budget) => reed({ height: 1.6, seed: 20, budget })],
+      ['bamboo', (budget) => bamboo({ height: 3.6, seed: 21, budget })],
+      ['deadTree', (budget) => deadTree({ height: 6, seed: 33, budget })],
+      ['hedge', (budget) => hedge({ length: 4, seed: 29, posts: true, budget })],
+      ['mushroomCluster', (budget) => mushroomCluster({ seed: 17, count: 6, budget })],
+      ['flowerCluster', (budget) => flowerCluster({ seed: 10, count: 6, budget })],
+      ['cactus', (budget) => cactus({ seed: 23, budget })],
+      ['grassTuft', (budget) => grassTuft({ seed: 22, budget })],
+      ['treeStump', (budget) => treeStump({ seed: 30, budget })],
+      ['fallenLog', (budget) => fallenLog({ length: 3, seed: 32, budget })],
+    ];
+    for (const budget of [400, 1200, 3000]) {
+      for (const [name, make] of builders) {
+        const tris = make(budget).build().indices.length / 3;
+        // A floor is allowed: a frond is a rachis or it is nothing, and a
+        // mushroom is a cap over a stipe. What is not allowed is a multiple.
+        expect(tris, `${name} at ${budget}`).toBeLessThan(budget * 1.4 + 120);
+      }
+    }
+  });
+
+  it('keeps the whole plant when the budget drops, and drops detail instead', () => {
+    // Coverage first: a poor fern is a fern with coarser fronds, not a fern with
+    // one frond. A poor bush is a bush with fewer leaves per blob.
+    const poorFern = fern({ height: 0.8, seed: 19, budget: 400 }).build();
+    const richFern = fern({ height: 0.8, seed: 19, budget: 6000 }).build();
+    expect(boundsOf(poorFern).size[0]).toBeGreaterThan(boundsOf(richFern).size[0] * 0.5);
+    expect(boundsOf(poorFern).size[2]).toBeGreaterThan(boundsOf(richFern).size[2] * 0.5);
+    const poorBush = bush({ height: 1.2, seed: 27, budget: 400 }).build();
+    const richBush = bush({ height: 1.2, seed: 27, budget: 6000 }).build();
+    expect(boundsOf(poorBush).size[0]).toBeGreaterThan(boundsOf(richBush).size[0] * 0.5);
+    // A frond keeps its rachis and at least a few pinnae even when it is poor.
+    const poorFrond = fernFrond({ length: 0.6, seed: 18, budget: 120 }).build();
+    expect(poorFrond.indices.length / 3).toBeGreaterThan(30);
+    expect(boundsOf(poorFrond).size[0]).toBeGreaterThan(0.05);
+  });
+
+  it('gives a mushroom cap an underside, so it is a shell and not a dome', () => {
+    const cap = mushroom({ style: 'toadstool', height: 0.12, capRadius: 0.07, seed: 5, budget: 1400 }).build();
+    const bounds = boundsOf(cap);
+    // Sampled off the axis and off the z = 0 plane: a lathe closes on a single
+    // apex vertex and its seam column sits at z = 0, so an axis-aligned ray
+    // threads a point or rides an edge instead of hitting a triangle.
+    const drop = rayHits(cap, [0.026, bounds.max[1] + 0.05, 0.011], [0, -1, 0], 0.1);
+    expect(drop.length).toBeGreaterThan(0);
+    // Seen from below at three quarters of the cap radius, the gill surface is
+    // there too: a lathe traversed the wrong way would leave it facing up and
+    // the cap would vanish from underneath.
+    const under = rayHits(cap, [0.047, 0.01, 0.02], [0, 1, 0], 0.12);
+    expect(under.length).toBeGreaterThan(0);
+    // And by winding, in the band just under the rim.
+    expect(facingIn(cap, [bounds.max[1] * 0.55, bounds.max[1] * 0.92], false)).toBeGreaterThan(0);
+    expect(facingIn(cap, [bounds.max[1] * 0.94, bounds.max[1] + 0.001], true)).toBeGreaterThan(0);
+    expect(doubleFaces(cap)).toBe(0);
+  });
+
+  it('gives every mushroom style a cap that closes on its stipe', () => {
+    for (const style of ['toadstool', 'amanita', 'oyster', 'morel', 'puffball'] as const) {
+      const data = mushroom({ style, height: 0.14, seed: 21, budget: 1600 }).build();
+      const bounds = boundsOf(data);
+      expect(isSane(data)).toBe(true);
+      expect(doubleFaces(data), `${style} doubled faces`).toBe(0);
+      // Straight down through the crown: it must be solid from above, sampled
+      // off the axis because every style closes on a single apex vertex.
+      const drop = rayHits(data, [bounds.size[0] * 0.22, bounds.max[1] + 0.04, 0], [0, -1, 0], 0.12);
+      expect(drop.length, `${style} crown`).toBeGreaterThan(0);
+    }
+  });
+
+  it('cuts a stump top that faces the sky', () => {
+    for (const hollow of [0, 0.55]) {
+      const data = treeStump({ height: 0.5, radius: 0.3, hollow, seed: 31 }).build();
+      const bounds = boundsOf(data);
+      const top = bounds.max[1];
+      // The sawn face is the identifying feature of a stump, so it must be there
+      // and it must face up: traversed outward it would face down and vanish.
+      expect(facingIn(data, [top * 0.82, top + 0.001], true)).toBeGreaterThan(4);
+      // Sweep the sawn face the way the roof tests do: one ray is not evidence,
+      // because a ray can land on the axis, on the lathe seam, or in the hollow.
+      // Every probe that is over wood must find wood.
+      const core = hollow > 0 ? 0.3 * 0.9 * (1 - hollow) * 1.2 : 0.3 * 0.1;
+      const rim = 0.3 * 0.94 * 1.05;
+      let probes = 0;
+      let covered = 0;
+      for (const fraction of [0.2, 0.45, 0.7, 0.95]) {
+        const r = core + (rim - core) * fraction;
+        for (const bearing of [0.4, 1.5, 2.6, 3.9, 5.1]) {
+          probes += 1;
+          const hit = rayHits(
+            data,
+            [Math.cos(bearing) * r, top + 0.05, Math.sin(bearing) * r],
+            [0, -1, 0],
+            0.14,
+          );
+          if (hit.length > 0) covered += 1;
+        }
+      }
+      expect(covered, `stump face coverage, hollow ${hollow}`).toBe(probes);
+      if (hollow > 0) {
+        // A hollow stump shows rotted wood inside, not the sky through the hole.
+        const inside = rayHits(data, [core * 0.5, top * 0.9, core * 0.3], [0, -1, 0], 0.5);
+        expect(inside.length).toBeGreaterThan(1);
+      }
+    }
+  });
+
+  it('lies a fallen log along its length and rests it on the ground', () => {
+    const data = fallenLog({ length: 3.2, radius: 0.24, seed: 32 }).build();
+    const bounds = boundsOf(data);
+    expect(bounds.size[0]).toBeGreaterThan(3.0);
+    expect(bounds.size[0]).toBeLessThan(4.0);
+    // The log is long and low: stubs and moss raise it, but not by much.
+    expect(bounds.size[1]).toBeLessThan(bounds.size[0] * 0.4);
+    expect(bounds.min[1]).toBeCloseTo(0, 3);
+    expect(isSane(data)).toBe(true);
+  });
+
+  it('grows bamboo nodes and puts leaves only where light reaches', () => {
+    const plain = bamboo({ height: 3, culms: 1, seed: 21, leaves: false, budget: 2000 }).build();
+    const leafy = bamboo({ height: 3, culms: 1, seed: 21, leaves: true, budget: 2000 }).build();
+    expect(leafy.indices.length).toBeGreaterThan(plain.indices.length);
+    expect(new Set(plain.materials).has('foliage-olive')).toBe(false);
+    expect(new Set(leafy.materials).has('foliage-olive')).toBe(true);
+    // Node rings are the identifying rhythm, so they survive a tight budget.
+    const poor = bamboo({ height: 3, culms: 1, seed: 21, budget: 400 }).build();
+    expect(poor.indices.length / 3).toBeGreaterThan(120);
+  });
+
+  it('renders leaf surfaces from both sides', () => {
+    // blade() emits one surface. A canopy scatters leaves at every angle, so a
+    // single-sided leaf material loses half the canopy to back-face culling.
+    for (const id of [
+      'foliage', 'foliage-dark', 'foliage-olive', 'foliage-palm', 'grass', 'moss',
+      'needle', 'petal', 'petal-warm', 'petal-pale', 'reed',
+    ]) {
+      expect(getModelMaterial(id).side, id).toBe(THREE.DoubleSide);
+    }
+  });
+
+  it('scatters leaf litter over a patch without driving it underground', () => {
+    const data = leafLitter({ radius: 1.2, leaves: 40, seed: 34 }).build();
+    const bounds = boundsOf(data);
+    expect(bounds.min[1]).toBeGreaterThanOrEqual(-1e-6);
+    // The patch covers the ground it was asked to cover.
+    expect(bounds.size[0]).toBeGreaterThan(1.6);
+    expect(bounds.size[2]).toBeGreaterThan(1.6);
+    expect(bounds.size[1]).toBeLessThan(0.4);
+  });
+
+  it('keeps a hedge inside its run and on its clip line', () => {
+    const data = hedge({ length: 5, height: 1.2, depth: 0.6, seed: 29, posts: true }).build();
+    const bounds = boundsOf(data);
+    // The run is authoritative: a hedge may not shorten to fit its budget.
+    expect(bounds.size[0]).toBeGreaterThan(4.9);
+    expect(bounds.size[0]).toBeLessThan(5.3);
+    expect(bounds.max[1] / 1.2).toBeGreaterThan(0.88);
+    expect(bounds.max[1] / 1.2).toBeLessThan(1.03);
+    expect(bounds.min[1]).toBeCloseTo(0, 3);
+  });
+
+  it('builds every flower style with petals, not just a blob', () => {
+    for (const style of ['daisy', 'rose', 'tulip', 'bell', 'thistle', 'lily', 'umbel'] as const) {
+      const data = flower({ style, height: 0.4, seed: 12, budget: 900 }).build();
+      const bounds = boundsOf(data);
+      expect(isSane(data)).toBe(true);
+      expect(data.indices.length / 3).toBeGreaterThan(80);
+      // A bloom is wider than its stem: petals reach out from the crown.
+      expect(Math.max(bounds.size[0], bounds.size[2])).toBeGreaterThan(0.03);
+      expect(bounds.max[1] / 0.4).toBeGreaterThan(0.9);
+      expect(bounds.max[1] / 0.4).toBeLessThan(1.03);
+    }
+  });
+
+  it('gives a dead tree bare limbs and a broken crown', () => {
+    const bare = deadTree({ height: 7, seed: 33, leaves: 0, budget: 3000 }).build();
+    expect(new Set(bare.materials).size).toBe(1);
+    const bounds = boundsOf(bare);
+    // Limbs splay, so the crown is nearly as wide as the tree is tall.
+    expect(Math.max(bounds.size[0], bounds.size[2])).toBeGreaterThan(bounds.size[1] * 0.3);
+    const leafy = deadTree({ height: 7, seed: 33, leaves: 3, budget: 3000 }).build();
+    expect(new Set(leafy.materials).has('foliage-olive')).toBe(true);
+  });
+
+  it('arms a saguaro and keeps the arms inside the plant', () => {
+    const data = cactus({ style: 'saguaro', height: 4, arms: 2, seed: 23, budget: 3000 }).build();
+    const bounds = boundsOf(data);
+    expect(bounds.max[1] / 4).toBeGreaterThan(0.94);
+    expect(bounds.max[1] / 4).toBeLessThan(1.03);
+    // Arms reach out, so the silhouette is wider than a plain column.
+    const column = cactus({ style: 'column', height: 4, seed: 23, budget: 3000 }).build();
+    expect(bounds.size[0]).toBeGreaterThan(boundsOf(column).size[0] * 1.2);
+  });
+});
