@@ -1501,12 +1501,12 @@ export function treeStump(options: TreeStumpOptions = {}): MeshBuilder {
 
   if (hollow > 0.01) {
     // The inside of the shell, so looking down the hole shows rotted wood and a
-    // floor of debris rather than seeing through to the sky. An open cylinder
-    // faces away from its axis, so it is mirrored to face into the hole.
+    // floor of debris rather than seeing through to the sky. A lathe traversed
+    // downward faces in toward the axis, which is what a cavity wall needs;
+    // mirroring an open cylinder would not do it, because a mirror moves the
+    // geometry and leaves the normals pointing away from the axis.
     const depth = height * hollow * 0.5;
-    const wall = cylinder(coreRadius * 0.86, coreRadius, depth, { radialSegments: 12, caps: false, texel: 0.15 });
-    wall.mirror('x');
-    wall.translate(0, topY - depth * 0.5, 0);
+    const wall = lathe([[coreRadius * 0.86, topY], [coreRadius, topY - depth]], { segments: 12, caps: false, texel: 0.15 });
     builder.add(wall, undefined, 'wood-dark');
     const floor = cylinder(coreRadius * 0.86, coreRadius * 0.86, Math.max(0.004, depth * 0.06), { radialSegments: 12, texel: 0.15 });
     floor.translate(0, topY - depth, 0);

@@ -1170,6 +1170,43 @@ function porchChimney(): MeshData {
  * is how a cut stump proves it has a top and a mushroom cap proves it has an
  * underside.
  */
+/**
+ * Which way the faces in a height and radius band point, radially.
+ *
+ * A shell — a dome, a hollow stump, a cave passage — has two surfaces close
+ * together, and only the direction they face tells them apart. `mirror` cannot
+ * build the inner one: mirroring a surface of revolution moves the geometry and
+ * leaves its normals pointing away from the axis, so the interior is culled and a
+ * viewer inside sees straight through the shell. Traversing a lathe profile
+ * downward is what faces a surface in, and this is how that is checked.
+ */
+function facingRadially(data: MeshData, band: [number, number], radius: [number, number]): { inward: number; outward: number } {
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const cross = new THREE.Vector3();
+  let inward = 0;
+  let outward = 0;
+  for (let corner = 0; corner + 2 < data.indices.length; corner += 3) {
+    a.set(...vertexAt(data, corner));
+    b.set(...vertexAt(data, corner + 1));
+    c.set(...vertexAt(data, corner + 2));
+    const y = (a.y + b.y + c.y) / 3;
+    if (y < band[0] || y > band[1]) continue;
+    const x = (a.x + b.x + c.x) / 3;
+    const z = (a.z + b.z + c.z) / 3;
+    const distance = Math.hypot(x, z);
+    if (distance < radius[0] || distance > radius[1]) continue;
+    cross.subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+    // A nearly flat face — a cut top, a cavity floor — has no meaningful radial
+    // direction, and its sign would be noise, so only walls are counted.
+    if (Math.abs(cross.y) > Math.hypot(cross.x, cross.z) * 1.2) continue;
+    if (cross.x * x + cross.z * z < 0) inward += 1;
+    else outward += 1;
+  }
+  return { inward, outward };
+}
+
 function facingIn(data: MeshData, band: [number, number], up: boolean): number {
   let count = 0;
   const a = new THREE.Vector3();
@@ -1449,6 +1486,41 @@ describe('nature components', () => {
     // Node rings are the identifying rhythm, so they survive a tight budget.
     const poor = bamboo({ height: 3, culms: 1, seed: 21, budget: 400 }).build();
     expect(poor.indices.length / 3).toBeGreaterThan(120);
+  });
+
+  it('faces a dome shell in toward the room it covers', () => {
+    const radius = 3;
+    const thickness = 0.3;
+    const data = dome({ radius, thickness, segments: 16, height: 2.6, seed: 9 }).build();
+    // Near the rim the two surfaces are a thickness apart, so a radius band
+    // picks one of them out. The inner one must face the axis: standing under a
+    // dome whose interior faces away, the shell is culled and you see the sky.
+    const inner = facingRadially(data, [0.15, 0.6], [radius - thickness - 0.12, radius - thickness * 0.5]);
+    const outer = facingRadially(data, [0.15, 0.6], [radius - thickness * 0.4, radius + 0.12]);
+    expect(inner.inward).toBeGreaterThan(0);
+    expect(inner.outward).toBe(0);
+    expect(outer.outward).toBeGreaterThan(0);
+    expect(outer.inward).toBe(0);
+  });
+
+  it('faces a hollow stump in toward the hole', () => {
+    const data = treeStump({ height: 0.6, hollow: 0.55, seed: 31 }).build();
+    const bounds = boundsOf(data);
+    const top = bounds.max[1];
+    // The bark is the widest thing in the band under the cut, so the cavity wall
+    // is everything well inside it.
+    let bark = 0;
+    for (let index = 0; index < data.positions.length; index += 3) {
+      if (data.positions[index + 1]! < top * 0.5 || data.positions[index + 1]! > top * 0.95) continue;
+      bark = Math.max(bark, Math.hypot(data.positions[index]!, data.positions[index + 2]!));
+    }
+    expect(bark).toBeGreaterThan(0.1);
+    // The hollow is bored to well under half the bark radius, so a band inside it
+    // holds the cavity wall and none of the bark. The band stops short of the
+    // debris floor, whose own rim is a solid edge and rightly faces out.
+    const cavity = facingRadially(data, [top * 0.74, top * 0.94], [0, bark * 0.6]);
+    expect(cavity.inward).toBeGreaterThan(0);
+    expect(cavity.outward).toBe(0);
   });
 
   it('renders leaf surfaces from both sides', () => {

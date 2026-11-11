@@ -766,10 +766,13 @@ export function dome(options: DomeOptions): MeshBuilder {
     inner.push([Math.max(0, r - thickness), Math.max(0, y - thickness)]);
   }
   builder.add(lathe(outer, { segments, caps: false }));
-  // The inner surface faces inward; mirroring flips the winding back to outward.
-  const inside = lathe(inner, { segments, caps: false });
-  inside.mirror('x');
-  builder.add(inside);
+  // The inner surface has to face the room, and the only thing that decides which
+  // way a lathe faces is the direction its profile is traversed: downward faces
+  // in toward the axis. `mirror` cannot do this — mirroring a surface of
+  // revolution moves the geometry but leaves its normals pointing away from the
+  // axis, so a mirrored inner dome is culled from inside and you see straight
+  // through the shell.
+  builder.add(lathe([...inner].reverse(), { segments, caps: false }));
   // The rim closes the shell so it reads as a thickness, not a floating surface.
   const rim = cylinder(radius, radius - thickness, thickness * 0.7, { radialSegments: segments, caps: false });
   builder.add(rim);
