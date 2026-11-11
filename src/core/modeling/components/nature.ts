@@ -1,8 +1,8 @@
 import { MeshBuilder, type Vec2, type Vec3 } from '../mesh';
 import { box, cylinder, lathe, prism, sphere, sweep } from '../primitives';
 import {
-  BEVELLED_BOX_TRIANGLES, blade, branch, branchSpine, detailRng, fracture, leafCluster,
-  planRepeatedUnits, qualityTriangles, trunk, tuft, type Quality,
+  BEVELLED_BOX_TRIANGLES, blade, branch, branchSpine, componentBudget, detailRng, fracture,
+  leafCluster, planChildren, planRepeatedUnits, qualityTriangles, trunk, tuft, type Quality,
 } from '../detail';
 import { normalize, seatOnGround } from '../scale';
 import { chance, intRange, pick, range } from '../../generation/rng';
@@ -64,12 +64,6 @@ function attach(
   builder.add(part, undefined, material);
 }
 
-/** The triangle budget for a component: an explicit number wins over quality. */
-function budgetOf(quality: Quality | undefined, budget: number | undefined): number {
-  if (budget !== undefined && Number.isFinite(budget)) return Math.max(60, Math.round(budget));
-  return qualityTriangles(quality);
-}
-
 /**
  * Triangles one leaf of a `leafCluster` costs.
  *
@@ -90,22 +84,6 @@ const LEAF_TRIANGLES = 12;
  */
 function branchCost(segments: number, twigs: number): number {
   return (segments * 3 + 1) * 12 + twigs * ((4 * 3 + 1) * 12);
-}
-
-/**
- * How many children fit once each is reduced to its cheapest honest form.
- *
- * `planRepeatedUnits` simplifies a unit before it drops one, but a unit has a
- * floor: a mushroom cannot be less than a cap over a stipe, a frond cannot be
- * less than a rachis. When even the floor does not fit, coverage is what gives.
- * This is the only place in the file that decides to build fewer of a thing.
- */
-function planChildren(count: number, cheapest: number, budget: number): { modeled: number; each: number } {
-  const wanted = Math.max(1, Math.round(count));
-  const floor = Math.max(1, Math.round(cheapest));
-  const affordable = Math.max(1, Math.floor(budget / floor));
-  const modeled = Math.max(1, Math.min(wanted, affordable));
-  return { modeled, each: Math.max(floor, Math.floor(budget / modeled)) };
 }
 
 /**
@@ -188,7 +166,7 @@ export function flower(options: FlowerOptions = {}): MeshBuilder {
   const height = Math.max(0.06, options.height ?? 0.42);
   const radius = Math.max(0.012, options.radius ?? height * 0.16);
   const bloom = Math.min(1, Math.max(0, options.bloom ?? 1));
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const stemMaterial = options.stemMaterial ?? 'grass';
   const petalMaterial = options.petalMaterial ?? PETAL_BY_STYLE[style];
   const stemHeight = height * (style === 'bell' ? 0.72 : 0.86);
@@ -372,7 +350,7 @@ export function flowerCluster(options: FlowerOptions & { count?: number; spread?
   const builder = new MeshBuilder();
   const count = Math.max(1, Math.round(options.count ?? 5));
   const spread = Math.max(0.05, options.spread ?? 0.28);
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const style = options.style ?? 'daisy';
   // A flower cannot go below about 200 triangles and still have petals, a stem
   // and leaves; pricing it lower just builds more flowers than were paid for.
@@ -435,7 +413,7 @@ export function mushroom(options: MushroomOptions = {}): MeshBuilder {
   const capRadius = Math.max(0.012, options.capRadius ?? height * (
     style === 'puffball' ? 0.55 : style === 'oyster' ? 0.78 : style === 'morel' ? 0.34 : 0.58
   ));
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const capMaterial = options.capMaterial ?? (style === 'morel' ? 'fungus-bruised' : 'fungus');
   const fleshMaterial = options.fleshMaterial ?? 'fungus-pale';
   const stipeRadius = capRadius * (style === 'puffball' ? 0 : style === 'oyster' ? 0.12 : 0.17);
@@ -622,7 +600,7 @@ export function mushroomCluster(options: MushroomOptions & { count?: number; spr
   const builder = new MeshBuilder();
   const count = Math.max(1, Math.round(options.count ?? 6));
   const spread = Math.max(0.04, options.spread ?? 0.3);
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const height = options.height ?? 0.12;
   // The cheapest honest mushroom is a cap over a stipe: about 200 triangles.
   const plan = planChildren(count, 200, budget);
@@ -765,7 +743,7 @@ export function fern(options: FernOptions = {}): MeshBuilder {
   const rng = detailRng(seed);
   const builder = new MeshBuilder();
   const height = Math.max(0.08, options.height ?? 0.7);
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const material = options.material ?? 'foliage';
   const wanted = Math.max(3, Math.round(options.fronds ?? Math.round(4 + height * 5)));
   // A frond's floor is its rachis plus two pairs of pinnae.
@@ -817,7 +795,7 @@ export function reed(options: ReedOptions = {}): MeshBuilder {
   const rng = detailRng(seed);
   const builder = new MeshBuilder();
   const height = Math.max(0.15, options.height ?? 1.6);
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const material = options.material ?? 'reed';
   const spread = Math.max(0.02, options.spread ?? height * 0.14);
   const wanted = Math.max(1, Math.round(options.stalks ?? Math.round(3 + height * 2)));
@@ -915,7 +893,7 @@ export function bamboo(options: BambooOptions = {}): MeshBuilder {
   const rng = detailRng(seed);
   const builder = new MeshBuilder();
   const height = Math.max(0.4, options.height ?? 3.6);
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const material = options.material ?? 'reed';
   const spread = Math.max(0.06, options.spread ?? height * 0.1);
   const wanted = Math.max(1, Math.round(options.culms ?? Math.round(3 + height * 0.8)));
@@ -1009,7 +987,7 @@ export function grassTuft(options: GrassTuftOptions = {}): MeshBuilder {
   const rng = detailRng(seed);
   const builder = new MeshBuilder();
   const height = Math.max(0.04, options.height ?? 0.45);
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const material = options.material ?? 'grass';
   const spread = Math.max(0.03, options.spread ?? height * 0.7);
   const clumps = Math.max(1, Math.round(options.clumps ?? Math.round(2 + height * 4)));
@@ -1112,7 +1090,7 @@ export function cactus(options: CactusOptions = {}): MeshBuilder {
   const builder = new MeshBuilder();
   const style = options.style ?? 'saguaro';
   const height = Math.max(0.15, options.height ?? (style === 'barrel' ? 0.6 : style === 'pad' ? 1.1 : 2.8));
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const material = options.material ?? 'cactus';
   const radius = Math.max(0.03, options.radius ?? height * (style === 'barrel' ? 0.42 : style === 'pad' ? 0.16 : 0.09));
 
@@ -1276,7 +1254,7 @@ export function bush(options: BushOptions = {}): MeshBuilder {
   const builder = new MeshBuilder();
   const height = Math.max(0.15, options.height ?? 1.2);
   const radius = Math.max(0.1, options.radius ?? height * 0.8);
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const leafMaterial = options.leafMaterial ?? 'foliage';
   const stemMaterial = options.stemMaterial ?? 'bark';
   const bare = options.bare ?? false;
@@ -1369,7 +1347,7 @@ export function hedge(options: {
   const length = Math.max(0.4, options.length);
   const height = Math.max(0.2, options.height ?? 1.1);
   const depth = Math.max(0.2, options.depth ?? 0.6);
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
 
   // The body is a box rounded off by noise, then clothed in leaf blobs along
   // the top so the silhouette is not a straight line.
@@ -1445,7 +1423,7 @@ export function treeStump(options: TreeStumpOptions = {}): MeshBuilder {
   const builder = new MeshBuilder();
   const height = Math.max(0.08, options.height ?? 0.5);
   const radius = Math.max(0.05, options.radius ?? height * 0.62);
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const hollow = Math.min(0.85, Math.max(0, options.hollow ?? 0));
 
   const body = trunk({
@@ -1576,7 +1554,7 @@ export function fallenLog(options: FallenLogOptions = {}): MeshBuilder {
   const builder = new MeshBuilder();
   const length = Math.max(0.4, options.length ?? 3);
   const radius = Math.max(0.06, options.radius ?? length * 0.085);
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const broken = options.broken ?? true;
   const segments = Math.max(8, Math.min(18, Math.round(budget / 130)));
 
@@ -1723,7 +1701,7 @@ export function deadTree(options: DeadTreeOptions = {}): MeshBuilder {
   const rng = detailRng(seed);
   const builder = new MeshBuilder();
   const height = Math.max(0.6, options.height ?? 6);
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const material = options.material ?? 'wood-weathered';
   const radius = height * 0.035;
 
@@ -1823,7 +1801,7 @@ export function leafLitter(options: {
   const rng = detailRng(seed);
   const builder = new MeshBuilder();
   const radius = Math.max(0.1, options.radius ?? 1);
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const material = options.material ?? 'foliage-olive';
   const wanted = Math.max(3, Math.round(options.leaves ?? Math.round(radius * 26)));
   const plan = planRepeatedUnits(wanted, 14, budget, 3);
@@ -2001,7 +1979,7 @@ export function tree(options: TreeOptions = {}): MeshBuilder {
   const height = Math.max(0.6, options.height ?? 8);
   const style = options.style ?? 'oak';
   const form = TREE_FORMS[style];
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const bark = options.trunkMaterial ?? form.bark;
   const leafId = options.leafMaterial ?? form.leaf;
   const leafiness = Math.min(1, Math.max(0, options.leafiness ?? 1));
@@ -2207,7 +2185,7 @@ export function conifer(options: ConiferOptions = {}): MeshBuilder {
   const height = Math.max(0.6, options.height ?? 12);
   const style = options.style ?? 'spruce';
   const form = CONIFER_FORMS[style];
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const needle = options.needleMaterial ?? form.needle;
   const bark = options.barkMaterial ?? form.bark;
 
@@ -2460,7 +2438,7 @@ export function palm(options: PalmOptions = {}): MeshBuilder {
   const height = Math.max(0.8, options.height ?? 9);
   const style = options.style ?? 'date';
   const form = PALM_FORMS[style];
-  const budget = budgetOf(options.quality, options.budget);
+  const budget = componentBudget(options.quality, options.budget);
   const bark = options.trunkMaterial ?? form.bark;
   const frondMaterial = options.frondMaterial ?? form.frond;
   const frondFloor = form.palmate ? 60 : DEAD_FROND_FLOOR;

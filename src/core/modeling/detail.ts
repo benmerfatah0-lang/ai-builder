@@ -71,6 +71,35 @@ export function planRepeatedUnits(count: number, perUnit: number, budget: number
 
 /* ------------------------------------------------------------- deformation */
 
+/**
+ * The triangle budget for one component: an explicit number wins over quality.
+ *
+ * Every family resolves its budget this way, so a caller can hand a generator
+ * either a quality name or a hard number and get the same behaviour, and a scene
+ * can ration a fixed allowance across the assets it is placing.
+ */
+export function componentBudget(quality: Quality | undefined, budget: number | undefined): number {
+  if (budget !== undefined && Number.isFinite(budget)) return Math.max(60, Math.round(budget));
+  return qualityTriangles(quality);
+}
+
+/**
+ * How many children fit once each is reduced to its cheapest honest form.
+ *
+ * `planRepeatedUnits` simplifies a unit before it drops one, but a unit has a
+ * floor: a mushroom cannot be less than a cap over a stipe, a cairn stone cannot
+ * be less than a faceted mass. When even the floor does not fit, coverage is what
+ * gives — and this is the only place in the library that decides to build fewer
+ * of a thing, so every family makes that decision the same way.
+ */
+export function planChildren(count: number, cheapest: number, budget: number): { modeled: number; each: number } {
+  const wanted = Math.max(1, Math.round(count));
+  const floor = Math.max(1, Math.round(cheapest));
+  const affordable = Math.max(1, Math.floor(budget / floor));
+  const modeled = Math.max(1, Math.min(wanted, affordable));
+  return { modeled, each: Math.max(floor, Math.floor(budget / modeled)) };
+}
+
 export interface DisplaceOptions {
   /** Peak displacement in metres. */
   amplitude: number;

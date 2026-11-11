@@ -403,6 +403,25 @@ describe('primitives', () => {
     expect(sheet.bounds.max[2]).toBeCloseTo(0, 5);
   });
 
+  it('faces a plane the way its normals claim, on both sides', () => {
+    // A plane has exactly one face, so which way it goes is the whole contract.
+    const sheets: [string, MeshBuilder][] = [
+      ['xz flat', plane(2, 3)],
+      ['xz divided', plane(2, 3, { widthSegments: 3, heightSegments: 2 })],
+      ['xz with height', plane(2, 3, { widthSegments: 3, heightSegments: 2, height: (x, z) => Math.sin(x * 2) * 0.1 + z * 0.03 })],
+      ['xy flat', plane(2, 3, { orientation: 'xy' })],
+      ['xy with height', plane(2, 3, { orientation: 'xy', widthSegments: 3, heightSegments: 2, height: (x) => Math.sin(x * 2) * 0.1 })],
+    ];
+    for (const [name, part] of sheets) {
+      const { winding, stored } = meanNormals(part.build());
+      // Culled from the side it is lit on is the failure this pins down.
+      expect(winding.dot(stored), name).toBeGreaterThan(0.6);
+    }
+    // And the convention itself: flat faces the sky, standing faces the viewer.
+    expect(meanNormals(plane(2, 3).build()).winding.y).toBeGreaterThan(0.99);
+    expect(meanNormals(plane(2, 3, { orientation: 'xy' }).build()).winding.z).toBeGreaterThan(0.99);
+  });
+
   it('builds arches whose crown reaches the requested rise', () => {
     for (const style of ['round', 'pointed', 'segmental', 'flat'] as const) {
       const data = arch({ span: 2.4, rise: 1.6, thickness: 0.3, depth: 0.5, style, voussoirs: style !== 'flat', segments: 20 }).build();
@@ -1205,6 +1224,41 @@ function facingRadially(data: MeshData, band: [number, number], radius: [number,
     else outward += 1;
   }
   return { inward, outward };
+}
+
+/**
+ * The direction a mesh faces, from its winding and from its stored normals.
+ *
+ * The two are independent: winding decides which side is culled, normals decide
+ * which side is lit. A surface where they disagree is invisible from the side it
+ * is bright on, which no bounding box or triangle count will ever report.
+ */
+function meanNormals(data: MeshData): { winding: THREE.Vector3; stored: THREE.Vector3 } {
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const cross = new THREE.Vector3();
+  const winding = new THREE.Vector3();
+  let faces = 0;
+  for (let corner = 0; corner + 2 < data.indices.length; corner += 3) {
+    a.set(...vertexAt(data, corner));
+    b.set(...vertexAt(data, corner + 1));
+    c.set(...vertexAt(data, corner + 2));
+    cross.subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+    if (cross.lengthSq() < 1e-14) continue;
+    winding.add(cross.normalize());
+    faces += 1;
+  }
+  const stored = new THREE.Vector3();
+  for (let index = 0; index < data.normals.length; index += 3) {
+    stored.x += data.normals[index]!;
+    stored.y += data.normals[index + 1]!;
+    stored.z += data.normals[index + 2]!;
+  }
+  return {
+    winding: faces ? winding.divideScalar(faces) : winding,
+    stored: stored.divideScalar(Math.max(1, data.normals.length / 3)),
+  };
 }
 
 function facingIn(data: MeshData, band: [number, number], up: boolean): number {

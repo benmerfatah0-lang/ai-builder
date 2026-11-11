@@ -1185,8 +1185,13 @@ export function plane(width: number, depth: number, options: PlaneOptions = {}):
       const b = grid[row]![column + 1]!;
       const c = grid[row + 1]![column + 1]!;
       const d = grid[row + 1]![column]!;
-      if (standing) builder.quad(a, d, c, b);
-      else builder.quad(a, b, c, d);
+      // Wound to agree with the normals authored above: a flat plane faces +Y, a
+      // standing one faces +Z. Getting this the other way round is invisible in a
+      // bounding box and loud in a scene — the surface is back-face culled from
+      // the side it is lit from, so a pan tile's closing plate shows as a dark
+      // disc on top of the tile with a hole underneath it.
+      if (standing) builder.quad(a, b, c, d);
+      else builder.quad(a, d, c, b);
     }
   }
   if (options.height) builder.computeNormals();
