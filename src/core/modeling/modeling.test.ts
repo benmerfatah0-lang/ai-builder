@@ -17,8 +17,8 @@ import {
   leanToRoof, machicolation, parapetRun, porch, timberFrame, towerShaft, wallFace,
 } from './components/shell';
 import {
-  bamboo, bush, cactus, deadTree, fallenLog, fern, fernFrond, flower, flowerCluster, grassTuft,
-  hedge, leafLitter, mushroom, mushroomCluster, reed, treeStump,
+  bamboo, bush, cactus, conifer, deadTree, fallenLog, fern, fernFrond, flower, flowerCluster,
+  grassTuft, hedge, leafLitter, mushroom, mushroomCluster, palm, reed, tree, treeStump,
 } from './components/nature';
 import { getModelTexture, cachedModelTextures, type ModelTextureKind } from './textures';
 import { SURFACES, getModelMaterial, materialsFor, pickSurface, PALETTES, surfaceTexel } from './materials';
@@ -1107,6 +1107,42 @@ function widestAtHeight(data: MeshData, y: number, band = 0.4): number {
   return widest;
 }
 
+/** Horizontal centroid of the vertices in a height band, as [x, z]. */
+function centroidAt(data: MeshData, yMin: number, yMax: number): [number, number] {
+  let x = 0;
+  let z = 0;
+  let count = 0;
+  for (let index = 0; index < data.positions.length; index += 3) {
+    const y = data.positions[index + 1]!;
+    if (y < yMin || y > yMax) continue;
+    x += data.positions[index]!;
+    z += data.positions[index + 2]!;
+    count += 1;
+  }
+  return count ? [x / count, z / count] : [0, 0];
+}
+
+/**
+ * How many bearings carry geometry in a height band.
+ *
+ * A crown built from two blobs leaves whole sectors of the sky empty, and that is
+ * what makes a generated tree read as flat cardboard from half the directions
+ * around it. Counting occupied sectors asks the question a viewer asks by walking
+ * around the tree.
+ */
+function bearingSectors(data: MeshData, yMin: number, yMax: number, minRadius: number, sectors = 8): number {
+  const seen = new Set<number>();
+  for (let index = 0; index < data.positions.length; index += 3) {
+    const y = data.positions[index + 1]!;
+    if (y < yMin || y > yMax) continue;
+    const x = data.positions[index]!;
+    const z = data.positions[index + 2]!;
+    if (Math.hypot(x, z) < minRadius) continue;
+    seen.add(Math.floor(((Math.atan2(z, x) + Math.PI) / (Math.PI * 2)) * sectors) % sectors);
+  }
+  return seen.size;
+}
+
 /** Members whose long axis is neither level nor plumb: braces and rafters. */
 function countDiagonalMembers(data: MeshData): number {
   let diagonals = 0;
@@ -1186,6 +1222,22 @@ describe('nature components', () => {
     ['fallenLog', fallenLog({ length: 3, seed: 32 })],
     ['deadTree', deadTree({ height: 6, seed: 33 })],
     ['leafLitter', leafLitter({ radius: 1, seed: 34 })],
+    ['tree/oak', tree({ style: 'oak', height: 18, seed: 35 })],
+    ['tree/birch', tree({ style: 'birch', height: 15, seed: 36 })],
+    ['tree/willow', tree({ style: 'willow', height: 14, seed: 37 })],
+    ['tree/olive', tree({ style: 'olive', height: 6, seed: 38 })],
+    ['tree/poplar', tree({ style: 'poplar', height: 20, seed: 39 })],
+    ['tree/bare', tree({ style: 'oak', height: 18, leafiness: 0, seed: 40 })],
+    ['tree/buttress', tree({ style: 'oak', height: 20, buttress: 4, seed: 41 })],
+    ['conifer/pine', conifer({ style: 'pine', height: 22, seed: 42 })],
+    ['conifer/spruce', conifer({ style: 'spruce', height: 16, seed: 43 })],
+    ['conifer/fir', conifer({ style: 'fir', height: 18, seed: 44 })],
+    ['conifer/juniper', conifer({ style: 'juniper', height: 5, seed: 45 })],
+    ['conifer/broken', conifer({ style: 'pine', height: 22, brokenTop: true, seed: 46 })],
+    ['palm/date', palm({ style: 'date', height: 10, seed: 47 })],
+    ['palm/coconut', palm({ style: 'coconut', height: 14, seed: 48 })],
+    ['palm/fan', palm({ style: 'fan', height: 6, seed: 49 })],
+    ['palm/bare', palm({ style: 'date', height: 10, skirt: false, fruit: false, seed: 50 })],
   ];
 
   // A frond is a part, not a plant: it is attached to a crown at its base, and
@@ -1234,6 +1286,22 @@ describe('nature components', () => {
       ['bush', 1.2, bush({ height: 1.2, seed: 27 }).build()],
       ['treeStump', 0.5, treeStump({ height: 0.5, seed: 30 }).build()],
       ['deadTree', 6, deadTree({ height: 6, seed: 33 }).build()],
+      ['oak', 18, tree({ style: 'oak', height: 18, seed: 35 }).build()],
+      ['birch', 15, tree({ style: 'birch', height: 15, seed: 36 }).build()],
+      ['willow', 14, tree({ style: 'willow', height: 14, seed: 37 }).build()],
+      ['olive', 6, tree({ style: 'olive', height: 6, seed: 38 }).build()],
+      ['poplar', 20, tree({ style: 'poplar', height: 20, seed: 39 }).build()],
+      ['oak/bare', 18, tree({ style: 'oak', height: 18, leafiness: 0, seed: 40 }).build()],
+      ['oak/poor', 18, tree({ style: 'oak', height: 18, seed: 35, budget: 400 }).build()],
+      ['pine', 22, conifer({ style: 'pine', height: 22, seed: 42 }).build()],
+      ['spruce', 16, conifer({ style: 'spruce', height: 16, seed: 43 }).build()],
+      ['fir', 18, conifer({ style: 'fir', height: 18, seed: 44 }).build()],
+      ['juniper', 5, conifer({ style: 'juniper', height: 5, seed: 45 }).build()],
+      ['spruce/poor', 16, conifer({ style: 'spruce', height: 16, seed: 43, budget: 400 }).build()],
+      ['date', 10, palm({ style: 'date', height: 10, seed: 47 }).build()],
+      ['coconut', 14, palm({ style: 'coconut', height: 14, seed: 48 }).build()],
+      ['fan', 6, palm({ style: 'fan', height: 6, seed: 49 }).build()],
+      ['date/poor', 10, palm({ style: 'date', height: 10, seed: 47, budget: 400 }).build()],
     ];
     for (const [name, asked, data] of cases) {
       const bounds = boundsOf(data);
@@ -1259,6 +1327,12 @@ describe('nature components', () => {
       ['grassTuft', (budget) => grassTuft({ seed: 22, budget })],
       ['treeStump', (budget) => treeStump({ seed: 30, budget })],
       ['fallenLog', (budget) => fallenLog({ length: 3, seed: 32, budget })],
+      ['tree', (budget) => tree({ style: 'oak', height: 18, seed: 35, budget })],
+      ['tree/poplar', (budget) => tree({ style: 'poplar', height: 20, seed: 39, budget })],
+      ['conifer', (budget) => conifer({ style: 'spruce', height: 16, seed: 43, budget })],
+      ['conifer/pine', (budget) => conifer({ style: 'pine', height: 22, seed: 42, budget })],
+      ['palm', (budget) => palm({ style: 'date', height: 10, seed: 47, budget })],
+      ['palm/fan', (budget) => palm({ style: 'fan', height: 6, seed: 49, budget })],
     ];
     for (const budget of [400, 1200, 3000]) {
       for (const [name, make] of builders) {
@@ -1430,6 +1504,162 @@ describe('nature components', () => {
     expect(Math.max(bounds.size[0], bounds.size[2])).toBeGreaterThan(bounds.size[1] * 0.3);
     const leafy = deadTree({ height: 7, seed: 33, leaves: 3, budget: 3000 }).build();
     expect(new Set(leafy.materials).has('foliage-olive')).toBe(true);
+  });
+
+  it('holds the height contract for every woody species across seeds', () => {
+    // A single seed hides the failure that matters here: a limb whose own bend
+    // cancels its tilt points mostly up, overshoots the crown, and the fitting
+    // pass then clamps instead of correcting. Only a sweep catches that.
+    const violations: string[] = [];
+    for (const seed of [1, 5, 19, 37]) {
+      for (const budget of [400, 3000, 11000]) {
+        for (const style of ['oak', 'birch', 'willow', 'olive', 'poplar'] as const) {
+          const height = style === 'olive' ? 6 : style === 'birch' ? 15 : style === 'poplar' ? 20 : 18;
+          const data = tree({ style, height, seed, budget }).build();
+          const ratio = boundsOf(data).max[1] / height;
+          if (ratio <= 0.9 || ratio >= 1.03) violations.push(`tree/${style} seed ${seed} budget ${budget} ratio ${ratio.toFixed(3)}`);
+          if (data.indices.length / 3 > budget * 1.4 + 120) violations.push(`tree/${style} seed ${seed} budget ${budget} overspent`);
+          if (boundsOf(data).min[1] < -1e-6) violations.push(`tree/${style} seed ${seed} budget ${budget} sinks`);
+        }
+        for (const style of ['pine', 'spruce', 'fir', 'juniper'] as const) {
+          const height = style === 'pine' ? 22 : style === 'juniper' ? 5 : 16;
+          for (const brokenTop of [false, true]) {
+            const data = conifer({ style, height, seed, budget, brokenTop }).build();
+            const ratio = boundsOf(data).max[1] / height;
+            if (ratio <= 0.9 || ratio >= 1.03) violations.push(`conifer/${style}${brokenTop ? '/broken' : ''} seed ${seed} budget ${budget} ratio ${ratio.toFixed(3)}`);
+            if (data.indices.length / 3 > budget * 1.4 + 120) violations.push(`conifer/${style} seed ${seed} budget ${budget} overspent`);
+          }
+        }
+        for (const style of ['date', 'coconut', 'fan'] as const) {
+          const height = style === 'coconut' ? 14 : style === 'fan' ? 6 : 10;
+          const data = palm({ style, height, seed, budget }).build();
+          const ratio = boundsOf(data).max[1] / height;
+          if (ratio <= 0.9 || ratio >= 1.03) violations.push(`palm/${style} seed ${seed} budget ${budget} ratio ${ratio.toFixed(3)}`);
+          if (data.indices.length / 3 > budget * 1.4 + 120) violations.push(`palm/${style} seed ${seed} budget ${budget} overspent`);
+        }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('puts a broadleaf crown on the limbs that carry it', () => {
+    const data = tree({ style: 'oak', height: 18, seed: 35, budget: 9000 }).build();
+    // An oak's crown is broad and rounded, so the assertion that holds across
+    // seeds is not "widest in the middle" but "far wider than the trunk that
+    // carries it, and still full at the top rather than a ball on a pole".
+    expect(widestAtHeight(data, 12, 1)).toBeGreaterThan(widestAtHeight(data, 3, 1) * 2);
+    expect(widestAtHeight(data, 17.4, 0.8)).toBeGreaterThan(18 * 0.2);
+    // Wood reaches out into the crown: bark this far from the axis and this high
+    // up can only be a limb, so the leaf blobs are carried rather than floating.
+    let limbs = 0;
+    for (let index = 0; index < data.positions.length; index += 3) {
+      const y = data.positions[index + 1]!;
+      if (y < 7 || y > 15) continue;
+      if (Math.hypot(data.positions[index]!, data.positions[index + 2]!) > 1.6) limbs += 1;
+    }
+    expect(limbs).toBeGreaterThan(20);
+    // Leaves at every bearing, so the tree is not cardboard seen from one side.
+    expect(bearingSectors(data, 8, 17, 1.6)).toBe(8);
+  });
+
+  it('gives each species the silhouette it is named for', () => {
+    // Width over height is the whole identification at a distance: an oak is as
+    // wide as it is tall, an olive wider, a poplar a column, a birch in between.
+    const ratio = (style: 'oak' | 'birch' | 'poplar' | 'olive', height: number): number => {
+      const bounds = boundsOf(tree({ style, height, seed: 35 }).build());
+      return Math.max(bounds.size[0], bounds.size[2]) / bounds.size[1];
+    };
+    expect(ratio('olive', 6)).toBeGreaterThan(0.75);
+    expect(ratio('oak', 18)).toBeGreaterThan(0.45);
+    expect(ratio('oak', 18)).toBeLessThan(ratio('olive', 6));
+    expect(ratio('birch', 15)).toBeLessThan(0.4);
+    expect(ratio('poplar', 20)).toBeLessThan(0.3);
+    expect(ratio('poplar', 20)).toBeLessThan(ratio('birch', 15));
+  });
+
+  it('hangs a willow skirt without seating the tree on its own leaves', () => {
+    const data = tree({ style: 'willow', height: 14, seed: 37 }).build();
+    // Blobs hang well below their limbs, and a blob driven through the ground
+    // would seat the whole tree on leaves and lift the trunk off the earth.
+    expect(boundsOf(data).min[1]).toBeGreaterThanOrEqual(-1e-6);
+    expect(widestAtHeight(data, 4, 1)).toBeGreaterThan(1);
+    const oak = tree({ style: 'oak', height: 14, seed: 37 }).build();
+    expect(widestAtHeight(data, 4, 1)).toBeGreaterThan(widestAtHeight(oak, 4, 1));
+  });
+
+  it('keeps a bare tree a tree rather than a pole', () => {
+    const data = tree({ style: 'oak', height: 18, leafiness: 0, seed: 40 }).build();
+    expect(new Set(data.materials).size).toBe(1);
+    expect(boundsOf(data).max[1] / 18).toBeGreaterThan(0.94);
+    expect(Math.max(boundsOf(data).size[0], boundsOf(data).size[2])).toBeGreaterThan(4);
+    expect(bearingSectors(data, 8, 17, 1.2)).toBeGreaterThan(4);
+  });
+
+  it('tapers a conifer from its widest tier to a point', () => {
+    for (const style of ['pine', 'spruce', 'fir', 'juniper'] as const) {
+      const height = style === 'pine' ? 22 : style === 'juniper' ? 5 : 16;
+      const data = conifer({ style, height, seed: 43 }).build();
+      const low = widestAtHeight(data, height * 0.5, height * 0.1);
+      const high = widestAtHeight(data, height * 0.9, height * 0.06);
+      expect(low, style).toBeGreaterThan(height * 0.02);
+      expect(high, style).toBeGreaterThan(0);
+      expect(low, style).toBeGreaterThan(high * 1.15);
+      expect(boundsOf(data).max[1] / height, style).toBeGreaterThan(0.94);
+    }
+  });
+
+  it('keeps every conifer tier when the budget drops and dresses them worse', () => {
+    const rich = conifer({ style: 'spruce', height: 16, seed: 43, budget: 11000 }).build();
+    const poor = conifer({ style: 'spruce', height: 16, seed: 43, budget: 400 }).build();
+    // Coverage is the spire. A poor spruce still carries foliage low and high
+    // and still stands its full height; what it loses is needles per tier.
+    expect(widestAtHeight(poor, 2, 1)).toBeGreaterThan(0.1);
+    expect(widestAtHeight(poor, 14, 1)).toBeGreaterThan(0.05);
+    expect(boundsOf(poor).max[1] / 16).toBeGreaterThan(0.94);
+    expect(poor.indices.length / 3).toBeLessThan(rich.indices.length / 3 / 4);
+    // A rich spruce grows real limbs out of its trunk; a poor one is all cone.
+    const richWood = bearingSectors(rich, 6, 12, 0.5, 6);
+    expect(richWood).toBeGreaterThan(2);
+  });
+
+  it('leans a palm and hangs its crown off the end of the lean', () => {
+    const height = 10;
+    const data = palm({ style: 'date', height, seed: 47 }).build();
+    const base = centroidAt(data, 0, height * 0.1);
+    const crown = centroidAt(data, height * 0.75, height * 0.95);
+    const lean = Math.hypot(crown[0] - base[0], crown[1] - base[1]);
+    // A date palm leans about a tenth of its height and the crown follows the
+    // trunk, which is the difference between a palm and a green umbrella.
+    expect(lean).toBeGreaterThan(height * 0.04);
+    expect(lean).toBeLessThan(height * 0.3);
+    const upright = palm({ style: 'date', height, seed: 47, lean: 0 }).build();
+    const uprightBase = centroidAt(upright, 0, height * 0.1);
+    const uprightCrown = centroidAt(upright, height * 0.75, height * 0.95);
+    expect(Math.hypot(uprightCrown[0] - uprightBase[0], uprightCrown[1] - uprightBase[1])).toBeLessThan(lean);
+  });
+
+  it('crowns a palm all the way round and keeps its spent fronds', () => {
+    const data = palm({ style: 'date', height: 10, seed: 47 }).build();
+    const materials = new Set(data.materials);
+    // A date palm holds a skirt of dead fronds under its crown and a bunch of
+    // fruit: both are what identifies it against a coconut palm.
+    expect(materials.has('thatch')).toBe(true);
+    expect(materials.has('petal-warm')).toBe(true);
+    expect(bearingSectors(data, 7, 10, 0.8)).toBe(8);
+    const bare = palm({ style: 'date', height: 10, seed: 47, skirt: false, fruit: false }).build();
+    expect(new Set(bare.materials).size).toBe(2);
+    expect(bearingSectors(bare, 7, 10, 0.8)).toBe(8);
+  });
+
+  it('builds a fan palm from ribs instead of pinnae', () => {
+    const fan = palm({ style: 'fan', height: 6, seed: 49 }).build();
+    const date = palm({ style: 'date', height: 6, seed: 49 }).build();
+    expect(isSane(fan)).toBe(true);
+    expect(doubleFaces(fan)).toBe(0);
+    // A palmate crown is a disc of ribs, so it spreads wider for its height than
+    // the arching pinnate crown of a date palm.
+    expect(boundsOf(fan).size[0] / 6).toBeGreaterThan(boundsOf(date).size[0] / 6 * 0.9);
+    expect(boundsOf(fan).max[1] / 6).toBeGreaterThan(0.94);
   });
 
   it('arms a saguaro and keeps the arms inside the plant', () => {

@@ -1681,6 +1681,25 @@ export interface BranchOptions {
   twigs?: number;
 }
 
+/**
+ * The curve a `branch` sweeps, exposed so a caller can put things *on* it.
+ *
+ * A canopy blob placed by guessing where the tip landed drifts off the limb as
+ * the curve grows, and a crown that floats next to its branches reads as a ball
+ * with sticks poking out of it. Sharing the formula is the only way a tree can
+ * know where its own leaves belong.
+ *
+ * Local frame: the branch rises along +Y and bends toward +X, with a slight
+ * wander in Z so no two limbs are coplanar.
+ */
+export function branchSpine(length: number, curve: number, t: number): Vec3 {
+  return [
+    Math.sin(t * curve) * length * 0.35,
+    t * length * Math.cos(curve * 0.5) + Math.sin(t * Math.PI) * length * curve * 0.18,
+    Math.cos(t * curve * 1.3) * length * 0.08,
+  ];
+}
+
 /** A curved branch swept along a spine, optionally carrying twigs. */
 export function branch(options: BranchOptions): MeshBuilder {
   const rng = detailRng(options.seed ?? 149);
@@ -1691,12 +1710,7 @@ export function branch(options: BranchOptions): MeshBuilder {
   const segments = Math.max(3, Math.round(options.segments ?? 6));
   const spine: Vec3[] = [];
   for (let index = 0; index <= segments; index += 1) {
-    const t = index / segments;
-    spine.push([
-      Math.sin(t * curve) * length * 0.35,
-      t * length * Math.cos(curve * 0.5) + Math.sin(t * Math.PI) * length * curve * 0.18,
-      Math.cos(t * curve * 1.3) * length * 0.08,
-    ]);
+    spine.push(branchSpine(length, curve, index / segments));
   }
   const builder = sweep(spine, {
     texel: radiusBase * 8,

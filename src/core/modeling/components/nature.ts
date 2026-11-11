@@ -1,8 +1,8 @@
 import { MeshBuilder, type Vec2, type Vec3 } from '../mesh';
 import { box, cylinder, lathe, prism, sphere, sweep } from '../primitives';
 import {
-  blade, branch, detailRng, fracture, leafCluster, planRepeatedUnits, qualityTriangles,
-  trunk, tuft, type Quality,
+  BEVELLED_BOX_TRIANGLES, blade, branch, branchSpine, detailRng, fracture, leafCluster,
+  planRepeatedUnits, qualityTriangles, trunk, tuft, type Quality,
 } from '../detail';
 import { normalize, seatOnGround } from '../scale';
 import { chance, intRange, pick, range } from '../../generation/rng';
@@ -70,8 +70,15 @@ function budgetOf(quality: Quality | undefined, budget: number | undefined): num
   return qualityTriangles(quality);
 }
 
-/** Triangles one leaf of a `leafCluster` costs: a blade at four rows by two columns. */
-const LEAF_TRIANGLES = 16;
+/**
+ * Triangles one leaf of a `leafCluster` costs.
+ *
+ * A leaf is a `blade` at four segments by two columns, and a blade tapers to a
+ * point at both ends, so its first and last rows emit one triangle instead of
+ * two: `2 * across * (segments - 1)`. Charging the real number is what lets a
+ * canopy spend its allowance instead of three quarters of it.
+ */
+const LEAF_TRIANGLES = 12;
 
 /**
  * Triangles a `branch` costs, so a parent can afford one honestly.
@@ -681,11 +688,17 @@ export function fernFrond(options: {
   const material = options.material ?? 'foliage';
   const budget = Math.max(60, options.budget ?? qualityTriangles('medium'));
   // The rachis is the irreducible cost of a frond — every station is a ring of
-  // five points around the sweep — so a poor frond gets a coarser curve rather
-  // than fewer pinnae. Fewer pinnae would change what the frond looks like;
-  // fewer stations only changes how smoothly it bends.
+  // points around the sweep, two triangles a quad plus a fan cap at each end —
+  // so a poor frond gets a coarser curve rather than fewer pinnae. Fewer pinnae
+  // would change what the frond looks like; fewer stations only change how
+  // smoothly it bends. Charging the rachis honestly matters: under-charging it
+  // is how a frond overspends the allowance its caller solved for.
   const stations = budget > 900 ? 9 : budget > 450 ? 6 : 4;
-  const rachisCost = stations * 12 + 14;
+  // The poorest rung also drops a side off the ring. A stem eight millimetres
+  // across does not need five of them, and the sixteen triangles it saves buy a
+  // pair of pinnae, which is what a frond is actually recognised by.
+  const rachisSides = stations > 4 ? 5 : 4;
+  const rachisCost = stations * rachisSides * 4 + rachisSides * 2;
 
   // The rachis spine. Without curl it arcs outward and sags at the tip; with
   // curl the tip coils back on itself, which is what a crozier does.
@@ -710,7 +723,7 @@ export function fernFrond(options: {
   const rachis = sweep(spine, {
     texel: 0.06,
     resample: 1,
-    section: (t) => circle(Math.max(0.0012, length * 0.014 * (1 - 0.7 * t)), 5),
+    section: (t) => circle(Math.max(0.0012, length * 0.014 * (1 - 0.7 * t)), rachisSides),
     caps: true,
   });
   builder.add(rachis, undefined, material);
@@ -1838,5 +1851,718 @@ export function leafLitter(options: {
   }
   const litter = builder.bounds();
   if (litter.min[1] < 0) builder.translate(0, -litter.min[1], 0);
+  return builder;
+}
+
+/* ------------------------------------------------------------- woody crowns */
+
+/**
+ * The three architectures a description actually names when it says "tree".
+ *
+ * A broadleaf tree is a trunk that splits into limbs which carry blobs of
+ * leaves. A conifer is one leader wearing tiers of whorls whose radius falls off
+ * toward the crown. A palm is a curved column that never branches, wearing a
+ * crown of fronds and shedding them as it grows. They share no silhouette, so
+ * they share no generator; what they share is the budget policy, the placement
+ * maths, and the rule that the crown sits on the wood that carries it.
+ */
+
+/**
+ * How far a limb of unit length reaches outward, and how far it rises.
+ *
+ * Derived from `branchSpine` rather than restated, so a change to the curve a
+ * branch sweeps cannot silently desynchronise the canopy hanging off it. `tilt`
+ * is `attach`'s rotation about Z, which swings the limb's own +Y toward −X.
+ */
+function limbReach(curve: number, tilt: number): { reach: number; rise: number } {
+  const tip = branchSpine(1, curve, 1);
+  const [bendX = 0, bendY = 0] = tip;
+  return {
+    reach: Math.abs(bendX * Math.cos(tilt) - bendY * Math.sin(tilt)),
+    rise: bendX * Math.sin(tilt) + bendY * Math.cos(tilt),
+  };
+}
+
+/**
+ * Where a point on a limb lands once `attach` has placed that limb.
+ *
+ * `attach` spins, tilts about Z, yaws about Y, then translates. A canopy blob
+ * positioned by guessing where the tip ended up drifts off the branch as the
+ * curve grows, and a crown floating beside its own limbs reads as a ball with
+ * sticks poking out of it. This applies the same transform in the same order.
+ */
+function limbPoint(at: Vec3, yaw: number, tilt: number, local: Vec3): Vec3 {
+  const lx = local[0] ?? 0;
+  const ly = local[1] ?? 0;
+  const lz = local[2] ?? 0;
+  const tiltedX = lx * Math.cos(tilt) - ly * Math.sin(tilt);
+  const tiltedY = lx * Math.sin(tilt) + ly * Math.cos(tilt);
+  return [
+    (at[0] ?? 0) + tiltedX * Math.cos(yaw) + lz * Math.sin(yaw),
+    (at[1] ?? 0) + tiltedY,
+    (at[2] ?? 0) - tiltedX * Math.sin(yaw) + lz * Math.cos(yaw),
+  ];
+}
+
+/** Triangles a `trunk` costs, so a tree can pay for the trunk before it plans limbs. */
+function trunkCost(segments: number, stations: number, buttress: number): number {
+  const roots = buttress > 0 ? Math.max(3, Math.round(buttress)) : 0;
+  return stations * segments * 4 + roots * BEVELLED_BOX_TRIANGLES;
+}
+
+/** Triangles a `sweep` costs: two per quad, plus a fan cap at each end. */
+function sweepCost(stations: number, resample: number, points: number): number {
+  return stations * (resample + 1) * points * 2 + points * 2;
+}
+
+/** Triangles a `branch` at three segments with no twigs costs: a limb's floor. */
+const LIMB_FLOOR = branchCost(3, 0);
+/** Triangles a six-sided cone costs: the cheapest tier, sleeve or spire. */
+const CONE_TRIANGLES = 24;
+
+/* ------------------------------------------------------------------- trees */
+
+export type TreeStyle = 'oak' | 'birch' | 'willow' | 'olive' | 'poplar';
+
+/** The proportions that make a species recognisable from its silhouette alone. */
+interface TreeForm {
+  /** Fraction of the height that is bare trunk below the lowest limb. */
+  skirt: number;
+  /** How far the leader runs up inside the crown, as a fraction of height. */
+  leader: number;
+  /** Crown radius including its leaf blobs, as a fraction of height. */
+  spread: number;
+  /** Leaf blob radius as a fraction of height. */
+  blob: number;
+  tiltMin: number;
+  tiltMax: number;
+  curveMin: number;
+  curveMax: number;
+  limbsMin: number;
+  limbsMax: number;
+  /** Leaf blobs per limb, before leafiness and the budget cut in. */
+  blobs: number;
+  /** How far the outer blobs hang below the limb carrying them. */
+  droop: number;
+  /** Trunk radius at the ground, as a fraction of height. */
+  trunk: number;
+  fissures: number;
+  flare: number;
+  bark: string;
+  leaf: string;
+}
+
+const TREE_FORMS: Record<TreeStyle, TreeForm> = {
+  // An oak is as wide as it is tall, splits low, and its limbs reach then lift.
+  oak: { skirt: 0.3, leader: 0.62, spread: 0.34, blob: 0.1, tiltMin: 0.7, tiltMax: 1.2, curveMin: 0.3, curveMax: 0.95, limbsMin: 5, limbsMax: 8, blobs: 4, droop: 0.03, trunk: 0.045, fissures: 0.55, flare: 0.55, bark: 'bark', leaf: 'foliage-dark' },
+  // A birch is a slender white column with a narrow crown of upswept limbs.
+  birch: { skirt: 0.44, leader: 0.8, spread: 0.17, blob: 0.055, tiltMin: 0.3, tiltMax: 0.62, curveMin: 0.25, curveMax: 0.6, limbsMin: 6, limbsMax: 10, blobs: 3, droop: 0.05, trunk: 0.022, fissures: 0.16, flare: 0.2, bark: 'bark-birch', leaf: 'foliage' },
+  // A willow's crown hangs: every blob drops well below the limb that holds it.
+  willow: { skirt: 0.3, leader: 0.62, spread: 0.38, blob: 0.085, tiltMin: 0.55, tiltMax: 1, curveMin: 0.5, curveMax: 1.1, limbsMin: 5, limbsMax: 9, blobs: 4, droop: 0.26, trunk: 0.04, fissures: 0.5, flare: 0.5, bark: 'bark', leaf: 'foliage-olive' },
+  // An olive is wider than it is tall, gnarled, and splits near the ground.
+  olive: { skirt: 0.26, leader: 0.55, spread: 0.5, blob: 0.1, tiltMin: 0.8, tiltMax: 1.3, curveMin: 0.4, curveMax: 1, limbsMin: 5, limbsMax: 8, blobs: 4, droop: 0.07, trunk: 0.05, fissures: 0.75, flare: 0.65, bark: 'bark', leaf: 'foliage-olive' },
+  // A poplar is columnar: limbs nearly vertical, crown a fraction of its width.
+  poplar: { skirt: 0.1, leader: 0.9, spread: 0.09, blob: 0.045, tiltMin: 0.12, tiltMax: 0.34, curveMin: 0.2, curveMax: 0.5, limbsMin: 7, limbsMax: 12, blobs: 3, droop: 0, trunk: 0.026, fissures: 0.35, flare: 0.3, bark: 'bark', leaf: 'foliage' },
+};
+
+export interface TreeOptions {
+  /** Ground to the top of the crown, in metres. */
+  height?: number;
+  style?: TreeStyle;
+  seed?: number;
+  /** Crown radius in metres; defaults to the species' own proportion. */
+  spread?: number;
+  /** Primary limbs, before the budget cuts in. */
+  limbs?: number;
+  /** 1 = a full summer crown, 0 = a bare winter tree. */
+  leafiness?: number;
+  /** Buttress roots, for tropical species. */
+  buttress?: number;
+  quality?: Quality;
+  budget?: number;
+  trunkMaterial?: string;
+  leafMaterial?: string;
+}
+
+/**
+ * A broadleaf tree: a trunk, limbs solved for the crown's edge, and leaf blobs
+ * placed on those limbs.
+ *
+ * Two things carry the result. Limb length is *solved* from the crown radius the
+ * form asks for, so a wide oak and a narrow poplar differ in proportion and not
+ * just in decoration. And every blob is placed by the same transform `attach`
+ * applies to its limb, so the crown is visibly held up by wood — which is what a
+ * viewer reads, consciously or not, as a tree rather than a shrub.
+ */
+export function tree(options: TreeOptions = {}): MeshBuilder {
+  const seed = options.seed ?? 127;
+  const rng = detailRng(seed);
+  const builder = new MeshBuilder();
+  const height = Math.max(0.6, options.height ?? 8);
+  const style = options.style ?? 'oak';
+  const form = TREE_FORMS[style];
+  const budget = budgetOf(options.quality, options.budget);
+  const bark = options.trunkMaterial ?? form.bark;
+  const leafId = options.leafMaterial ?? form.leaf;
+  const leafiness = Math.min(1, Math.max(0, options.leafiness ?? 1));
+  const spread = Math.max(form.blob * 1.8 * height, options.spread ?? form.spread * height);
+
+  // The trunk is the one part that never simplifies away: a tree with no trunk
+  // is a bush, and `bush` already exists for that.
+  const segments = budget > 6000 ? 11 : budget > 2500 ? 9 : budget > 1200 ? 7 : 6;
+  const buttress = Math.max(0, Math.round(options.buttress ?? 0));
+  const wood = trunkCost(segments, 6, buttress);
+  const leader = height * form.leader;
+  builder.add(trunk({
+    height: leader,
+    radiusBottom: height * form.trunk,
+    radiusTop: height * form.trunk * 0.4,
+    seed,
+    fissures: form.fissures,
+    rootFlare: form.flare,
+    segments,
+    stations: 6,
+    buttress: buttress || undefined,
+  }), undefined, bark);
+
+  // Foliage is reserved before limbs. A tree that spends everything on wood
+  // arrives at the crown with nothing left and becomes a dead tree, which is a
+  // different asset rather than a cheaper one.
+  const crownShare = Math.max(budget * 0.44 * leafiness, leafiness > 0.05 ? LEAF_TRIANGLES * 12 : 0);
+  const leafShare = crownShare * 0.86;
+  const apexShare = crownShare - leafShare;
+  const wanted = Math.max(3, Math.round(options.limbs ?? intRange(rng, form.limbsMin, form.limbsMax)));
+  const limbs = planChildren(wanted, LIMB_FLOOR, Math.max(LIMB_FLOOR * 2, budget - wood - crownShare));
+  const twigs = limbs.each > branchCost(4, 2) ? 2 : limbs.each > branchCost(4, 1) ? 1 : 0;
+  const limbSegments = limbs.each > branchCost(5, 0) ? 5 : limbs.each > LIMB_FLOOR + 12 ? 4 : 3;
+  const blobWanted = Math.max(1, Math.round(form.blobs * (0.4 + 0.6 * leafiness)));
+  // Per limb, not per tree: the share is what one limb's blobs may spend.
+  const blobShare = leafShare / Math.max(1, limbs.modeled);
+  const blobsPerLimb = Math.max(1, Math.min(blobWanted, Math.floor(blobShare / (LEAF_TRIANGLES * 6))));
+  // Below six leaves a blob is a handful of specks and reads as damage, so the
+  // crown goes bare instead. That is `leafiness`, not a cheaper representation.
+  const leavesPerBlob = blobShare >= LEAF_TRIANGLES * 6
+    ? Math.max(6, Math.min(40, Math.round(blobShare / blobsPerLimb / LEAF_TRIANGLES)))
+    : 0;
+
+  for (let index = 0; index < limbs.modeled; index += 1) {
+    const rise = limbs.modeled > 1 ? index / (limbs.modeled - 1) : 0.6;
+    const yaw = index * 2.399963 + range(rng, -0.3, 0.3);
+    const tilt = range(rng, form.tiltMin, form.tiltMax);
+    const curve = range(rng, form.curveMin, form.curveMax);
+    const blobRadius = height * form.blob * range(rng, 0.85, 1.15);
+    const at: Vec3 = [
+      Math.cos(yaw) * height * form.trunk * 0.4,
+      height * form.skirt + (leader - height * form.skirt) * rise * 0.95,
+      Math.sin(yaw) * height * form.trunk * 0.4,
+    ];
+    // Solve the limb for the crown's edge. Upper limbs are shorter, because the
+    // crown narrows toward the top and a long limb there would overshoot it.
+    const target = (spread - blobRadius) * (1 - rise * 0.32) * range(rng, 0.85, 1.05);
+    const reach = limbReach(curve, tilt);
+    // A limb has to fit the crown's width *and* its height. Where a limb's own
+    // bend cancels its tilt it points mostly up, and solving for the reach alone
+    // then overshoots the crown top by metres — which the fitting pass hides by
+    // shrinking the whole tree, trunk and all.
+    const roomAbove = Math.max(height * 0.1, height - (at[1] ?? 0) - blobRadius);
+    const limbLength = Math.max(height * 0.06, Math.min(
+      target / Math.max(0.2, reach.reach),
+      roomAbove / Math.max(0.2, reach.rise),
+    ));
+    const limb = branch({
+      length: limbLength,
+      radiusBase: height * form.trunk * (1.3 - rise * 0.7),
+      radiusTip: height * form.trunk * 0.12,
+      curve,
+      seed: seed + index * 43 + 7,
+      segments: limbSegments,
+      twigs,
+    });
+    attach(builder, limb, bark, at, yaw, tilt);
+
+    if (leavesPerBlob === 0) continue;
+    for (let blob = 0; blob < blobsPerLimb; blob += 1) {
+      // Blobs run along the outer half of the limb, where the wood is thin
+      // enough that a viewer reads them as carried rather than as stuck on.
+      const along = blobsPerLimb > 1 ? 0.5 + (blob / (blobsPerLimb - 1)) * 0.5 : 0.9;
+      const place = limbPoint(at, yaw, tilt, branchSpine(limbLength, curve, along));
+      const bearing = yaw + range(rng, -0.9, 0.9);
+      const reach = blobRadius * range(rng, 0.2, 0.9);
+      const cluster = leafCluster({
+        radius: blobRadius,
+        leaves: leavesPerBlob,
+        seed: seed + index * 53 + blob * 17 + 5,
+        length: blobRadius * 0.42,
+        width: blobRadius * 0.24,
+        clumps: intRange(rng, 2, 4),
+      });
+      cluster.translate(
+        place[0] + Math.cos(bearing) * reach,
+        // A blob reaches about its own radius past its centre, so the centre is
+        // held that far under the crown line, and never under the ground: a
+        // willow's hanging skirt stops short of the earth it shades.
+        Math.max(blobRadius * 0.55, Math.min(
+          height - blobRadius * 0.95,
+          place[1] - form.droop * height * (0.4 + along * 0.6) + range(rng, -0.04, 0.06) * height,
+        )),
+        place[2] + Math.sin(bearing) * reach,
+      );
+      builder.add(cluster, undefined, blob % 2 === 0 ? leafId : 'foliage-dark');
+    }
+  }
+
+  // One blob over the leader's top, so the crown closes instead of showing a
+  // hole from above — and so the height contract has something to measure.
+  if (leavesPerBlob > 0 && apexShare >= LEAF_TRIANGLES * 8) {
+    const apexRadius = height * form.blob * 1.15;
+    const apex = leafCluster({
+      radius: apexRadius,
+      leaves: Math.min(40, Math.round(apexShare / LEAF_TRIANGLES)),
+      seed: seed + 991,
+      length: apexRadius * 0.42,
+      width: apexRadius * 0.24,
+      clumps: 3,
+    });
+    apex.translate(0, Math.min(height - apexRadius * 0.9, leader * 0.97), 0);
+    builder.add(apex, undefined, leafId);
+  }
+
+  fitHeight(builder, height, 1.4);
+  return builder;
+}
+
+/* ---------------------------------------------------------------- conifers */
+
+export type ConiferStyle = 'pine' | 'spruce' | 'fir' | 'juniper';
+
+/** Leaves in one needle sprig: the smallest cluster that still reads as foliage. */
+const SPRIG_LEAVES = 9;
+
+interface ConiferForm {
+  /** Fraction of the height that is bare trunk below the lowest tier. */
+  skirt: number;
+  /** Widest crown radius as a fraction of height. */
+  spread: number;
+  tiersMin: number;
+  tiersMax: number;
+  /** Where the crown is widest, as a fraction of the crown's own height. */
+  widest: number;
+  /** How fast the radius falls from the widest tier to the top. */
+  taper: number;
+  /** Limb tilt past horizontal: positive lifts, negative hangs. */
+  droop: number;
+  /** Branches per tier, before the budget cuts in. */
+  whorl: number;
+  /** Needle sprigs per branch, before the budget cuts in. */
+  sprigs: number;
+  trunk: number;
+  /** Turns each tier is offset from the one below, so whorls interleave. */
+  spiral: number;
+  bark: string;
+  needle: string;
+}
+
+const CONIFER_FORMS: Record<ConiferStyle, ConiferForm> = {
+  // A pine sheds its skirt, holds few flat tiers high up, and tops out blunt.
+  pine: { skirt: 0.42, spread: 0.11, tiersMin: 5, tiersMax: 8, widest: 0, taper: 0.55, droop: 0.14, whorl: 5, sprigs: 2, trunk: 0.03, spiral: 0.62, bark: 'bark', needle: 'needle' },
+  // A spruce is a spire: tiers from the ground up, every limb tip hanging.
+  spruce: { skirt: 0.04, spread: 0.1, tiersMin: 9, tiersMax: 14, widest: 0.3, taper: 1.15, droop: -0.34, whorl: 6, sprigs: 2, trunk: 0.022, spiral: 0.5, bark: 'bark', needle: 'needle' },
+  // A fir is a softer cone, wider than a spruce, with limbs that stay level.
+  fir: { skirt: 0.06, spread: 0.12, tiersMin: 8, tiersMax: 12, widest: 0.22, taper: 0.9, droop: -0.1, whorl: 6, sprigs: 2, trunk: 0.024, spiral: 0.45, bark: 'bark', needle: 'needle' },
+  // A juniper is irregular and bushy, its widest tier low, its crown open.
+  juniper: { skirt: 0.14, spread: 0.16, tiersMin: 6, tiersMax: 10, widest: 0.35, taper: 0.75, droop: -0.2, whorl: 5, sprigs: 3, trunk: 0.028, spiral: 0.8, bark: 'bark', needle: 'needle' },
+};
+
+export interface ConiferOptions {
+  /** Ground to the top of the leader, in metres. */
+  height?: number;
+  style?: ConiferStyle;
+  seed?: number;
+  /** Tiers of whorls, before the budget cuts in. */
+  tiers?: number;
+  /** A crown broken off by wind or lightning: blunt top, no leader tip. */
+  brokenTop?: boolean;
+  quality?: Quality;
+  budget?: number;
+  needleMaterial?: string;
+  barkMaterial?: string;
+}
+
+/**
+ * A conifer: one leader, and tiers of whorls whose radius falls off toward the
+ * crown.
+ *
+ * The tier count is the tree's identity, so it is the last thing the budget
+ * touches, and only down to the floor of one cone per tier. What degrades
+ * instead is how each tier is dressed, down an explicit ladder: a cone around
+ * the trunk, then limbs each wearing one tapered needle sleeve, then limbs
+ * carrying sprigs of real needles. Limbs the budget cannot give every tier are
+ * spread across tiers round-robin from the widest one down, so a poor spruce is
+ * still a fourteen-tier spire — which is exactly what a distant spruce is.
+ */
+export function conifer(options: ConiferOptions = {}): MeshBuilder {
+  const seed = options.seed ?? 131;
+  const rng = detailRng(seed);
+  const builder = new MeshBuilder();
+  const height = Math.max(0.6, options.height ?? 12);
+  const style = options.style ?? 'spruce';
+  const form = CONIFER_FORMS[style];
+  const budget = budgetOf(options.quality, options.budget);
+  const needle = options.needleMaterial ?? form.needle;
+  const bark = options.barkMaterial ?? form.bark;
+
+  const segments = budget > 6000 ? 9 : budget > 2000 ? 7 : 6;
+  const brokenTop = options.brokenTop ?? false;
+  const trunkHeight = height * (brokenTop ? 0.9 : 0.98);
+  const wood = trunkCost(segments, 6, 0) + (brokenTop ? 0 : CONE_TRIANGLES / 2);
+  builder.add(trunk({
+    height: trunkHeight,
+    radiusBottom: height * form.trunk,
+    radiusTop: height * form.trunk * 0.22,
+    seed,
+    fissures: 0.4,
+    rootFlare: 0.35,
+    segments,
+    stations: 6,
+  }), undefined, bark);
+
+  const available = Math.max(CONE_TRIANGLES * 3, budget - wood);
+  const wantedTiers = Math.max(3, Math.round(options.tiers ?? intRange(rng, form.tiersMin, form.tiersMax)));
+  const tierCount = Math.max(3, Math.min(wantedTiers, Math.floor(available / CONE_TRIANGLES)));
+  const perTier = Math.floor(available / tierCount);
+  // A cone gets more sides as the tier's allowance grows, which is free detail:
+  // the silhouette is the same, the scalloped lower edge stops looking faceted.
+  const coneSides = perTier >= 48 ? 12 : perTier >= 32 ? 8 : 6;
+  const limbBudget = Math.max(0, available - tierCount * coneSides * 4);
+  const totalLimbs = Math.max(0, Math.min(tierCount * form.whorl, Math.floor(limbBudget / (LIMB_FLOOR + CONE_TRIANGLES))));
+  const perBranch = totalLimbs > 0 ? Math.floor(limbBudget / totalLimbs) : 0;
+  const sprigs = perBranch >= LIMB_FLOOR + SPRIG_LEAVES * LEAF_TRIANGLES
+    ? Math.max(1, Math.min(form.sprigs, Math.floor((perBranch - LIMB_FLOOR) / (SPRIG_LEAVES * LEAF_TRIANGLES))))
+    : 0;
+  const baseLimbs = Math.floor(totalLimbs / tierCount);
+  const spareLimbs = totalLimbs % tierCount;
+
+  const crownBase = height * form.skirt;
+  const crownTop = trunkHeight;
+  for (let tier = 0; tier < tierCount; tier += 1) {
+    const t = tierCount > 1 ? tier / (tierCount - 1) : 0.4;
+    // Widest at `form.widest` up the crown, narrowing below it toward the first
+    // limb and falling to a point at the top.
+    const up = Math.max(0, t - form.widest) / Math.max(1e-3, 1 - form.widest);
+    const down = form.widest > 1e-3 ? Math.max(0, form.widest - t) / form.widest : 0;
+    const radius = Math.max(height * 0.02, form.spread * height * Math.pow(1 - up, form.taper) * (1 - down * 0.55));
+    const at = crownBase + (crownTop - crownBase) * t;
+    const tierSpread = radius * range(rng, 0.92, 1.08);
+    const limbsHere = baseLimbs + (tier < spareLimbs ? 1 : 0);
+    const spin = tier * form.spiral * Math.PI * 2 / form.whorl;
+
+    // Every tier keeps its cone, so the spire reads even where limbs ran out.
+    // The cone overlaps the tier above by design — that is what closes the spire
+    // — but the topmost one stops just past the leader instead of towering over
+    // it, which would make the whole tree shrink to fit its own crown.
+    const coneHeight = Math.min(
+      (crownTop - crownBase) / tierCount * 1.7,
+      Math.max(height * 0.06, crownTop + height * 0.06 - at),
+    );
+    const cone = prism({ sides: coneSides, radius: tierSpread, height: coneHeight, topScale: 0.08 });
+    attach(builder, cone, needle, [0, at, 0], spin);
+
+    if (limbsHere === 0) continue;
+    const droop = form.droop * range(rng, 0.7, 1.3);
+    const tilt = Math.PI * 0.5 - droop;
+    const curve = range(rng, -0.35, 0.15) + (droop > 0 ? 0.2 : -0.2);
+    const limbLength = Math.max(height * 0.04, tierSpread / Math.max(0.3, limbReach(curve, tilt).reach));
+
+    for (let index = 0; index < limbsHere; index += 1) {
+      const yaw = (index / limbsHere) * Math.PI * 2 + spin + range(rng, -0.18, 0.18);
+      const at3: Vec3 = [Math.cos(yaw) * height * form.trunk * 0.35, at, Math.sin(yaw) * height * form.trunk * 0.35];
+      const limb = branch({
+        length: limbLength,
+        radiusBase: height * form.trunk * range(rng, 0.4, 0.6),
+        radiusTip: height * form.trunk * 0.06,
+        curve,
+        seed: seed + tier * 61 + index * 29 + 3,
+        segments: 3,
+      });
+      attach(builder, limb, bark, at3, yaw, tilt);
+
+      if (sprigs > 0) {
+        for (let sprig = 0; sprig < sprigs; sprig += 1) {
+          const along = sprigs > 1 ? 0.45 + (sprig / (sprigs - 1)) * 0.55 : 0.85;
+          const place = limbPoint(at3, yaw, tilt, branchSpine(limbLength, curve, along));
+          const blobRadius = Math.max(0.02, tierSpread * 0.34 * (1 - along * 0.3));
+          const cluster = leafCluster({
+            radius: blobRadius,
+            leaves: SPRIG_LEAVES,
+            seed: seed + tier * 97 + index * 31 + sprig * 7,
+            // Needles, not leaves: short, narrow and stiff enough to read as a
+            // sprig rather than as a shredded broadleaf.
+            length: blobRadius * 0.7,
+            width: blobRadius * 0.14,
+            clumps: 2,
+          });
+          cluster.translate(place[0], place[1], place[2]);
+          // Alternating on the limb as well as the sprig keeps the crown tonally
+          // broken up even when a tier can only afford one sprig per limb.
+          builder.add(cluster, undefined, (sprig + index) % 2 === 0 ? needle : 'foliage-dark');
+        }
+        continue;
+      }
+
+      // A sleeve around the limb: one tapered cone of needles, which is how a
+      // spruce branch presents itself past a few metres anyway.
+      const sleeve = prism({ sides: 6, radius: tierSpread * 0.2, height: limbLength * 0.9, topScale: 0.12 });
+      sleeve.translate(0, limbLength * 0.1, 0);
+      attach(builder, sleeve, (index + tier) % 2 === 0 ? needle : 'foliage-dark', at3, yaw, tilt);
+    }
+  }
+
+  // The leader's tip closes the spire. Without it the crown is a stack of cones
+  // around a pole, and the height contract measures the pole instead of the tree.
+  if (!brokenTop) {
+    const tip = prism({ sides: 6, radius: Math.max(height * 0.015, form.spread * height * 0.16), height: height * 0.1, topScale: 0 });
+    tip.translate(0, crownTop - height * 0.02, 0);
+    builder.add(tip, undefined, needle);
+  }
+
+  fitHeight(builder, height, 1.4);
+  return builder;
+}
+
+/* ------------------------------------------------------------------- palms */
+
+export type PalmStyle = 'date' | 'coconut' | 'fan';
+
+/** Triangles a fruit costs: a sphere at seven by five segments. */
+const FRUIT_TRIANGLES = 56;
+/** A dead frond's floor: the coarsest rachis plus two pairs of pinnae. */
+const DEAD_FROND_FLOOR = 125;
+/** Past this a fan frond's allowance buys an extra row down every rib. */
+const FAN_RIB_RICH = 260;
+
+/**
+ * Triangles one rib of a fan frond costs at a given allowance.
+ *
+ * The caller solves the rib count from this number and the frond builder spends
+ * it, so both read the same ladder: three rows of two columns is eight triangles,
+ * four rows is twelve.
+ */
+function fanRibTriangles(budget: number): number {
+  return budget > FAN_RIB_RICH ? 12 : 8;
+}
+
+interface PalmForm {
+  frondsMin: number;
+  frondsMax: number;
+  /** Frond length as a fraction of height. */
+  frondLength: number;
+  /** How far the trunk leans, as a fraction of height. */
+  lean: number;
+  /** Frond tilt from vertical, so the crown arches out and then hangs. */
+  tiltMin: number;
+  tiltMax: number;
+  /** Leaf scars modelled as rings along the trunk. */
+  scars: number;
+  trunk: number;
+  /** Pinnae (or fan ribs) per frond, before the budget cuts in. */
+  leaflets: number;
+  /** Fan palms are palmate: ribs from one point, not pinnae on a rachis. */
+  palmate: boolean;
+  /** Dead fronds the crown keeps hanging below it. */
+  skirt: number;
+  fruit: string;
+  fruitCount: number;
+  /** Fruit size as a fraction of height. */
+  fruitSize: number;
+  bark: string;
+  frond: string;
+}
+
+const PALM_FORMS: Record<PalmStyle, PalmForm> = {
+  date: { frondsMin: 9, frondsMax: 14, frondLength: 0.42, lean: 0.1, tiltMin: 0.95, tiltMax: 1.5, scars: 8, trunk: 0.028, leaflets: 40, palmate: false, skirt: 4, fruit: 'petal-warm', fruitCount: 5, fruitSize: 0.032, bark: 'bark-palm', frond: 'foliage-palm' },
+  coconut: { frondsMin: 7, frondsMax: 11, frondLength: 0.5, lean: 0.16, tiltMin: 0.85, tiltMax: 1.4, scars: 7, trunk: 0.032, leaflets: 34, palmate: false, skirt: 2, fruit: 'bark', fruitCount: 4, fruitSize: 0.05, bark: 'bark-palm', frond: 'foliage-palm' },
+  fan: { frondsMin: 12, frondsMax: 18, frondLength: 0.34, lean: 0.06, tiltMin: 0.7, tiltMax: 1.25, scars: 6, trunk: 0.03, leaflets: 26, palmate: true, skirt: 3, fruit: 'petal-pale', fruitCount: 3, fruitSize: 0.026, bark: 'bark-palm', frond: 'foliage-palm' },
+};
+
+export interface PalmOptions {
+  /** Ground to the top of the crown, in metres. */
+  height?: number;
+  style?: PalmStyle;
+  seed?: number;
+  fronds?: number;
+  /** Trunk lean as a fraction of height; the direction comes from the seed. */
+  lean?: number;
+  /** A hanging skirt of dead fronds, as date palms keep for years. */
+  skirt?: boolean;
+  /** A bunch of fruit under the crown. */
+  fruit?: boolean;
+  quality?: Quality;
+  budget?: number;
+  trunkMaterial?: string;
+  frondMaterial?: string;
+}
+
+/**
+ * A palmate frond: ribs radiating from the top of a petiole, each notched along
+ * its edge, all shallowly coned and drooping at the outer ribs.
+ *
+ * This is the one frond shape `fernFrond` cannot give, because a fan palm has no
+ * rachis to hang pinnae from — its leaf is one blade cut almost to the midrib.
+ * Built along +Y like every other part here, so `attach`'s tilt means the same
+ * thing for a fan frond as it does for a pinnate one.
+ */
+function fanFrond(length: number, ribs: number, seed: number, droop: number, budget: number): MeshBuilder {
+  const rng = detailRng(seed);
+  const builder = new MeshBuilder();
+  const petiole = Math.max(0.03, length * 0.34);
+  const stem = cylinder(length * 0.012, length * 0.022, petiole, { radialSegments: 5, texel: 0.08 });
+  stem.translate(0, petiole * 0.5, 0);
+  builder.add(stem);
+
+  const bladeLength = Math.max(0.03, length - petiole);
+  const ribTriangles = fanRibTriangles(budget);
+  const plan = planRepeatedUnits(Math.max(4, Math.round(ribs)), ribTriangles, Math.max(32, budget - 20), 4);
+  for (let index = 0; index < plan.modeled; index += 1) {
+    const s = plan.modeled > 1 ? index / (plan.modeled - 1) : 0.5;
+    const rib = blade({
+      length: bladeLength * range(rng, 0.86, 1.06),
+      width: bladeLength * 0.16,
+      widest: 0.34,
+      camber: 0.55,
+      // The outer ribs hang lower, which turns a flat fan into a crown.
+      droop: droop * (0.45 + Math.abs(s - 0.5) * 1.4),
+      lobes: 3,
+      lobeDepth: 0.5,
+      segments: ribTriangles > 8 ? 4 : 3,
+      across: 2,
+    });
+    rib.rotateZ(Math.PI * 0.32 + Math.abs(s - 0.5) * 0.3 + range(rng, -0.08, 0.12));
+    rib.rotateY(s * Math.PI * 2);
+    rib.translate(0, petiole, 0);
+    builder.add(rib);
+  }
+  return builder;
+}
+
+/**
+ * A palm: a curved column that never branches, wearing a crown of fronds.
+ *
+ * Three details make it a palm rather than a green umbrella. The trunk leans and
+ * carries leaf scars, because a palm's width comes from old frond bases and not
+ * from secondary growth. The crown sits at the top of that lean, not over the
+ * root. And the fronds arch out and then hang, so the silhouette is a fountain
+ * rather than a disc.
+ */
+export function palm(options: PalmOptions = {}): MeshBuilder {
+  const seed = options.seed ?? 137;
+  const rng = detailRng(seed);
+  const builder = new MeshBuilder();
+  const height = Math.max(0.8, options.height ?? 9);
+  const style = options.style ?? 'date';
+  const form = PALM_FORMS[style];
+  const budget = budgetOf(options.quality, options.budget);
+  const bark = options.trunkMaterial ?? form.bark;
+  const frondMaterial = options.frondMaterial ?? form.frond;
+  const frondFloor = form.palmate ? 60 : DEAD_FROND_FLOOR;
+
+  const lean = Math.max(0, options.lean ?? form.lean);
+  const direction = range(rng, 0, Math.PI * 2);
+  const trunkHeight = height * 0.86;
+  const stations = budget > 5000 ? 8 : budget > 1800 ? 6 : budget > 700 ? 5 : 4;
+  const resample = budget > 1800 ? 2 : 1;
+  const ringPoints = budget > 1800 ? 9 : budget > 700 ? 7 : 6;
+  const wood = sweepCost(stations, resample, ringPoints);
+  const spine = leaningSpine(trunkHeight, lean, direction, stations);
+  // Leaf scars are free: the trunk is one sweep, so a radius that swells under
+  // each old frond base costs vertices the trunk already has.
+  const scars = Math.max(3, Math.round(form.scars * (budget > 1800 ? 1 : 0.6)));
+  const column = sweep(spine, {
+    texel: 0.3,
+    resample,
+    section: (t) => {
+      const taper = 1 - t * 0.42;
+      const within = (t * scars) % 1;
+      const ring = 1 + 0.11 * Math.pow(1 - within, 3);
+      return circle(Math.max(0.01, height * form.trunk * taper * ring), ringPoints);
+    },
+    caps: true,
+  });
+  fracture(column, { amplitude: height * 0.004, frequency: 9, seed: seed + 3, recompute: true });
+  builder.add(column, undefined, bark);
+
+  // Fruit and the dead skirt are decorations: paid for out of what the crown
+  // does not need, and dropped whole when there is nothing left over.
+  let left = Math.max(frondFloor, budget - wood);
+  const fruitPlan = (options.fruit ?? true)
+    ? planRepeatedUnits(form.fruitCount, FRUIT_TRIANGLES, Math.floor(left * 0.08), 0)
+    : null;
+  if (fruitPlan) left -= fruitPlan.modeled * FRUIT_TRIANGLES;
+  const skirtShare = Math.floor(left * 0.18);
+  const skirtPlan = (options.skirt ?? true) && form.skirt > 0 && skirtShare >= DEAD_FROND_FLOOR
+    ? planChildren(form.skirt, DEAD_FROND_FLOOR, skirtShare)
+    : null;
+  if (skirtPlan) left -= skirtPlan.modeled * skirtPlan.each;
+
+  const crownAt = spine[spine.length - 1] ?? ([0, trunkHeight, 0] as Vec3);
+  const wanted = Math.max(4, Math.round(options.fronds ?? intRange(rng, form.frondsMin, form.frondsMax)));
+  // A frond's floor is its own rachis — a fan palm's is its petiole and four
+  // ribs — so a poor palm keeps its crown and loses leaflets instead.
+  const fronds = planChildren(wanted, frondFloor, Math.max(frondFloor, left));
+  const perFrond = fronds.each;
+  // `fernFrond` charges sixteen triangles per pair of pinnae over a rachis of
+  // `stations * 20 + 10`, so the count that fits is solved, not guessed.
+  const leaflets = form.palmate
+    ? Math.max(4, Math.min(form.leaflets, Math.floor((perFrond - 20) / fanRibTriangles(perFrond))))
+    : Math.max(3, Math.min(form.leaflets, Math.floor((perFrond - 130) / 16)));
+
+  for (let index = 0; index < fronds.modeled; index += 1) {
+    const yaw = index * 2.399963 + range(rng, -0.25, 0.25);
+    const tilt = range(rng, form.tiltMin, form.tiltMax) + (index % 3) * 0.08;
+    const frondLength = height * form.frondLength * range(rng, 0.85, 1.1);
+    const frond = form.palmate
+      ? fanFrond(frondLength, leaflets, seed + index * 71 + 11, range(rng, 0.3, 0.55), perFrond)
+      : fernFrond({
+        length: frondLength,
+        pinnae: leaflets,
+        seed: seed + index * 71 + 11,
+        // A palm frond is a fern frond with a stiffer rachis and a heavier tip:
+        // the same profile drooped further is the arch a palm crown reads by.
+        droop: range(rng, 0.55, 0.85),
+        material: frondMaterial,
+        budget: perFrond,
+      });
+    attach(builder, frond, frondMaterial, crownAt, yaw, tilt);
+  }
+
+  if (skirtPlan) {
+    for (let index = 0; index < skirtPlan.modeled; index += 1) {
+      const yaw = index * 1.9 + range(rng, -0.3, 0.3);
+      const frond = fernFrond({
+        length: height * form.frondLength * range(rng, 0.6, 0.85),
+        pinnae: Math.max(3, Math.floor((skirtPlan.each - 130) / 16)),
+        seed: seed + index * 83 + 29,
+        droop: range(rng, 0.9, 1.2),
+        material: 'thatch',
+        budget: skirtPlan.each,
+      });
+      // Past horizontal, so the spent fronds hang against the trunk.
+      attach(builder, frond, 'thatch', crownAt, yaw, Math.PI * 0.5 + range(rng, 0.7, 1.15));
+    }
+  }
+
+  if (fruitPlan) {
+    for (let index = 0; index < fruitPlan.modeled; index += 1) {
+      const yaw = index * 2.1 + range(rng, -0.4, 0.4);
+      const size = height * form.fruitSize * range(rng, 0.8, 1.2);
+      const nut = sphere(size, { widthSegments: 7, heightSegments: 5, texel: 0.08, radii: [size, size * range(rng, 1, 1.5), size] });
+      attach(builder, nut, form.fruit, [
+        (crownAt[0] ?? 0) + Math.cos(yaw) * height * 0.05,
+        (crownAt[1] ?? 0) - size * range(rng, 1.1, 2.4),
+        (crownAt[2] ?? 0) + Math.sin(yaw) * height * 0.05,
+      ]);
+    }
+  }
+
+  fitHeight(builder, height, 1.4);
   return builder;
 }
