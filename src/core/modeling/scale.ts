@@ -283,6 +283,14 @@ export function seatOnGround(builder: MeshBuilder, centerHorizontally = true): M
 /**
  * Brings a component to the height it was asked for and seats it on the ground.
  *
+ * A component overshoots or undershoots its nominal height by construction:
+ * fronds tilt, leaf blobs reach past their own centre, a cairn course settles
+ * into the one below it, a seed head sits above the stalk that carries it.
+ * Rather than tune a hundred generators to land on a number, each one builds its
+ * natural proportions and this scales the whole thing uniformly. Uniform is also
+ * honest — a taller fern really is a wider fern — and it never stretches a
+ * normal, which non-uniform scaling would.
+ *
  * Every generator ends with this, because a model whose real height drifted from
  * its requested height is a model whose footprint, collision box and scale
  * warning are all wrong. The correction is uniform and clamped: a generator that

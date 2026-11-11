@@ -97,25 +97,34 @@ export const SURFACES: Record<string, SurfaceSpec> = {
   chain: { id: 'chain', label: 'Chain', ar: 'سلسلة', texture: 'chain', color: 0x55524e, roughness: 0.5, metalness: 0.85, texel: 0.35 },
   riveted: { id: 'riveted', label: 'Riveted plate', ar: 'صفائح مسمّرة', texture: 'riveted', color: 0x5a5f63, roughness: 0.48, metalness: 0.88, texel: 1.2 },
 
-  /* ---- soft goods ---- */
+  /* ---- soft goods ----
+   *
+   * Cloth, wool, hide and feather are double-sided, and the reason is that they
+   * are one plane thick: `banner`, `blade`, `feather`, a tent wall and an awning
+   * are all a single displaced `plane`, so a single-sided material makes a flag
+   * disappear when the wind turns it and a tent vanish when the camera goes
+   * inside it. Leather and rope stay single-sided because they are modeled as
+   * solids — a strap is a thin box, a rope is a twisted sweep — and culling
+   * their backs is free.
+   */
   leather: { id: 'leather', label: 'Leather', ar: 'جلد', texture: 'leather', color: 0x6b4326, roughness: 0.72, metalness: 0, texel: 0.7 },
   'leather-dark': { id: 'leather-dark', label: 'Black leather', ar: 'جلد أسود', texture: 'leather', color: 0x2f2620, roughness: 0.68, metalness: 0, texel: 0.7 },
-  fabric: { id: 'fabric', label: 'Woven cloth', ar: 'قماش', texture: 'fabric', color: 0x8e3b34, roughness: 0.92, metalness: 0, texel: 0.8 },
-  'fabric-linen': { id: 'fabric-linen', label: 'Linen', ar: 'كتان', texture: 'fabric', color: 0xd9cdb2, roughness: 0.94, metalness: 0, texel: 0.8 },
-  'fabric-blue': { id: 'fabric-blue', label: 'Indigo cloth', ar: 'قماش نيلي', texture: 'fabric', color: 0x35507a, roughness: 0.92, metalness: 0, texel: 0.8 },
-  velvet: { id: 'velvet', label: 'Velvet', ar: 'قطيفة', texture: 'fur', color: 0x6d1f2c, roughness: 0.98, metalness: 0, texel: 0.6 },
+  fabric: { id: 'fabric', label: 'Woven cloth', ar: 'قماش', texture: 'fabric', color: 0x8e3b34, roughness: 0.92, metalness: 0, texel: 0.8, side: THREE.DoubleSide },
+  'fabric-linen': { id: 'fabric-linen', label: 'Linen', ar: 'كتان', texture: 'fabric', color: 0xd9cdb2, roughness: 0.94, metalness: 0, texel: 0.8, side: THREE.DoubleSide },
+  'fabric-blue': { id: 'fabric-blue', label: 'Indigo cloth', ar: 'قماش نيلي', texture: 'fabric', color: 0x35507a, roughness: 0.92, metalness: 0, texel: 0.8, side: THREE.DoubleSide },
+  velvet: { id: 'velvet', label: 'Velvet', ar: 'قطيفة', texture: 'fur', color: 0x6d1f2c, roughness: 0.98, metalness: 0, texel: 0.6, side: THREE.DoubleSide },
   rope: { id: 'rope', label: 'Rope', ar: 'حبل', texture: 'rope', color: 0xb39a68, roughness: 0.95, metalness: 0, texel: 0.4 },
   fur: { id: 'fur', label: 'Fur', ar: 'فراء', texture: 'fur', color: 0x6d5540, roughness: 0.97, metalness: 0, texel: 0.6 },
   'fur-white': { id: 'fur-white', label: 'White fur', ar: 'فراء أبيض', texture: 'fur', color: 0xd9d3c8, roughness: 0.97, metalness: 0, texel: 0.6 },
-  wool: { id: 'wool', label: 'Wool', ar: 'صوف', texture: 'fur', color: 0xcfc4ae, roughness: 0.99, metalness: 0, texel: 0.5 },
+  wool: { id: 'wool', label: 'Wool', ar: 'صوف', texture: 'fur', color: 0xcfc4ae, roughness: 0.99, metalness: 0, texel: 0.5, side: THREE.DoubleSide },
 
   /* ---- organic ---- */
   bone: { id: 'bone', label: 'Bone', ar: 'عظم', texture: 'bone', color: 0xd9cdb0, roughness: 0.62, metalness: 0, texel: 0.5 },
   horn: { id: 'horn', label: 'Horn', ar: 'قرن', texture: 'horn', color: 0x6b5a3f, roughness: 0.55, metalness: 0.02, texel: 0.5 },
   scale: { id: 'scale', label: 'Scales', ar: 'حراشف', texture: 'scale', color: 0x4a6b4a, roughness: 0.5, metalness: 0.08, texel: 0.5 },
   'scale-dark': { id: 'scale-dark', label: 'Dark scales', ar: 'حراشف داكنة', texture: 'scale', color: 0x2c3138, roughness: 0.48, metalness: 0.1, texel: 0.5 },
-  feather: { id: 'feather', label: 'Feathers', ar: 'ريش', texture: 'feather', color: 0x8d8578, roughness: 0.85, metalness: 0, texel: 0.4 },
-  hide: { id: 'hide', label: 'Hide', ar: 'جلد حيوان', texture: 'leather', color: 0x8a6a4c, roughness: 0.88, metalness: 0, texel: 0.8 },
+  feather: { id: 'feather', label: 'Feathers', ar: 'ريش', texture: 'feather', color: 0x8d8578, roughness: 0.85, metalness: 0, texel: 0.4, side: THREE.DoubleSide },
+  hide: { id: 'hide', label: 'Hide', ar: 'جلد حيوان', texture: 'leather', color: 0x8a6a4c, roughness: 0.88, metalness: 0, texel: 0.8, side: THREE.DoubleSide },
   foliage: { id: 'foliage', label: 'Foliage', ar: 'أوراق', texture: 'foliage', color: 0x4d7a35, roughness: 0.86, metalness: 0, texel: 0.7 , side: THREE.DoubleSide },
   'foliage-dark': { id: 'foliage-dark', label: 'Dark foliage', ar: 'أوراق داكنة', texture: 'foliage', color: 0x2f5230, roughness: 0.88, metalness: 0, texel: 0.7 , side: THREE.DoubleSide },
   'foliage-olive': { id: 'foliage-olive', label: 'Olive foliage', ar: 'أوراق زيتون', texture: 'foliage', color: 0x77804a, roughness: 0.9, metalness: 0, texel: 0.7 , side: THREE.DoubleSide },

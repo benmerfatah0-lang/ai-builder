@@ -74,6 +74,87 @@ export function bevelledBoxTriangles(steps = 2): number {
  */
 export const CORBEL_TRIANGLES = 92;
 
+/**
+ * Triangles one `blade` costs at the four segments across four columns `tuft`
+ * asks for, and one three-blade tuft.
+ *
+ * A blade is a grid with both ends pinched to a point, so its two end columns
+ * are triangles rather than quads and the cost is `(segments - 1) * across * 2` —
+ * twenty-four here, not the twelve a plain two-column strip costs. Charging
+ * twelve let a cliff ledge grow twice the grass it had paid for.
+ */
+export const BLADE_TRIANGLES = 24;
+
+/** Triangles one three-blade `tuft` costs: the unit of ground cover. */
+export const TUFT_TRIANGLES = BLADE_TRIANGLES * 3;
+
+/**
+ * Triangles one leaf in a `leafCluster` costs.
+ *
+ * A canopy leaf is the cheapest blade in the library — four segments across two
+ * columns — because a crown needs hundreds of them. This is the unit every
+ * foliage budget in the library is arithmetic on.
+ */
+export const LEAF_TRIANGLES = 12;
+
+/**
+ * Triangles one layer of `flame` costs, charged high.
+ *
+ * The layers taper as they rise, so a real three-layer flame is 192 triangles
+ * and this prices it at 216: a fire is the one thing in a scene that is never
+ * worth dropping detail elsewhere for, and a lamp that turns out cheaper than
+ * its allowance is a lamp that can also afford its glass.
+ */
+export const FLAME_TRIANGLES = 72;
+
+/** Triangles one stud head in a `rivetRow` costs. */
+export const STUD_TRIANGLES = 36;
+
+/** Triangles a `post` costs per side of its cross-section. */
+export const POST_TRIANGLES_PER_SIDE = 8;
+
+/** Triangles a `blade` costs at any resolution: a grid pinched at both ends. */
+export function bladeCost(segments: number, across: number): number {
+  return (Math.max(2, Math.round(segments)) - 1) * Math.max(1, Math.round(across)) * 2;
+}
+
+/**
+ * Triangles a cylinder costs: a band of quads per radial segment per height row,
+ * plus a fan per capped end.
+ *
+ * Height rows are what fluting and wobble need to show, and they are the part of
+ * a cylinder's cost that is easy to forget: a lamp post fluted over three rows
+ * costs three times what the same post costs over one.
+ */
+export function cylinderCost(radialSegments: number, caps = true, heightRows = 1): number {
+  return Math.max(3, Math.round(radialSegments))
+    * (Math.max(1, Math.round(heightRows)) * 2 + (caps ? 2 : 0));
+}
+
+/** Triangles a sphere costs: every row but the two poles is a band of quads. */
+export function sphereCost(widthSegments: number, heightSegments: number): number {
+  return 2 * Math.max(3, Math.round(widthSegments)) * (Math.max(2, Math.round(heightSegments)) - 1);
+}
+
+/** Triangles a torus costs: one quad per radial step per tubular step, whether or not it is a full turn. */
+export function torusCost(radialSegments: number, tubularSegments: number): number {
+  return Math.max(3, Math.round(radialSegments)) * Math.max(3, Math.round(tubularSegments)) * 2;
+}
+
+/**
+ * Triangles a lathe costs, charged for a closed band per station.
+ *
+ * A profile that ends on the axis collapses its last row of quads into
+ * triangles and costs less than this; a profile that does not, costs exactly
+ * this. Over-charging is the safe direction — an allowance that is slightly
+ * generous builds one fewer stone, while one that is optimistic builds a
+ * component over budget — so every family prices a lathe the same way.
+ */
+export function latheCost(stations: number, segments: number, cappedEnds = 0): number {
+  return (Math.max(2, Math.round(stations)) - 1) * Math.max(3, Math.round(segments)) * 2
+    + Math.max(0, Math.round(cappedEnds)) * Math.max(3, Math.round(segments));
+}
+
 export interface RepeatedUnits {
   /** How many units to model as real geometry. */
   modeled: number;
@@ -124,6 +205,53 @@ export function planChildren(count: number, cheapest: number, budget: number): {
   const affordable = Math.max(1, Math.floor(budget / floor));
   const modeled = Math.max(1, Math.min(wanted, affordable));
   return { modeled, each: Math.max(floor, Math.floor(budget / modeled)) };
+}
+
+/* --------------------------------------------------------------- placement */
+
+/**
+ * Deterministic scatter over a rectangle: a jittered grid, not uniform random.
+ *
+ * Uniform random clumps, and clumped stones read as a pile rather than a
+ * scatter, while a rigid grid reads as paving. One jittered point per cell gives
+ * an even spread with irregular spacing, which is how debris, crops, market
+ * goods and tent pegs actually land, and it is stable under the seed so a world
+ * looks the same every time it is built.
+ *
+ * The points stride through the grid rather than filling it row by row, so a
+ * caller that could only afford half of them still covers the whole extent: a
+ * poor boulder field is a sparse field, not a pile at one end of an empty one.
+ */
+export function scatter(rng: Rng, count: number, width: number, depth: number, jitter = 0.72): Vec2[] {
+  const wanted = Math.max(1, Math.round(count));
+  const columns = Math.max(1, Math.round(Math.sqrt((wanted * width) / Math.max(0.01, depth))));
+  const rows = Math.max(1, Math.ceil(wanted / columns));
+  const cells = columns * rows;
+  const points: Vec2[] = [];
+  for (let index = 0; index < wanted; index += 1) {
+    const cell = Math.min(cells - 1, Math.round((index * cells) / wanted));
+    const row = Math.floor(cell / columns);
+    const column = cell % columns;
+    const x = -width / 2 + ((column + 0.5 + range(rng, -jitter, jitter) * 0.5) / columns) * width;
+    const z = -depth / 2 + ((row + 0.5 + range(rng, -jitter, jitter) * 0.5) / rows) * depth;
+    points.push([x, z]);
+  }
+  return points;
+}
+
+/**
+ * A part placed on a surface: yawed, sunk a little, and never below ground.
+ *
+ * Parts that flatten their own bottom — a `boulder`, a crate, a stone — need
+ * that flat buried or they balance on the surface instead of meeting it. The
+ * clamp is what keeps a component's bounding box honest: a part pushed below
+ * y = 0 would sink the whole asset into the terrain it is placed on.
+ */
+export function settle(part: MeshBuilder, rng: Rng, at: Vec3, sink: number): void {
+  const bounds = part.bounds();
+  part.rotateY(range(rng, 0, Math.PI * 2));
+  const dropped = Math.max(0, at[1] - Math.min(sink, bounds.size[1] * 0.45));
+  part.translate(at[0], dropped - bounds.min[1], at[2]);
 }
 
 export interface DisplaceOptions {

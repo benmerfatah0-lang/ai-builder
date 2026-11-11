@@ -1,8 +1,8 @@
 import { MeshBuilder, type Vec2, type Vec3 } from '../mesh';
 import { box, cylinder, lathe, prism, sphere, sweep } from '../primitives';
 import {
-  BEVELLED_BOX_TRIANGLES, blade, branch, branchSpine, componentBudget, detailRng, fracture,
-  leafCluster, planChildren, planRepeatedUnits, qualityTriangles, trunk, tuft, type Quality,
+  BEVELLED_BOX_TRIANGLES, LEAF_TRIANGLES, blade, branch, branchSpine, componentBudget, detailRng,
+  fracture, leafCluster, planChildren, planRepeatedUnits, qualityTriangles, trunk, tuft, type Quality,
 } from '../detail';
 import { fitHeight } from '../scale';
 import { chance, intRange, pick, range } from '../../generation/rng';
@@ -65,16 +65,6 @@ function attach(
 }
 
 /**
- * Triangles one leaf of a `leafCluster` costs.
- *
- * A leaf is a `blade` at four segments by two columns, and a blade tapers to a
- * point at both ends, so its first and last rows emit one triangle instead of
- * two: `2 * across * (segments - 1)`. Charging the real number is what lets a
- * canopy spend its allowance instead of three quarters of it.
- */
-const LEAF_TRIANGLES = 12;
-
-/**
  * Triangles a `branch` costs, so a parent can afford one honestly.
  *
  * `branch` sweeps a six-point section along `segments * resample + 1` stations,
@@ -86,16 +76,6 @@ function branchCost(segments: number, twigs: number): number {
   return (segments * 3 + 1) * 12 + twigs * ((4 * 3 + 1) * 12);
 }
 
-/**
- * Makes `height` mean what the caller asked for.
- *
- * A plant overshoots or undershoots its nominal height by construction: fronds
- * tilt, leaf blobs reach past their own centre, a seed head sits above the stalk
- * that carries it. Rather than tune a dozen generators to land on a number, each
- * one builds its natural proportions and this scales the whole plant uniformly.
- * Uniform is also honest — a taller fern really is a wider fern — and it never
- * stretches a normal, which non-uniform scaling would.
- */
 /** A spine that leans away from vertical as it rises, in the XZ direction given. */
 function leaningSpine(height: number, lean: number, direction: number, segments = 5, sag = 0): Vec3[] {
   const count = Math.max(2, Math.round(segments));

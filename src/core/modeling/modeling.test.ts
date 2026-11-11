@@ -24,6 +24,18 @@ import {
 import {
   boulderField, cairn, caveFormation, caveMouth, cliffFace, monolith, rockArch, scree, steppingStones,
 } from './components/rock';
+import {
+  brazier,
+  campfire,
+  fence,
+  fountain,
+  gateWood,
+  marketStall,
+  signpost,
+  streetLamp,
+  tent,
+  well,
+} from './components/props';
 import { getModelTexture, cachedModelTextures, type ModelTextureKind } from './textures';
 import { SURFACES, getModelMaterial, materialsFor, pickSurface, PALETTES, surfaceTexel } from './materials';
 import { REFERENCE, dimensionsOf, normalize, scaleWarnings, seatOnGround, referenceSize } from './scale';
@@ -2209,5 +2221,648 @@ describe('rock components', () => {
     // A poor field is a sparse field, not a pile at one end of an empty one.
     expect(narrow[0]).toBeGreaterThan(wide[0] * 0.6);
     expect(narrow[2]).toBeGreaterThan(wide[2] * 0.6);
+  });
+});
+
+/** Every vertex of the groups sold in one material, corner by corner. */
+function verticesOfMaterial(data: MeshData, id: string): [number, number, number][] {
+  const slots = new Set<number>();
+  (data.materials ?? []).forEach((material, index) => { if (material === id) slots.add(index); });
+  const out: [number, number, number][] = [];
+  for (const group of data.groups) {
+    if (!slots.has(group.material)) continue;
+    for (let corner = group.start; corner < group.start + group.count; corner += 1) out.push(vertexAt(data, corner));
+  }
+  return out;
+}
+
+/** How many separate pieces of a model were sold in one material. */
+function piecesOfMaterial(data: MeshData, id: string): number {
+  const slots = new Set<number>();
+  (data.materials ?? []).forEach((material, index) => { if (material === id) slots.add(index); });
+  return data.groups.filter((group) => slots.has(group.material)).length;
+}
+
+describe('props components', () => {
+  const props: [string, MeshBuilder][] = [
+    ['well/frame', well({ radius: 0.8, style: 'frame', seed: 131 })],
+    ['well/sweep', well({ radius: 0.9, style: 'sweep', seed: 132, lining: 'brick' })],
+    ['well/open', well({ radius: 0.7, style: 'open', seed: 133, lining: 'stone', bucket: false })],
+    ['fountain/basin', fountain({ radius: 1.7, style: 'basin', seed: 137 })],
+    ['fountain/tiered', fountain({ radius: 1.6, style: 'tiered', seed: 138, finish: 'marble' })],
+    ['fountain/wall', fountain({ radius: 1.2, style: 'wall', seed: 139, finish: 'tile', running: true })],
+    ['fountain/dry', fountain({ radius: 1.5, style: 'basin', seed: 140, running: false })],
+    ['stall/striped', marketStall({ width: 3, depth: 2, seed: 143 })],
+    ['stall/thatch', marketStall({ width: 3.4, depth: 2.2, style: 'thatch', seed: 144 })],
+    ['stall/bare', marketStall({ width: 2.6, depth: 1.8, style: 'none', goods: false, seed: 145 })],
+    ['sign/finger', signpost({ height: 2.2, arms: 3, style: 'finger', seed: 157 })],
+    ['sign/board', signpost({ height: 2, style: 'board', seed: 158, painted: true })],
+    ['sign/milestone', signpost({ height: 1.1, style: 'milestone', seed: 159 })],
+    ['fence/picket', fence({ length: 6, height: 1.1, style: 'picket', seed: 149 })],
+    ['fence/rail', fence({ length: 8, style: 'rail', seed: 150 })],
+    ['fence/wattle', fence({ length: 5, style: 'wattle', seed: 151 })],
+    ['fence/stone', fence({ length: 6, style: 'stone', seed: 152 })],
+    ['fence/gap', fence({ length: 6, style: 'picket', seed: 153, gap: { at: 0.6, width: 1.4 } })],
+    ['fence/ruin', fence({ length: 8, style: 'rail', seed: 154, ruin: 0.7 })],
+    ['gate/plank', gateWood({ width: 3, height: 1.6, seed: 167 })],
+    ['gate/batten', gateWood({ width: 3, height: 1.6, style: 'batten', seed: 168 })],
+    ['gate/wattle', gateWood({ width: 2.4, height: 1.4, style: 'wattle', seed: 169 })],
+    ['gate/iron', gateWood({ width: 3.4, height: 2, style: 'iron', seed: 170, iron: true })],
+    ['gate/open', gateWood({ width: 3, height: 1.6, seed: 171, open: 1 })],
+    ['gate/one-leaf', gateWood({ width: 1.2, height: 1.4, leaves: 1, seed: 172, open: 0.6 })],
+    ['lamp/post', streetLamp({ height: 4.2, seed: 181 })],
+    ['lamp/three-arms', streetLamp({ height: 4.6, arms: 3, seed: 182 })],
+    ['lamp/wall', streetLamp({ height: 0.72, style: 'wall', seed: 183 })],
+    ['lamp/unlit', streetLamp({ height: 3.6, lit: false, finish: 'stone', seed: 184 })],
+    ['brazier/tripod', brazier({ style: 'tripod', seed: 197 })],
+    ['brazier/pedestal', brazier({ style: 'pedestal', seed: 198, metal: 'bronze' })],
+    ['brazier/hanging', brazier({ style: 'hanging', seed: 199, lit: false })],
+    ['brazier/cold', brazier({ seed: 200, lit: false })],
+    ['fire/teepee', campfire({ style: 'teepee', seed: 211 })],
+    ['fire/crib', campfire({ style: 'log-cabin', seed: 212 })],
+    ['fire/pit-cooking', campfire({ style: 'pit', seed: 213, cooking: true, seats: true })],
+    ['fire/cold', campfire({ seed: 214, lit: false })],
+    ['tent/ridge', tent({ style: 'ridge', size: 'small', cloth: 'linen', seed: 223 })],
+    ['tent/bell', tent({ style: 'bell', size: 'large', cloth: 'canvas', seed: 224 })],
+    ['tent/lean-to', tent({ style: 'lean-to', cloth: 'hide', seed: 225 })],
+    ['tent/pavilion', tent({ style: 'pavilion', size: 'large', cloth: 'canvas', seed: 226, open: true })],
+  ];
+
+  it.each(props)('builds a sane, seated, honestly priced %s', (name, part) => {
+    const data = part.build();
+    expect(isSane(data), name).toBe(true);
+    const bounds = boundsOf(data);
+    expect(data.indices.length / 3, name).toBeGreaterThan(20);
+    // A prop is placed on the ground it stands on, so nothing may be under it.
+    // The one exception is a hanging brazier, which is tested separately.
+    expect(bounds.min[1], name).toBeGreaterThanOrEqual(-1e-6);
+    expect(bounds.size[1], name).toBeGreaterThan(0.005);
+    expect(doubleFaces(data), name).toBe(0);
+    const materials = [...new Set(data.materials ?? [])];
+    expect(materials.length, name).toBeLessThanOrEqual(10);
+    for (const id of materials) expect(id in SURFACES, `${name}: ${id}`).toBe(true);
+  });
+
+  it('builds the same prop from the same seed', () => {
+    const builds: [string, () => MeshBuilder][] = [
+      ['well', () => well({ radius: 0.8, style: 'frame', seed: 131 })],
+      ['fountain', () => fountain({ radius: 1.6, style: 'tiered', seed: 138, finish: 'marble' })],
+      ['marketStall', () => marketStall({ width: 3, depth: 2, seed: 143 })],
+      ['signpost', () => signpost({ height: 2.2, arms: 3, seed: 157 })],
+      ['fence', () => fence({ length: 6, style: 'picket', seed: 149, ruin: 0.3 })],
+      ['gateWood', () => gateWood({ width: 3, height: 1.6, seed: 167, open: 0.4 })],
+      ['streetLamp', () => streetLamp({ height: 4.2, arms: 2, seed: 181 })],
+      ['brazier', () => brazier({ style: 'tripod', seed: 197 })],
+      ['campfire', () => campfire({ style: 'teepee', seed: 211, cooking: true })],
+      ['tent', () => tent({ style: 'ridge', seed: 223, open: true })],
+    ];
+    for (const [name, build] of builds) {
+      const first = build().build();
+      const second = build().build();
+      expect(Array.from(first.positions), name).toEqual(Array.from(second.positions));
+      expect(first.materials, name).toEqual(second.materials);
+    }
+  });
+
+  const heights: [string, MeshBuilder, number][] = [
+    ['sign/finger', signpost({ height: 2.2, arms: 3, style: 'finger', seed: 157 }), 2.2],
+    ['sign/board', signpost({ height: 2, style: 'board', seed: 158 }), 2],
+    ['sign/milestone', signpost({ height: 1.1, style: 'milestone', seed: 159 }), 1.1],
+    ['lamp/post', streetLamp({ height: 4.2, seed: 181 }), 4.2],
+    ['lamp/three-arms', streetLamp({ height: 4.6, arms: 3, seed: 182 }), 4.6],
+    ['lamp/wall', streetLamp({ height: 0.72, style: 'wall', seed: 183 }), 0.72],
+    ['lamp/stone', streetLamp({ height: 3.6, finish: 'stone', seed: 184 }), 3.6],
+    // A brazier is specified to its rim, and measured with nothing burning on it:
+    // a flame stands above the rim and is not part of the height anybody asked for.
+    ['brazier/tripod', brazier({ style: 'tripod', height: 1, lit: false, seed: 197 }), 1],
+    ['brazier/pedestal', brazier({ style: 'pedestal', height: 1.2, lit: false, seed: 198 }), 1.2],
+    ['tent/ridge', tent({ style: 'ridge', height: 1.8, cloth: 'linen', seed: 223 }), 1.8],
+    ['tent/bell', tent({ style: 'bell', height: 2.4, cloth: 'canvas', seed: 224 }), 2.4],
+    ['tent/lean-to', tent({ style: 'lean-to', height: 1.8, cloth: 'hide', seed: 225 }), 1.8],
+    ['tent/pavilion', tent({ style: 'pavilion', height: 3, cloth: 'canvas', seed: 226 }), 3],
+  ];
+
+  it.each(heights)('%s holds the height it was asked for', (_name, part, height) => {
+    const built = boundsOf(part.build()).size[1];
+    expect(built / height).toBeGreaterThan(0.9);
+    expect(built / height).toBeLessThan(1.05);
+  });
+
+  it('stands a fence and a gate to the height asked, posts proud of it', () => {
+    // `height` is the height of the fence proper and of a gate leaf. Posts stand
+    // proud of both, because a post that stops level with its rail is a post that
+    // has been cut, but the allowance is bounded: a caller still gets a 1.1 m
+    // fence and not a 1.6 m one.
+    for (const style of ['picket', 'rail', 'wattle', 'stone'] as const) {
+      const bounds = boundsOf(fence({ length: 6, height: 1.1, style, seed: 149 }).build());
+      expect(bounds.size[1] / 1.1, style).toBeGreaterThan(0.85);
+      expect(bounds.size[1] / 1.1, style).toBeLessThan(1.3);
+      expect(bounds.size[0], style).toBeGreaterThan(6 * 0.95);
+    }
+    for (const style of ['plank', 'batten', 'wattle', 'iron'] as const) {
+      const data = gateWood({ width: 3, height: 1.6, style, seed: 167 }).build();
+      const bounds = boundsOf(data);
+      // The leaf, measured inside the opening, away from the posts that hang it.
+      // Every surface counts, because an iron gate has no boards in it at all.
+      const inOpening: number[] = [];
+      for (let index = 0; index < data.positions.length; index += 3) {
+        if (Math.abs(data.positions[index]!) >= 3 / 2 - 0.2) continue;
+        inOpening.push(data.positions[index + 1]!);
+      }
+      const head = Math.max(...inOpening, 0);
+      expect(head / 1.6, style).toBeGreaterThan(0.86);
+      expect(head / 1.6, style).toBeLessThan(1.14);
+      expect(bounds.size[1] / 1.6, style).toBeLessThan(1.35);
+      expect(bounds.size[0], style).toBeGreaterThan(3);
+    }
+  });
+
+  const budgets: [string, (budget: number) => MeshBuilder][] = [
+    ['well', (budget) => well({ radius: 0.8, style: 'frame', seed: 131, budget })],
+    ['fountain', (budget) => fountain({ radius: 1.7, style: 'tiered', seed: 138, budget })],
+    ['marketStall', (budget) => marketStall({ width: 3, depth: 2, seed: 143, budget })],
+    ['signpost', (budget) => signpost({ height: 2.2, arms: 3, seed: 157, budget })],
+    ['fence', (budget) => fence({ length: 6, style: 'picket', seed: 149, budget })],
+    ['fence/stone', (budget) => fence({ length: 6, style: 'stone', seed: 152, budget })],
+    ['gateWood', (budget) => gateWood({ width: 3, height: 1.6, seed: 167, budget })],
+    ['streetLamp', (budget) => streetLamp({ height: 4.2, arms: 2, seed: 181, budget })],
+    ['brazier', (budget) => brazier({ style: 'tripod', seed: 197, budget })],
+    ['campfire', (budget) => campfire({ style: 'teepee', seed: 211, cooking: true, budget })],
+    ['tent/ridge', (budget) => tent({ style: 'ridge', seed: 223, budget })],
+    ['tent/pavilion', (budget) => tent({ style: 'pavilion', size: 'large', seed: 226, budget })],
+  ];
+
+  it.each(budgets)('%s spends what it is given', (name, build) => {
+    for (const budget of [400, 1200, 3000]) {
+      const triangles = build(budget).build().indices.length / 3;
+      expect(triangles, `${name} at ${budget}`).toBeLessThan(budget * 1.4 + 120);
+      expect(triangles, `${name} at ${budget}`).toBeGreaterThan(20);
+    }
+  });
+
+  it('keeps the extent of a prop when the budget drops', () => {
+    // A poor fence is a sparse fence, a poor signpost a narrower one, and a poor
+    // tent a tent: what a caller places does not shrink with the allowance.
+    for (const length of [4, 8] as const) {
+      const rich = boundsOf(fence({ length, style: 'picket', seed: 149, budget: 3000 }).build()).size[0];
+      const poor = boundsOf(fence({ length, style: 'picket', seed: 149, budget: 400 }).build()).size[0];
+      expect(poor, `fence ${length} m`).toBeGreaterThan(length * 0.9);
+      expect(rich / poor, `fence ${length} m`).toBeLessThan(1.1);
+    }
+    for (const width of [2.6, 3.4] as const) {
+      const rich = boundsOf(marketStall({ width, depth: 2, seed: 143, budget: 3000 }).build());
+      const poor = boundsOf(marketStall({ width, depth: 2, seed: 143, budget: 400 }).build());
+      expect(poor.size[0], `stall ${width} m`).toBeGreaterThan(width * 0.85);
+      expect(poor.size[2], `stall ${width} m`).toBeGreaterThan(2 * 0.8);
+      expect(rich.size[1]).toBeGreaterThan(poor.size[1] * 0.8);
+    }
+    for (const size of ['small', 'large'] as const) {
+      const rich = boundsOf(tent({ style: 'ridge', size, seed: 223, budget: 3000 }).build());
+      const poor = boundsOf(tent({ style: 'ridge', size, seed: 223, budget: 400 }).build());
+      expect(poor.size[0] / rich.size[0], `tent ${size}`).toBeGreaterThan(0.85);
+      expect(poor.size[2] / rich.size[2], `tent ${size}`).toBeGreaterThan(0.85);
+    }
+  });
+
+  it('builds every prop at a scale the reference table accepts', () => {
+    const kinds: [string, string, MeshBuilder][] = [
+      ['well', 'well', well({ radius: 0.8, style: 'open', seed: 131 })],
+      ['well/head', 'well', well({ radius: 0.8, style: 'frame', seed: 132 })],
+      ['fountain', 'fountain', fountain({ radius: 1.7, style: 'basin', seed: 137 })],
+      ['fountain/tiered', 'fountain', fountain({ radius: 1.7, style: 'tiered', seed: 138 })],
+      ['marketStall', 'market-stall', marketStall({ width: 3, depth: 2, seed: 143 })],
+      ['signpost', 'signpost', signpost({ height: 2.2, seed: 157 })],
+      ['fence/run', 'fence-panel', fence({ length: 2.4, height: 1.1, style: 'picket', seed: 149 })],
+      ['fence/post', 'fence-post', fence({ length: 0.4, height: 1.2, style: 'rail', seed: 150 })],
+      ['gate', 'gate-wood', gateWood({ width: 3, height: 1.6, seed: 167 })],
+      ['streetLamp', 'street-lamp', streetLamp({ height: 4.2, seed: 181 })],
+      ['brazier', 'brazier', brazier({ style: 'tripod', seed: 197 })],
+      ['campfire', 'campfire', campfire({ style: 'teepee', seed: 211 })],
+      ['campfire/cooking', 'campfire', campfire({ style: 'teepee', seed: 212, cooking: true })],
+      ['tent/small', 'tent-small', tent({ style: 'ridge', size: 'small', seed: 223 })],
+      ['tent/large', 'tent-large', tent({ style: 'pavilion', size: 'large', seed: 226 })],
+    ];
+    for (const [name, kind, part] of kinds) {
+      expect(referenceSize(kind), name).not.toBeNull();
+      expect(scaleWarnings(kind, part.build()), name).toEqual([]);
+    }
+  });
+
+  it('digs a well that is open at the mouth and round at the lining', () => {
+    const drum = 0.9;
+    for (const style of ['frame', 'sweep', 'open'] as const) {
+      // Without its bucket: a well that is in use has a bucket hanging down the
+      // shaft, and that is the one thing allowed to be in the hole. The rim is the
+      // lining's own height, asked for by name, because a well head's posts stand
+      // at the same reach as its lining, and measuring the tallest of them finds
+      // the canopy rather than the mouth.
+      const data = well({ radius: 0.8, drum, style, seed: 131, bucket: false }).build();
+      // The mouth is open: a ray dropped in from just under the rim falls the
+      // whole shaft before it meets anything, which is the difference between a
+      // well and a drum somebody put a lid on. Sampling vertices cannot answer
+      // this, because the water at the bottom of the shaft has a vertex on the
+      // axis and so does a lid.
+      expect(boundsOf(data).size[1], style).toBeGreaterThan(drum * 0.9);
+      // Dropped a third of the way off the axis, because a well head has a rope or
+      // a chain hanging down the middle of the shaft and that is not a lid.
+      const dropped = rayHits(data, [0.8 * 0.34, drum - 0.05, 0], [0, -1, 0], drum);
+      expect(dropped.length, style).toBeGreaterThan(0);
+      expect(dropped[0]!, style).toBeGreaterThan(0.2);
+      // And the lining is a ring at the height a bucket is drawn past. Measured
+      // as vertices in the lining's own band rather than as the widest thing at
+      // that height: a sweep well has its beam swinging out past the shaft at
+      // exactly the height the bucket is drawn at, and an apron of trodden ground
+      // is wider than the lining too.
+      let lining = 0;
+      for (let index = 0; index < data.positions.length; index += 3) {
+        const reach = Math.hypot(data.positions[index]!, data.positions[index + 2]!);
+        if (data.positions[index + 1]! < 0.35 || data.positions[index + 1]! > 0.75) continue;
+        if (reach > 0.8 * 0.75 && reach < 0.8 * 1.3) lining += 1;
+      }
+      expect(lining, style).toBeGreaterThan(24);
+      expect(bearingSectors(data, 0.25, 0.75, 0.6, 8), style).toBe(8);
+    }
+    // A well with a head stands taller than one without, and the head is above
+    // the mouth rather than inside it.
+    const open = boundsOf(well({ radius: 0.8, style: 'open', seed: 131 }).build());
+    const framed = boundsOf(well({ radius: 0.8, style: 'frame', seed: 131 }).build());
+    expect(framed.size[1]).toBeGreaterThan(open.size[1] * 1.6);
+    expect(framed.size[0]).toBeLessThan(open.size[0] * 2.6);
+  });
+
+  it('builds a fountain whose basins step in as they go up', () => {
+    const tiered = fountain({ radius: 1.6, style: 'tiered', seed: 138, finish: 'marble' }).build();
+    const lower = widestAtHeight(tiered, 0.55, 0.3);
+    const upper = widestAtHeight(tiered, 2, 0.35);
+    expect(lower).toBeGreaterThan(1.2);
+    expect(upper).toBeGreaterThan(0.1);
+    expect(upper / lower).toBeLessThan(0.6);
+
+    const basin = fountain({ radius: 1.7, style: 'basin', seed: 137 }).build();
+    // A basin is a ring: the wall goes all the way round and the floor is inside it.
+    expect(bearingSectors(basin, 0.3, 0.9, 1.3, 8)).toBe(8);
+    expect(countVerticesInside(basin, { x: 0, y: 0.3, z: 0, radius: 0.9 })).toBeGreaterThan(0);
+
+    // Water is glass and only a running fountain has any: a dry one is a bath.
+    const running = fountain({ radius: 1.5, style: 'basin', seed: 141, running: true }).build();
+    const dry = fountain({ radius: 1.5, style: 'basin', seed: 141, running: false }).build();
+    expect(piecesOfMaterial(running, 'glass')).toBeGreaterThan(0);
+    expect(piecesOfMaterial(dry, 'glass')).toBe(0);
+    expect(boundsOf(running).size[1]).toBeGreaterThan(boundsOf(dry).size[1]);
+
+    // A wall fountain is built against a wall, so it is shallow and its niche
+    // faces the front of it rather than lying flat in the ground.
+    const wall = fountain({ radius: 1.2, style: 'wall', seed: 139, finish: 'tile' }).build();
+    const wallBounds = boundsOf(wall);
+    expect(wallBounds.size[2]).toBeLessThan(wallBounds.size[0] * 0.8);
+    expect(wallBounds.size[1]).toBeGreaterThan(1.5);
+    expect(Math.abs(wallBounds.center[0])).toBeLessThan(0.05);
+  });
+
+  it('sets a market stall on its counter and roofs it with an awning', () => {
+    const data = marketStall({ width: 3, depth: 2, seed: 143 }).build();
+    const bounds = boundsOf(data);
+    // The space under the counter is empty: a stall is a counter on legs, and a
+    // stall with geometry packed under it is a crate with a roof.
+    expect(countVerticesInside(data, { x: 0, y: 0.5, z: 0.7, radius: 0.3 })).toBe(0);
+    // The goods are on the counter, not sunk through it. Measured over the whole
+    // counter footprint, because what a stall sells is decided per stall: one ware,
+    // one sack cloth and one crop, rather than a different reading for every jar.
+    const goods: number[] = [];
+    for (let index = 0; index < data.positions.length; index += 3) {
+      const x = data.positions[index]!;
+      const y = data.positions[index + 1]!;
+      const z = data.positions[index + 2]!;
+      if (y < 1.0 || y > 1.7) continue;
+      if (Math.abs(x) > 1.35 || Math.abs(z) > 0.95) continue;
+      goods.push(y);
+    }
+    expect(goods.length).toBeGreaterThan(8);
+    expect(Math.min(...goods)).toBeGreaterThanOrEqual(1.0);
+    // And the awning is over the whole of it.
+    expect(bounds.size[1]).toBeGreaterThan(1.8);
+    expect(bounds.size[0]).toBeGreaterThan(3 * 0.95);
+    expect(bounds.size[2]).toBeGreaterThan(2 * 0.95);
+
+    // A stall with nothing on it and no awning is a shelter: same frame, far less
+    // geometry, and no cloth or thatch anywhere in its materials.
+    const bare = marketStall({ width: 3, depth: 2, seed: 143, goods: false, style: 'none' }).build();
+    expect(bare.indices.length / 3).toBeLessThan(data.indices.length / 3 * 0.62);
+    expect(boundsOf(bare).size[1]).toBeGreaterThan(1.6);
+    for (const id of bare.materials ?? []) {
+      expect(id.startsWith('fabric') || id === 'thatch' || id === 'wool', id).toBe(false);
+    }
+  });
+
+  it('grows a signpost arms with the budget it is given', () => {
+    // A signpost's reach is its reading: the arms are what a player sees against
+    // the sky, so this is the one prop that spends a poor allowance on extent
+    // rather than on detail. Left to itself it hangs two arms on a poor allowance
+    // and four on a rich one, and four arms reach further than two.
+    const poorPainted = signpost({ height: 2.2, style: 'finger', seed: 157, painted: true, budget: 400 }).build();
+    const richPainted = signpost({ height: 2.2, style: 'finger', seed: 157, painted: true, budget: 3000 }).build();
+    const poor = boundsOf(poorPainted);
+    const rich = boundsOf(richPainted);
+    // Two arms lie on one line, so a poor fingerpost is flat; four point at four
+    // places, so a rich one reaches as far across as it does along.
+    expect(piecesOfMaterial(richPainted, 'wood-painted')).toBeGreaterThan(piecesOfMaterial(poorPainted, 'wood-painted'));
+    expect(poor.size[2] / poor.size[0]).toBeLessThan(0.45);
+    expect(rich.size[2] / rich.size[0]).toBeGreaterThan(0.6);
+    expect(rich.size[1] / 2.2).toBeGreaterThan(0.95);
+    expect(poor.size[1] / 2.2).toBeGreaterThan(0.95);
+    // Arms asked for by name are built at every allowance, and they point at
+    // different places: a fingerpost whose arms share a bearing is one arm, and
+    // four arms on two bearings reach no further than two arms would.
+    for (const budget of [400, 3000]) {
+      const asked = boundsOf(signpost({ height: 2.2, arms: 4, style: 'finger', seed: 157, budget }).build());
+      expect(asked.size[2], `arms at ${budget}`).toBeGreaterThan(asked.size[0] * 0.6);
+      expect(asked.size[1], `arms at ${budget}`).toBeGreaterThan(2.1);
+    }
+    // The arms hang off the post and point at more than one place, measured by
+    // reach from the axis: a fingerpost staggers its arms in height, so the lowest
+    // of them is under any fixed height a test might filter on.
+    const armed = signpost({ height: 2.2, arms: 3, style: 'finger', seed: 157, budget: 3000 }).build();
+    const arms: [number, number][] = [];
+    for (let index = 0; index < armed.positions.length; index += 3) {
+      const x = armed.positions[index]!;
+      const z = armed.positions[index + 2]!;
+      if (Math.hypot(x, z) > 0.3) arms.push([x, z]);
+    }
+    expect(arms.length).toBeGreaterThan(6);
+    expect(arms.some(([x]) => x > 0.4)).toBe(true);
+    expect(arms.some(([x]) => x < -0.3)).toBe(true);
+    expect(arms.some(([, z]) => Math.abs(z) > 0.4)).toBe(true);
+
+    // A milestone is a stone and has no arms at all.
+    const milestone = signpost({ height: 1.1, style: 'milestone', seed: 159 }).build();
+    expect(boundsOf(milestone).size[0]).toBeLessThan(1);
+    expect(boundsOf(milestone).size[1]).toBeGreaterThan(0.9);
+    expect(milestone.materials.some((id) => id.startsWith('stone'))).toBe(true);
+  });
+
+  it('leaves a gate gap in a fence and hangs heavier posts at it', () => {
+    const data = fence({ length: 6, height: 1.1, style: 'picket', seed: 153, gap: { at: 0.6, width: 1.4 } }).build();
+    // Nothing is built across the gap at the height a person walks through.
+    expect(rayHits(data, [0.6, 0.6, -2], [0, 0, 1], 4)).toEqual([]);
+    // And the run either side of it still stops somebody.
+    expect(rayHits(data, [-2, 0.6, -2], [0, 0, 1], 4).length).toBeGreaterThan(0);
+    expect(rayHits(data, [2.4, 0.6, -2], [0, 0, 1], 4).length).toBeGreaterThan(0);
+    // The posts at the edges of the gap stand taller and heavier than the rest:
+    // a gate pulls on them for years, and a fence post is not built for that. So
+    // the tallest timber in the run is the timber either side of the gate.
+    let top = 0;
+    for (let index = 0; index < data.positions.length; index += 3) top = Math.max(top, data.positions[index + 1]!);
+    const tallest: number[] = [];
+    for (let index = 0; index < data.positions.length; index += 3) {
+      if (data.positions[index + 1]! > top - 0.09) tallest.push(data.positions[index]!);
+    }
+    expect(tallest.length).toBeGreaterThan(2);
+    for (const x of tallest) expect(Math.min(Math.abs(x + 0.1), Math.abs(x - 1.3))).toBeLessThan(0.25);
+  });
+
+  it('builds a dry stone wall with no timber in it', () => {
+    const data = fence({ length: 6, height: 1.1, style: 'stone', seed: 152 }).build();
+    for (const id of data.materials ?? []) {
+      expect(id.startsWith('wood') || id === 'plank' || id === 'log', id).toBe(false);
+    }
+    const bounds = boundsOf(data);
+    // A wall that stands without mortar is thick at its foot and battered.
+    expect(bounds.size[2]).toBeGreaterThan(0.35);
+    expect(bounds.size[0]).toBeGreaterThan(6 * 0.95);
+    expect(rayHits(data, [0, 0.5, -2], [0, 0, 1], 4).length).toBeGreaterThan(0);
+  });
+
+  it('takes a ruined fence down and leaves what fell under it', () => {
+    const fresh = fence({ length: 8, height: 1.1, style: 'rail', seed: 154 }).build();
+    const ruined = fence({ length: 8, height: 1.1, style: 'rail', seed: 154, ruin: 0.8 }).build();
+    const upright = (data: MeshData): number => {
+      let count = 0;
+      for (let index = 0; index < data.positions.length; index += 3) {
+        if (data.positions[index + 1]! > 0.6 && data.positions[index + 1]! < 1.05) count += 1;
+      }
+      return count;
+    };
+    expect(upright(ruined)).toBeLessThan(upright(fresh) * 0.75);
+    // What came down lies in the grass beside the run, not floating in it.
+    let debris = 0;
+    for (let index = 0; index < ruined.positions.length; index += 3) {
+      if (ruined.positions[index + 1]! < 0.12 && Math.abs(ruined.positions[index + 2]!) > 0.12) debris += 1;
+    }
+    expect(debris).toBeGreaterThan(6);
+    expect(boundsOf(ruined).size[0]).toBeGreaterThan(8 * 0.9);
+  });
+
+  it('swings a gate about its hinge line, not about the middle of the road', () => {
+    const shut = gateWood({ width: 3, height: 1.6, seed: 167 }).build();
+    const open = gateWood({ width: 3, height: 1.6, seed: 167, open: 1 }).build();
+    // Shut, a gate stops somebody walking through the opening at chest height.
+    // Walked as a fan rather than as one ray, because a boarded leaf has gaps
+    // between its boards and a single ray can fall through one of them.
+    const walk = (part: MeshData): number => {
+      let blocked = 0;
+      for (const x of [-1.1, -0.75, -0.4, 0.4, 0.75, 1.1]) {
+        for (const y of [0.4, 0.9, 1.3]) {
+          if (rayHits(part, [x, y, -2], [0, 0, 1], 4).length > 0) blocked += 1;
+        }
+      }
+      return blocked;
+    };
+    expect(walk(shut)).toBeGreaterThan(9);
+    // Open, the same walk is clear, and the leaves have gone out along Z.
+    expect(walk(open)).toBe(0);
+    expect(boundsOf(open).size[2]).toBeGreaterThan(1.1);
+    // The opening itself stays where it was: the posts do not move when a gate
+    // swings, and a caller places the opening.
+    expect(boundsOf(shut).size[0]).toBeGreaterThan(3);
+    expect(Math.abs(boundsOf(open).size[0] - boundsOf(shut).size[0])).toBeLessThan(1.2);
+    expect(boundsOf(open).min[1]).toBeGreaterThanOrEqual(-1e-6);
+
+    // A leaf sags at the edge that hangs free, because it has hung there for years.
+    const leaf = verticesOfMaterial(shut, 'plank');
+    const hinge = leaf.filter(([x]) => x < -1.2);
+    const free = leaf.filter(([x]) => x > -0.3 && x < 0.05);
+    expect(hinge.length).toBeGreaterThan(2);
+    expect(free.length).toBeGreaterThan(0);
+    expect(Math.max(...hinge.map((point) => point[1]))).toBeGreaterThan(Math.max(...free.map((point) => point[1])));
+  });
+
+  it('hangs a street lamp lantern at the top of its post', () => {
+    const height = 4.2;
+    const lit = streetLamp({ height, seed: 181 }).build();
+    // The lantern is the point of the lamp, so it is at the top of it.
+    const glass = verticesOfMaterial(lit, 'glass-warm');
+    expect(glass.length).toBeGreaterThan(4);
+    expect(Math.min(...glass.map((point) => point[1]))).toBeGreaterThan(height * 0.7);
+    expect(lit.materials).toContain('glass-warm');
+
+    // An unlit lamp has plain glass in it and no flame to glow through it.
+    const cold = streetLamp({ height, lit: false, seed: 181 }).build();
+    expect(cold.materials).not.toContain('glass-warm');
+    expect(piecesOfMaterial(cold, 'glass')).toBeGreaterThan(0);
+
+    // More arms, more lanterns, and they are all up there.
+    const three = streetLamp({ height: 4.6, arms: 3, seed: 182 }).build();
+    expect(piecesOfMaterial(three, 'glass-warm')).toBeGreaterThan(piecesOfMaterial(lit, 'glass-warm'));
+    expect(boundsOf(three).size[0]).toBeGreaterThan(boundsOf(lit).size[0]);
+
+    // A post lamp stands plumb: its head is over its foot.
+    const foot = centroidAt(lit, 0.02, 0.4);
+    const head = centroidAt(lit, height * 0.55, height * 0.72);
+    expect(Math.abs(head[0] - foot[0])).toBeLessThan(0.2);
+    expect(Math.abs(head[1] - foot[1])).toBeLessThan(0.3);
+
+    // A wall lamp is a bracket: it is small, and it is not a post in the ground.
+    const wall = streetLamp({ height: 0.72, style: 'wall', seed: 183 }).build();
+    const wallBounds = boundsOf(wall);
+    expect(wallBounds.size[1]).toBeLessThan(0.9);
+    expect(wallBounds.size[0]).toBeLessThan(0.5);
+    expect(wallBounds.size[2]).toBeLessThan(0.8);
+  });
+
+  it('turns a brazier bowl that is open at the top and stands on legs', () => {
+    for (const style of ['tripod', 'pedestal'] as const) {
+      const data = brazier({ style, radius: 0.34, height: 1, lit: false, seed: 197 }).build();
+      const bounds = boundsOf(data);
+      expect(bounds.max[1] / 1).toBeGreaterThan(0.95);
+      expect(bounds.max[1] / 1).toBeLessThan(1.05);
+      // The bowl has an inside: coals sit in it, and a bowl with no inner wall is
+      // a solid lump with a rim painted on it.
+      expect(countVerticesInside(data, { x: 0, y: 0.94, z: 0, radius: 0.24 })).toBeGreaterThan(4);
+      expect(bounds.min[1]).toBeGreaterThanOrEqual(-1e-6);
+    }
+    // Three legs, splayed, and each of them on the ground.
+    const tripod = brazier({ style: 'tripod', radius: 0.34, height: 1, lit: false, seed: 197 }).build();
+    const feet = new Set<number>();
+    for (let index = 0; index < tripod.positions.length; index += 3) {
+      if (tripod.positions[index + 1]! > 0.04) continue;
+      const bearing = Math.round((((Math.atan2(tripod.positions[index + 2]!, tripod.positions[index]!) * 180) / Math.PI + 360) % 360) / 60);
+      feet.add(bearing % 6);
+    }
+    expect(feet.size).toBeGreaterThanOrEqual(3);
+
+    // A lit brazier has a flame above its rim and coals under it.
+    const lit = brazier({ style: 'tripod', radius: 0.34, height: 1, seed: 197 }).build();
+    expect(lit.materials).toContain('glass-warm');
+    expect(boundsOf(lit).max[1]).toBeGreaterThan(1.1);
+
+    // A hanging brazier hangs: its ring is at the height asked for and there is
+    // ground under it, which is the one prop that is deliberately off the floor.
+    const hanging = brazier({ style: 'hanging', radius: 0.34, height: 1.6, lit: false, seed: 199 }).build();
+    const hangingBounds = boundsOf(hanging);
+    expect(hangingBounds.max[1] / 1.6).toBeGreaterThan(0.95);
+    expect(hangingBounds.max[1] / 1.6).toBeLessThan(1.06);
+    expect(hangingBounds.min[1]).toBeGreaterThan(0.2);
+  });
+
+  it('rings a campfire with stones and stacks the wood inside them', () => {
+    for (const style of ['teepee', 'log-cabin', 'pit'] as const) {
+      const data = campfire({ radius: 0.55, style, seed: 211 }).build();
+      // The ring goes all the way round: a fire with a gap in its stones is a
+      // fire that has not been finished, and the ring is what makes it a camp.
+      expect(bearingSectors(data, 0.02, 0.3, 0.5, 12), style).toBe(12);
+      // The wood is inside the ring, and the flame is above the wood.
+      expect(countVerticesInside(data, { x: 0, y: 0.3, z: 0, radius: 0.4 }), style).toBeGreaterThan(0);
+      expect(boundsOf(data).max[1], style).toBeGreaterThan(0.6);
+      expect(data.materials ?? [], style).toContain('glass-warm');
+    }
+    // A cold fire is a ring of stones and a pile of wood, with nothing burning.
+    const cold = campfire({ radius: 0.55, seed: 214, lit: false }).build();
+    expect(cold.materials ?? []).not.toContain('glass-warm');
+    expect(bearingSectors(cold, 0.02, 0.3, 0.5, 12)).toBe(12);
+
+    // Cooking puts a pot over the fire, hanging from a tripod, above the flames.
+    const cooking = campfire({ radius: 0.55, seed: 213, cooking: true }).build();
+    const pot = verticesOfMaterial(cooking, 'iron-rusted');
+    expect(pot.length).toBeGreaterThan(4);
+    expect(Math.min(...pot.map((point) => point[1]))).toBeGreaterThan(0.55);
+    expect(Math.max(...pot.map((point) => Math.hypot(point[0], point[2])))).toBeLessThan(0.55);
+    expect(boundsOf(cooking).max[1]).toBeGreaterThan(boundsOf(campfire({ radius: 0.55, seed: 213 }).build()).max[1]);
+
+    // Seats are asked for, because they more than double the footprint: a caller
+    // placing a fire in a courtyard wants the fire and not a camp around it.
+    const plain = boundsOf(campfire({ radius: 0.55, seed: 215 }).build());
+    const seated = boundsOf(campfire({ radius: 0.55, seed: 215, seats: true }).build());
+    expect(seated.size[0]).toBeGreaterThan(plain.size[0] * 1.4);
+    expect(plain.size[0]).toBeLessThan(0.55 * 3.4);
+  });
+
+  it('builds a tent whose door is a hole and whose roof sags', () => {
+    const shut = tent({ style: 'ridge', width: 2.6, depth: 2.6, height: 1.8, cloth: 'linen', seed: 223 }).build();
+    const open = tent({ style: 'ridge', width: 2.6, depth: 2.6, height: 1.8, cloth: 'linen', seed: 223, open: true }).build();
+    // Shut, the doorway is filled by its flap. Open, a person walks in. Walked
+    // off the centre line, because the ridge guy stands in the plane x = 0 and a
+    // rope across the door is not a door that is shut.
+    for (const x of [-0.22, 0.22]) {
+      expect(rayHits(shut, [x, 0.5, 2.6], [0, 0, -1], 1.5).length, `shut at x=${x}`).toBeGreaterThan(0);
+      expect(rayHits(open, [x, 0.5, 2.6], [0, 0, -1], 1.5), `open at x=${x}`).toEqual([]);
+    }
+    expect(boundsOf(open).min[1]).toBeGreaterThanOrEqual(-1e-6);
+    expect(boundsOf(open).size[1] / 1.8).toBeGreaterThan(0.95);
+
+    // The roof sags between the ridge and the hem, which is what makes a sheet
+    // read as cloth under tension rather than as a plane with a texture on it.
+    // Taken between the ridge and the hem, and off the end wall: the wall is the
+    // same cloth as the roof, so a chord measured to the wall's own vertices is a
+    // chord to something that is not the roof and the sag disappears into it.
+    const roof = verticesOfMaterial(shut, 'fabric-linen').filter(([, y, z]) => z > 0.2 && z < 1.15 && y > 0.2);
+    expect(roof.length).toBeGreaterThan(12);
+    const ridgeRow = verticesOfMaterial(shut, 'fabric-linen').filter(([, y, z]) => z < 0.15 && y > 1.5);
+    const hemRow = verticesOfMaterial(shut, 'fabric-linen').filter(([, y, z]) => z > 1.36 && y < 0.3);
+    expect(ridgeRow.length).toBeGreaterThan(2);
+    expect(hemRow.length).toBeGreaterThan(2);
+    const mean = (rows: [number, number, number][], axis: 1 | 2): number => rows.reduce((sum, row) => sum + row[axis], 0) / rows.length;
+    const ridgeY = mean(ridgeRow, 1);
+    const hemY = mean(hemRow, 1);
+    const ridgeZ = mean(ridgeRow, 2);
+    const hemZ = mean(hemRow, 2);
+    // Perpendicular to the roof's own plane, not as a difference in height: a
+    // sagging sheet moves down the slope as well as into it, and the two very
+    // nearly cancel when height is compared at the vertex's own depth.
+    const run = hemZ - ridgeZ;
+    const rise = hemY - ridgeY;
+    const slope = Math.hypot(run, rise);
+    let worst = 0;
+    for (const [, y, z] of roof) {
+      const t = (z - ridgeZ) / Math.max(0.01, run);
+      if (t < 0.12 || t > 0.88) continue;
+      worst = Math.min(worst, (-(y - ridgeY) * run + (z - ridgeZ) * rise) / slope);
+    }
+    expect(-worst).toBeGreaterThan(0.025);
+
+    // A bell tent's doorway is a gap in its wall, and the gap faces the front.
+    const bell = tent({ style: 'bell', width: 4, depth: 4, height: 2.4, cloth: 'canvas', seed: 225, open: true }).build();
+    expect(rayHits(bell, [0, 0.25, 3.6], [0, 0, -1], 1.8)).toEqual([]);
+    expect(rayHits(bell, [3.6, 0.25, 0], [-1, 0, 0], 1.8).length).toBeGreaterThan(0);
+
+    // A lean-to has one slope: high at the back, low at the front, and open at
+    // the front, because it is a roof you sleep under facing a fire.
+    const lean = tent({ style: 'lean-to', width: 3.2, depth: 2.6, height: 1.8, cloth: 'hide', seed: 225 }).build();
+    // Taken clear of the end walls, which are the same hide as the roof: they run
+    // from the ground to the back rail, so a slope measured through them is a
+    // slope that starts at the floor.
+    const hide = verticesOfMaterial(lean, 'hide').filter(([x]) => Math.abs(x) < 3.2 / 2 - 0.15);
+    expect(hide.length).toBeGreaterThan(8);
+    const back = hide.filter(([, , z]) => z < -1.1);
+    const front = hide.filter(([, , z]) => z > 1.1);
+    expect(back.length).toBeGreaterThan(2);
+    expect(front.length).toBeGreaterThan(2);
+    expect(Math.min(...back.map((point) => point[1]))).toBeGreaterThan(1.8 * 0.7);
+    expect(Math.max(...front.map((point) => point[1]))).toBeLessThan(1.8 * 0.6);
+    expect(boundsOf(lean).size[1] / 1.8).toBeGreaterThan(0.95);
+
+    // Guy ropes reach the ground and are pegged there, or the tent is a sail.
+    const guys = verticesOfMaterial(shut, 'rope');
+    expect(guys.length).toBeGreaterThan(4);
+    expect(Math.min(...guys.map((point) => point[1]))).toBeLessThan(0.12);
+    expect(Math.max(...guys.map((point) => Math.hypot(point[0], point[2])))).toBeGreaterThan(1.6);
+  });
+
+  it('keeps every prop inside the box it reports', () => {
+    for (const [name, part] of props) {
+      const data = part.build();
+      const bounds = boundsOf(data);
+      expect(outsideBounds(data, bounds.min, bounds.max), name).toBeLessThan(1e-5);
+      expect(dimensionsOf(data).every((size) => Number.isFinite(size) && size >= 0.05), name).toBe(true);
+    }
   });
 });

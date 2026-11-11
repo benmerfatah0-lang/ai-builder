@@ -1,8 +1,11 @@
-import { MeshBuilder, type Vec2, type Vec3 } from '../mesh';
+import { MeshBuilder, type Vec2 } from '../mesh';
 import { arch, box, cylinder, lathe, plane, prism } from '../primitives';
-import { boulder, componentBudget, detailRng, displace, planChildren, tuft, type Quality } from '../detail';
+import {
+  BLADE_TRIANGLES, TUFT_TRIANGLES, boulder, componentBudget, detailRng, displace, planChildren, scatter,
+  settle, tuft, type Quality,
+} from '../detail';
 import { fitHeight } from '../scale';
-import { chance, intRange, pick, range, type Rng } from '../../generation/rng';
+import { chance, intRange, pick, range } from '../../generation/rng';
 import { clamp01, fbm3, ridged } from '../../terrain/noise';
 
 /**
@@ -64,17 +67,6 @@ function stoneSegments(budget: number): number {
   const solved = (1 + Math.sqrt(1 + Math.max(0, budget))) / 2;
   return Math.max(5, Math.min(18, Math.floor(solved + 1e-6)));
 }
-
-/**
- * Triangles one `blade` costs inside a `tuft`, and one three-blade tuft.
- *
- * `blade` is two columns fewer than its segments at each end, and `tuft` asks for
- * four segments across four columns, so a blade is 24 triangles rather than the
- * twelve a two-column blade costs. Charging twelve let a cliff ledge grow twice
- * the grass it had paid for.
- */
-const BLADE_TRIANGLES = 24;
-const TUFT_TRIANGLES = BLADE_TRIANGLES * 3;
 
 /** Triangles a `rockMass` costs: a band of quads per station, a fan per cap. */
 function massCost(segments: number, stations: number): number {
@@ -223,49 +215,6 @@ function rockMass(options: RockMassOptions): MeshBuilder {
   builder.flatShade();
   builder.translate(0, -builder.bounds().min[1], 0);
   return builder;
-}
-
-/**
- * Deterministic scatter over a rectangle: a jittered grid, not uniform random.
- *
- * Uniform random clumps, and clumped stones read as a pile rather than a
- * scatter, while a rigid grid reads as paving. One jittered point per cell gives
- * an even spread with irregular spacing, which is how debris actually lands, and
- * it is stable under the seed so a world looks the same every time it is built.
- */
-function scatter(rng: Rng, count: number, width: number, depth: number, jitter = 0.72): Vec2[] {
-  const wanted = Math.max(1, Math.round(count));
-  const columns = Math.max(1, Math.round(Math.sqrt((wanted * width) / Math.max(0.01, depth))));
-  const rows = Math.max(1, Math.ceil(wanted / columns));
-  const cells = columns * rows;
-  const points: Vec2[] = [];
-  for (let index = 0; index < wanted; index += 1) {
-    // Stride through the grid instead of filling it row by row: a scatter that
-    // could only afford half its stones still has to cover the whole extent, or a
-    // poor boulder field is a pile at one end of an empty field.
-    const cell = Math.min(cells - 1, Math.round((index * cells) / wanted));
-    const row = Math.floor(cell / columns);
-    const column = cell % columns;
-    const x = -width / 2 + ((column + 0.5 + range(rng, -jitter, jitter) * 0.5) / columns) * width;
-    const z = -depth / 2 + ((row + 0.5 + range(rng, -jitter, jitter) * 0.5) / rows) * depth;
-    points.push([x, z]);
-  }
-  return points;
-}
-
-/**
- * A stone placed on a surface: yawed, sunk a little, and never below ground.
- *
- * `boulder` flattens its own bottom so the stone has somewhere to sit, and the
- * sink buries that flat so the stone meets the surface instead of balancing on
- * it. The clamp is what keeps a component's bounding box honest: a stone pushed
- * below y = 0 would sink the whole asset into the terrain it is placed on.
- */
-function settle(part: MeshBuilder, rng: Rng, at: Vec3, sink: number): void {
-  const bounds = part.bounds();
-  part.rotateY(range(rng, 0, Math.PI * 2));
-  const dropped = Math.max(0, at[1] - Math.min(sink, bounds.size[1] * 0.45));
-  part.translate(at[0], dropped - bounds.min[1], at[2]);
 }
 
 /* ------------------------------------------------------------------- scree */
