@@ -54,20 +54,32 @@ exporters all operate on this format.
 
 | Field | Type | Range | Meaning |
 | --- | --- | --- | --- |
-| `style` | enum | `flat`, `hills`, `mountains`, `dunes`, `islands` | Height function used by renderer and generator. |
+| `style` | enum | `flat`, `hills`, `mountains`, `dunes`, `islands`, `valley`, `plateau`, `canyon`, `volcano`, `crater` | Height function used by renderer and generator. |
 | `size` | number | 32 – 512 | Terrain width/depth in world units. |
 | `resolution` | integer | 16 – 256 | Grid subdivisions per axis. Renderer caps it for shadows/export. |
 | `heightScale` | number | 0 – 200 | Vertical amplitude. |
 | `waterLevel` | number \| null | −200 – 200 | Absolute Y of the water surface. `null` = no water. |
 | `palette.low` | hex | — | Vertex colour at the lowest terrain. |
 | `palette.high` | hex | — | Vertex colour at the highest terrain. |
+| `lakeBasin` | object \| absent | see schema | Local depression (`x`, `z`, `radius` 1–256, `depth` 0.1–50) carved into an otherwise flat terrain so it can hold water. |
+| `landscape` | object \| absent | see schema | Optional **procedural landscape recipe**. Absent = classic analytic terrain; present = the surface is baked by the landscape engine (ranges, valleys, plateaus, canyons, volcanoes, craters, islands, ocean, lakes, carved rivers, caves, cliffs, beaches, weighted biomes, erosion, detail, chunks). Documented in [`TERRAIN_ENGINE.md`](./TERRAIN_ENGINE.md). |
 
-Terrain height is a pure function of `(style, size, heightScale, seed)` and is
-**not** stored per-vertex. This keeps documents small and makes regeneration and
-GLB export reproducible. Changing terrain parameters therefore does not move
+Terrain height is a pure function of `(style, size, heightScale, seed)` — plus the
+`landscape` recipe when one is present — and is **not** stored per-vertex. This keeps
+documents small and makes regeneration and GLB export reproducible. A recipe stores
+**absolute** coordinates, so it is only valid for the `size` it was derived for;
+resizing the world drops it instead of leaving landforms in the wrong place. New enum values are accepted by this version but older builds may reject projects containing them. Changing terrain parameters therefore does not move
 existing objects; use “Snap to ground” in the inspector.
 
 ---
+
+A cloud-generated `primitive.generated-mesh` embeds bounded, base64-encoded
+indexed triangles and vertex colors in `meta.generatedMesh`; it does not embed
+executable code or remote URLs. Runtime validation additionally checks binary
+lengths, finite coordinates, index ranges and an aggregate project-size limit,
+which are not fully expressible in the JSON Schema. Older builds do not support
+this primitive. Textures, animations and compressed glTF extensions are not
+preserved by the experimental cloud import.
 
 ## `WorldGroup`
 
@@ -130,7 +142,7 @@ Supported geometry ids: `primitive.*`, `tree.{pine,broadleaf,palm,cactus,bush}`,
 
 | Kind | Extra fields | Allowed values |
 | --- | --- | --- |
-| `primitive` | `primitive`, `color` | `box`, `sphere`, `cylinder`, `cone`, `torus`, `plane` |
+| `primitive` | `primitive`, `color` | Shapes and the procedural asset IDs in `src/core/assets/expandedDefinitions.ts`; see the generated schema for the complete enum. |
 | `tree` | `variant`, `color` (foliage), `trunkColor` | `pine`, `broadleaf`, `palm`, `cactus`, `bush` |
 | `rock` | `variant`, `color` | `boulder`, `crag` |
 | `building` | `variant`, `color` (walls), `roofColor` | `house`, `tower`, `ruin`, `barn`, `coop` |

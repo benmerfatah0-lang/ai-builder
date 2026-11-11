@@ -1,3 +1,4 @@
+import { getLandscape, type LandscapeResult } from '../terrain/landscape';
 import type { Terrain } from '../world-plan/schema';
 
 export interface TerrainSampler {
@@ -6,6 +7,23 @@ export interface TerrainSampler {
   /** 0..1 height ratio, for palette blending. */
   normalizedHeightAt(x: number, z: number): number;
   size: number;
+  /**
+   * Present only when the surface was baked by the procedural landscape engine,
+   * i.e. when the terrain carries a `landscape` recipe. Consumers that can use
+   * more than a height — the renderer, placement, reports — check for it and
+   * fall back to `heightAt` alone when it is absent.
+   */
+  landscape?: LandscapeResult;
+  /** Slope as rise over run, when the engine baked the surface. */
+  slopeAt?(x: number, z: number): number;
+  /** Dominant biome id at a point, when biomes were described. */
+  biomeAt?(x: number, z: number): string | null;
+  /**
+   * True where the ground must stay clear: river corridors, cave mouths and
+   * anything below the water line. Placement checks this so a river can never
+   * be carved through a building, or a house dropped into a channel.
+   */
+  blockedAt?(x: number, z: number): boolean;
 }
 
 function hash2(seed: number, x: number, y: number): number {
@@ -65,15 +83,56 @@ function clamp01(value: number): number {
  * Build a pure, deterministic height function for a terrain description.
  * The same (terrain, seed) pair always yields the same world surface, which is
  * what makes generated worlds reproducible and exportable.
+ *
+ * Two implementations share this entry point:
+ *
+ * - a terrain **without** a `landscape` recipe uses the classic analytic
+ *   functions below, unchanged, so every existing world keeps its exact surface;
+ * - a terrain **with** a recipe is baked once by the procedural landscape engine
+ *   (`core/terrain`) and sampled from that grid, with the analytic style still
+ *   laid down first as the base surface.
  */
 export function createTerrainSampler(terrain: Terrain, seed: number): TerrainSampler {
+  if (terrain.landscape) return createBakedTerrainSampler(terrain, seed);
+  return createAnalyticSampler(terrain, seed);
+}
+
+/**
+ * Sampler backed by a baked landscape.
+ *
+ * The bake is cached by a fingerprint of the terrain and seed, so the thousands
+ * of queries made while placing objects, building meshes and walking around all
+ * read the same grid without re-running the simulation.
+ */
+export function createBakedTerrainSampler(terrain: Terrain, seed: number): TerrainSampler {
+  const base = createAnalyticSampler(terrain, seed);
+  const result = getLandscape(terrain, seed, { baseHeight: base.heightAt });
+  const { min, max } = result.stats;
+  const span = Math.max(0.0001, max - min);
+  return {
+    heightAt: (x, z) => result.heightAt(x, z),
+    normalizedHeightAt: (x, z) => clamp01((result.heightAt(x, z) - min) / span),
+    size: terrain.size,
+    landscape: result,
+    slopeAt: (x, z) => result.slopeAt(x, z),
+    biomeAt: (x, z) => result.biomeAt(x, z),
+    blockedAt: (x, z) => result.blockedAt(x, z),
+  };
+}
+
+/** The classic analytic styles, kept byte-for-byte as they have always been. */
+export function createAnalyticSampler(terrain: Terrain, seed: number): TerrainSampler {
   const { size, heightScale, style } = terrain;
   const half = size / 2;
 
   const heightAt = (x: number, z: number): number => {
     switch (style) {
-      case 'flat':
-        return 0;
+      case 'flat': {
+        const basin=terrain.lakeBasin;
+        if(!basin)return 0;
+        const distance=Math.hypot(x-basin.x,z-basin.z)/basin.radius;
+        return -basin.depth*(1-smoothstep(clamp01(distance)));
+      }
 
       case 'hills': {
         const n = fbm(seed, x / 38, z / 38, 4);
@@ -96,6 +155,36 @@ export function createTerrainSampler(terrain: Terrain, seed: number): TerrainSam
           ripple * heightScale * 0.035 +
           macro * heightScale * 0.12
         );
+      }
+
+      case 'valley': {
+        const winding = Math.sin(z / 47 + (seed % 17) * .1) * size * .08;
+        const bank = smoothstep(clamp01(Math.abs(x - winding) / (size * .32)));
+        const noise = fbm(seed, x / 45, z / 45, 4) * .1;
+        return (bank * .9 + noise - .25) * heightScale;
+      }
+      case 'plateau': {
+        const base = fbm(seed, x / 65, z / 65, 4);
+        const level = smoothstep(clamp01((base + .25) * 2));
+        return (level * .8 + fbm(seed + 91, x / 18, z / 18, 2) * .035 - .25) * heightScale;
+      }
+      case 'canyon': {
+        const winding = Math.sin(z / 55 + (seed % 13) * .1) * size * .07;
+        const distance = Math.abs(x - winding) / (size * .19);
+        const walls = smoothstep(clamp01((distance - .3) * 2));
+        return (walls * .9 + fbm(seed, x / 30, z / 30, 3) * .08 - .3) * heightScale;
+      }
+      case 'volcano': {
+        const r = Math.hypot(x, z) / (size * .34);
+        const mountain = Math.max(0, 1 - r);
+        const crater = Math.exp(-Math.pow(r / .23, 2));
+        return (mountain * .95 - crater * .6 + fbm(seed, x / 26, z / 26, 3) * .07) * heightScale;
+      }
+      case 'crater': {
+        const r = Math.hypot(x, z) / (size * .25);
+        const rim = Math.exp(-Math.pow((r - 1) / .23, 2)) * .48;
+        const hollow = Math.exp(-Math.pow(r / .65, 4)) * .4;
+        return (rim - hollow + fbm(seed, x / 32, z / 32, 3) * .06) * heightScale;
       }
 
       case 'islands': {

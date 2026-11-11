@@ -1,3 +1,4 @@
+import { photoToModel, addPhotoModel } from '../ai/photoModel';
 import { describe, expect, it } from 'vitest';
 import { getObjectColor } from '../../core/world-plan/colors';
 import { createEmptyWorldPlan } from '../../core/world-plan/factory';
@@ -326,4 +327,19 @@ describe('editor reducer', () => {
     expect(nextAvailableName(plan, 'Pine tree')).toBe('Pine tree 2');
     expect(nextAvailableName(plan, 'Cube')).toBe('Cube');
   });
+  it('can switch an old photo model to smooth and undo, while respecting locks', () => {
+    const rgba=new Uint8Array(12*12*4);
+    for(let y=0;y<12;y++) for(let x=0;x<12;x++) rgba.set(x>=3&&x<=8&&y>=2&&y<=9 ? [120,40,30,255] : [255,255,255,255],(y*12+x)*4);
+    const source={title:'File:x.jpg',url:'https://commons.wikimedia.org/wiki/File:x.jpg',thumbnail:'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/x.jpg/250px-x.jpg',author:'a',license_url:'https://creativecommons.org/licenses/by/4.0/',license_name:'CC BY 4.0',query:'x'};
+    const model=photoToModel({width:12,height:12,rgba},source); const base=createEmptyWorldPlan({seed:1});
+    const result=addPhotoModel({...base,terrain:{...base.terrain,style:'flat',heightScale:0}},{...model,meshStyle:undefined},'فيل');
+    const initial=createInitialEditorState(result.plan);
+    const changed=editorReducer(initial,{type:'updateObject',id:result.object.id,patch:{photoMeshStyle:'smooth'}});
+    expect(changed.plan.objects[0]?.meta.photoModel?.meshStyle).toBe('smooth');
+    expect(changed.plan.objects[0]?.meta.photoModel?.source).toEqual(model.source);
+    expect(editorReducer(changed,{type:'undo'}).plan.objects[0]?.meta.photoModel?.meshStyle).toBeUndefined();
+    const locked={...initial,plan:{...initial.plan,objects:initial.plan.objects.map((o)=>({...o,locked:true}))}};
+    expect(editorReducer(locked,{type:'updateObject',id:result.object.id,patch:{photoMeshStyle:'smooth'}})).toBe(locked);
+  });
+
 });

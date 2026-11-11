@@ -13,7 +13,10 @@ import {
   applyTransform,
   clearObject3DGroup,
   createGrid,
+  createTerrainChunks,
   createTerrainMesh,
+  updateTerrainLod,
+  type TerrainLodState,
   createWaterMesh,
   createWorldGroupObject,
   createWorldObjectGroup,
@@ -32,6 +35,8 @@ import {
 import { createSkyDome, placeSkyDome, type SkyHandle } from '../../core/scene/sky';
 import { animateWater, type WaterAnimation } from '../../core/scene/water';
 import { Icon } from '../../ui/Icon';
+import type { ConstructionPreview } from './constructionPreview';
+import { startWalk, moveWalk, lookWalk, type WalkPose, type WalkInput } from './walkNavigation';
 
 export type TransformTool = 'translate' | 'rotate' | 'scale';
 export type TransformSpace = 'world' | 'local';
@@ -51,6 +56,9 @@ export interface ViewportProps {
   onSelect: (id: string | null, additive: boolean) => void;
   onTransformCommit: (id: string, transform: Transform) => void;
   onTransformStart?: () => void;
+  constructionPreview?: ConstructionPreview | null;
+  walkMode?: boolean;
+  onWalkModeChange?: (enabled: boolean) => void;
 }
 
 interface Runtime {
@@ -67,6 +75,8 @@ interface Runtime {
   frameWorld: () => void;
   frameSelection: (ids: string[]) => void;
   refreshOverlay: () => void;
+  enterWalk: () => void;
+  exitWalk: () => void;
 }
 
 type Status = 'loading' | 'ready' | 'error';
@@ -86,8 +96,12 @@ export function Viewport({
   onSelect,
   onTransformCommit,
   onTransformStart,
+  constructionPreview,
+  walkMode = false,
+  onWalkModeChange,
 }: ViewportProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const framedConstruction = useRef<string | null>(null);
   const runtimeRef = useRef<Runtime | null>(null);
   const planRef = useRef(plan);
   const selectionRef = useRef(selection);
@@ -106,6 +120,10 @@ export function Viewport({
   const [stats, setStats] = useState({ fps: 0, calls: 0, triangles: 0 });
   const [notice, setNotice] = useState('');
   const waterRef = useRef<WaterAnimation | null>(null);
+  /** Chunk/LOD bookkeeping, present only for worlds baked by the landscape engine. */
+  const terrainLodRef = useRef<TerrainLodState | null>(null);
+  const walkingRef = useRef(walkMode); walkingRef.current = walkMode;
+  const walkButtons = useRef<Record<keyof WalkInput, boolean>>({ forward:false, back:false, left:false, right:false });
 
   planRef.current = plan;
   selectionRef.current = selection;
@@ -187,7 +205,7 @@ export function Viewport({
 
     transformControls.addEventListener('dragging-changed', (event) => {
       const dragging = Boolean((event as unknown as { value: boolean }).value);
-      controls.enabled = !dragging;
+      controls.enabled = !dragging && !walkingRef.current;
       if (dragging) {
         gizmoInteraction = true;
         callbacksRef.current.onTransformStart?.();
@@ -307,9 +325,54 @@ export function Viewport({
     const startedAt = performance.now();
     const clock = new THREE.Clock();
 
+    let walkPose: WalkPose | null = null;
+    // Last camera position the terrain LOD was evaluated at.
+    let lastLodX = Number.NaN;
+    let lastLodZ = Number.NaN;
+    let savedOrbit: { position: THREE.Vector3; target: THREE.Vector3; near: number; planId:string } | null = null;
+    const keys = new Set<string>();
+    let lookPointer: { id:number; x:number; y:number } | null = null;
+    let lastFrame = performance.now();
+    const enterWalk = () => {
+      if (walkPose) return;
+      savedOrbit = { position:camera.position.clone(), target:controls.target.clone(), near:camera.near, planId:planRef.current.id };
+      walkPose = startWalk(planRef.current.terrain, planRef.current.seed, controls.target, camera.position);
+      controls.enabled = false; transformControls.detach(); transformControls.enabled = false; overlayGroup.visible = false;
+      camera.near = .05; camera.updateProjectionMatrix();
+      lastFrame = performance.now();
+    };
+    const exitWalk = () => {
+      if (!walkPose) return;
+      walkPose = null; lookPointer = null; keys.clear(); downTime = -Infinity;
+      walkButtons.current = { forward:false, back:false, left:false, right:false };
+      const changedWorld = savedOrbit && savedOrbit.planId !== planRef.current.id;
+      if (savedOrbit && !changedWorld) { camera.position.copy(savedOrbit.position); controls.target.copy(savedOrbit.target); camera.near=savedOrbit.near; camera.updateProjectionMatrix(); }
+      savedOrbit = null; controls.enabled = true; transformControls.enabled = true; overlayGroup.visible = true;
+      if (changedWorld) frameWorld(); else controls.update();
+    };
     const animate = () => {
       animationFrame = window.requestAnimationFrame(animate);
-      controls.update();
+      const timestamp=performance.now(), dt=(timestamp-lastFrame)/1000; lastFrame=timestamp;
+      if (walkingRef.current && walkPose) {
+        const buttons=walkButtons.current;
+        walkPose=moveWalk(walkPose, { forward:buttons.forward || keys.has('w') || keys.has('arrowup'), back:buttons.back || keys.has('s') || keys.has('arrowdown'), left:buttons.left || keys.has('a') || keys.has('arrowleft'), right:buttons.right || keys.has('d') || keys.has('arrowright') }, dt, planRef.current.terrain, planRef.current.seed);
+        camera.position.set(walkPose.x,walkPose.y,walkPose.z);
+        camera.rotation.set(walkPose.pitch,walkPose.yaw,0,'YXZ');
+      } else controls.update();
+
+      // Level of detail: only re-evaluated after the camera has moved half a
+      // chunk, and at most two chunks are rebuilt per frame.
+      const lod = terrainLodRef.current;
+      if (lod) {
+        const threshold = Math.max(2, lod.layout.chunkSize * 0.5);
+        const movedX = camera.position.x - lastLodX;
+        const movedZ = camera.position.z - lastLodZ;
+        if (!(movedX * movedX + movedZ * movedZ < threshold * threshold)) {
+          lastLodX = camera.position.x;
+          lastLodZ = camera.position.z;
+          updateTerrainLod(lod, camera.position.x, camera.position.z, 2);
+        }
+      }
 
       const elapsed = clock.getElapsedTime();
       waterRef.current?.update(elapsed);
@@ -371,13 +434,25 @@ export function Viewport({
     };
 
     const onPointerDown = (event: PointerEvent) => {
+      if (walkingRef.current && walkPose) {
+        if (lookPointer || (event.button !== 0 && event.pointerType === 'mouse')) return;
+        lookPointer={id:event.pointerId,x:event.clientX,y:event.clientY};
+        try { renderer.domElement.setPointerCapture(event.pointerId); } catch { /* optional */ }
+        return;
+      }
       if (event.button !== 0 && event.pointerType === 'mouse') return;
       downX = event.clientX;
       downY = event.clientY;
       downTime = performance.now();
     };
 
+    const onPointerMove = (event: PointerEvent) => {
+      if (!walkingRef.current || !walkPose || !lookPointer || event.pointerId !== lookPointer.id) return;
+      walkPose=lookWalk(walkPose,event.clientX-lookPointer.x,event.clientY-lookPointer.y);
+      lookPointer={id:event.pointerId,x:event.clientX,y:event.clientY};
+    };
     const onPointerUp = (event: PointerEvent) => {
+      if (walkingRef.current) { if (lookPointer?.id === event.pointerId) lookPointer=null; return; }
       if (event.button !== 0 && event.pointerType === 'mouse') return;
       if (gizmoInteraction) {
         gizmoInteraction = false;
@@ -393,7 +468,10 @@ export function Viewport({
       callbacksRef.current.onSelect(id, additive);
     };
 
+    const onPointerCancel = (event: PointerEvent) => { if (lookPointer?.id === event.pointerId) lookPointer=null; };
+
     const onDoubleClick = (event: MouseEvent) => {
+      if (walkingRef.current) return;
       const id = pick(event.clientX, event.clientY);
       if (id) frameSelection([id]);
     };
@@ -433,7 +511,23 @@ export function Viewport({
       }
     };
 
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!walkingRef.current || event.ctrlKey || event.altKey || event.metaKey) return;
+      const target=event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      const key=event.key.toLowerCase();
+      if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(key)) { keys.add(key); event.preventDefault(); }
+    };
+    const onKeyUp = (event: KeyboardEvent) => keys.delete(event.key.toLowerCase());
+    const stopMovement = () => { keys.clear(); lookPointer=null; walkButtons.current={forward:false,back:false,left:false,right:false}; };
+    const onVisibilityChange = () => { if (document.hidden) stopMovement(); };
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    renderer.domElement.addEventListener('pointermove', onPointerMove);
+    renderer.domElement.addEventListener('pointercancel', onPointerCancel);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', stopMovement);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
     renderer.domElement.addEventListener('dblclick', onDoubleClick);
     renderer.domElement.addEventListener('webglcontextlost', onContextLost);
@@ -454,6 +548,8 @@ export function Viewport({
       frameWorld,
       frameSelection,
       refreshOverlay,
+      enterWalk,
+      exitWalk,
     };
     setStatus('ready');
 
@@ -461,6 +557,12 @@ export function Viewport({
       window.cancelAnimationFrame(animationFrame);
       observer.disconnect();
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('pointermove', onPointerMove);
+      renderer.domElement.removeEventListener('pointercancel', onPointerCancel);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', stopMovement);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
       renderer.domElement.removeEventListener('dblclick', onDoubleClick);
       renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
@@ -477,6 +579,7 @@ export function Viewport({
       scene.remove(gizmoHelper);
       controls.dispose();
       clearObject3DGroup(terrainGroup);
+      terrainLodRef.current = null;
       clearObject3DGroup(objectsGroup);
       clearObject3DGroup(lightsGroup);
       clearObject3DGroup(overlayGroup);
@@ -510,6 +613,27 @@ export function Viewport({
     }
   }, []);
 
+  // Temporary build stages are visual only, outside the project and picking tree.
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime || !constructionPreview || constructionPreview.base !== plan) {
+      if (!constructionPreview) framedConstruction.current = null;
+      return;
+    }
+    const group = new THREE.Group();
+    group.name = 'construction-preview';
+    for (const object of constructionPreview.objects) group.add(createWorldObjectGroup(object, false));
+    runtime.scene.add(group);
+    if (!walkingRef.current && framedConstruction.current !== constructionPreview.key && constructionPreview.objects.length) {
+      framedConstruction.current = constructionPreview.key;
+      const [x,y,z] = constructionPreview.objects[constructionPreview.objects.length - 1]!.transform.position;
+      runtime.controls.target.set(x, y + 1.5, z);
+      runtime.camera.position.set(x + 12, y + 9, z + 15);
+      runtime.controls.update();
+    }
+    return () => { group.removeFromParent(); disposeObject3D(group); };
+  }, [constructionPreview, plan, status]);
+
   // Terrain, water and grid.
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -518,7 +642,20 @@ export function Viewport({
     waterRef.current?.dispose();
     waterRef.current = null;
     clearObject3DGroup(runtime.terrainGroup);
-    runtime.terrainGroup.add(createTerrainMesh(current, isNarrowViewport() ? 128 : 192));
+    terrainLodRef.current = null;
+    const terrainCap = isNarrowViewport() ? 128 : 192;
+    // A baked landscape on a large map is drawn as chunks with per-chunk level of
+    // detail; anything else keeps the single classic mesh.
+    const chunks = createTerrainChunks(current, terrainCap, {
+      x: runtime.camera.position.x,
+      z: runtime.camera.position.z,
+    });
+    if (chunks) {
+      runtime.terrainGroup.add(chunks.group);
+      terrainLodRef.current = chunks.state;
+    } else {
+      runtime.terrainGroup.add(createTerrainMesh(current, terrainCap));
+    }
     const water = createWaterMesh(current);
     waterRef.current = water ? animateWater(water) : null;
     if (water) runtime.terrainGroup.add(water);
@@ -695,7 +832,7 @@ export function Viewport({
     const primary = selection.length === 1 ? selection[0] : null;
     const object = primary ? nodeObjectsRef.current.get(primary) : null;
 
-    if (!primary || !object || isEffectivelyLocked(plan, primary)) {
+    if (walkMode || !primary || !object || isEffectivelyLocked(plan, primary)) {
       controls.detach();
       return;
     }
@@ -706,18 +843,30 @@ export function Viewport({
     controls.attach(object);
     controls.setMode(tool);
     controls.setSpace(space);
-  }, [selection, plan, tool, space]);
+  }, [selection, plan, tool, space, walkMode]);
 
-  // Frame a different world when one is opened.
   useEffect(() => {
-    runtimeRef.current?.frameWorld();
+    const runtime=runtimeRef.current;
+    if (!runtime || status !== 'ready') return;
+    if (walkMode) runtime.enterWalk(); else runtime.exitWalk();
+    return () => { if (walkMode && runtimeRef.current === runtime) runtime.exitWalk(); };
+  }, [walkMode, status]);
+
+  // Frame a selected new object on opening the editor, otherwise frame the world.
+  useEffect(() => {
+    // A freshly mounted Forge preview has already framed its construction site.
+    if (constructionPreview?.base === plan || walkingRef.current) return;
+    if (selectionRef.current.length) runtimeRef.current?.frameSelection(selectionRef.current);
+    else if (plan.objects.length && plan.objects.every((object) => object.kind === 'primitive' && object.primitive === 'generated-mesh')) {
+      runtimeRef.current?.frameSelection(plan.objects.map((object) => object.id));
+    } else runtimeRef.current?.frameWorld();
   }, [plan.id]);
 
   // Frame requests from the toolbar and keyboard shortcuts.
   useEffect(() => {
-    const frameWorld = () => runtimeRef.current?.frameWorld();
+    const frameWorld = () => { if (!walkingRef.current) runtimeRef.current?.frameWorld(); };
     const frameSelected = () =>
-      runtimeRef.current?.frameSelection(selectionRef.current.length ? selectionRef.current : []);
+      !walkingRef.current && runtimeRef.current?.frameSelection(selectionRef.current.length ? selectionRef.current : []);
     const focusSelected = () => {
       if (selectionRef.current.length > 0) frameSelected();
       else frameWorld();
@@ -731,6 +880,7 @@ export function Viewport({
   }, []);
 
   const handleFrame = () => {
+    if (walkingRef.current) return;
     if (selection.length > 0) runtimeRef.current?.frameSelection(selection);
     else runtimeRef.current?.frameWorld();
   };
@@ -752,6 +902,7 @@ export function Viewport({
         {selectedCount > 1 && (
           <span className="hud-pill hud-pill-accent">{selectedCount} selected</span>
         )}
+        {constructionPreview && constructionPreview.base === plan && <span className="hud-pill hud-pill-accent" dir="rtl">بناء «{constructionPreview.label}» {Math.min(constructionPreview.rows, constructionPreview.total)} / {constructionPreview.total} · معاينة مؤقتة</span>}
         {profile && (
           <span
             className="hud-pill hud-pill-subtle viewport-gpu"
@@ -766,10 +917,12 @@ export function Viewport({
       </div>
 
       <div className="viewport-hud viewport-hud-actions">
+        {onWalkModeChange && <button type="button" className="btn btn-small glass" dir="rtl" disabled={status !== 'ready' && !walkMode} aria-pressed={walkMode} onClick={() => onWalkModeChange(!walkMode)}>{walkMode ? 'الخروج من التجول' : 'التجول في العالم'}</button>}
         <button
           type="button"
           className="icon-btn glass"
           onClick={handleFrame}
+          disabled={walkMode}
           title={selectedCount > 0 ? 'Frame selection (F)' : 'Frame world (F)'}
           aria-label={selectedCount > 0 ? 'Frame selection' : 'Frame world'}
         >
@@ -790,7 +943,12 @@ export function Viewport({
 
       {notice && <div className="viewport-notice">{notice}</div>}
 
-      <div className="viewport-hint">
+      {walkMode && <div className="walk-controls" role="group" aria-label="أزرار التجول" dir="rtl">
+        <span>اسحب المشهد للنظر · اضغط مطولاً للتحرك</span>
+        <div className="walk-buttons">{([['forward','تقدم','▲'],['left','يسار','◀'],['back','رجوع','▼'],['right','يمين','▶']] as const).map(([direction,label,symbol]) => <button key={direction} type="button" aria-label={label} onPointerDown={(event) => { event.preventDefault(); walkButtons.current[direction]=true; try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* optional */ } }} onPointerUp={() => { walkButtons.current[direction]=false; }} onPointerCancel={() => { walkButtons.current[direction]=false; }} onLostPointerCapture={() => { walkButtons.current[direction]=false; }} onKeyDown={(event) => { if (event.key === ' ' || event.key === 'Enter') walkButtons.current[direction]=true; }} onKeyUp={() => { walkButtons.current[direction]=false; }}>{symbol}</button>)}</div>
+        <small>تحرك تقريبي دون اصطدام بالجدران أو سباحة؛ لا يحول الصورة إلى عالم.</small>
+      </div>}
+      {!walkMode && <div className="viewport-hint">
         <span className="desktop-only">
           Click to select · Shift-click to multi-select · G/R/S to transform · Drag to orbit ·
           Right-drag to pan · Scroll to zoom
@@ -798,7 +956,7 @@ export function Viewport({
         <span className="mobile-only">
           Drag to orbit · Pinch to zoom · Tap to select · Use the toolbar to move, rotate or scale
         </span>
-      </div>
+      </div>}
 
       {status === 'loading' && (
         <div className="viewport-status">

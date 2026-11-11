@@ -11,11 +11,16 @@ import {
 } from '../../../ui/controls';
 
 const TERRAIN_OPTIONS = [
-  { value: 'hills', label: 'Rolling hills' },
-  { value: 'flat', label: 'Flat plane' },
-  { value: 'mountains', label: 'Mountains' },
-  { value: 'dunes', label: 'Dunes' },
-  { value: 'islands', label: 'Islands' },
+  { value: 'hills', label: 'Rolling hills · تلال' },
+  { value: 'flat', label: 'Flat plane · أرض مسطحة' },
+  { value: 'mountains', label: 'Mountains · جبال' },
+  { value: 'dunes', label: 'Dunes · كثبان' },
+  { value: 'islands', label: 'Islands · جزر' },
+  { value: 'valley', label: 'Valley · وادٍ' },
+  { value: 'plateau', label: 'Plateau · هضبة' },
+  { value: 'canyon', label: 'Canyon · أخدود' },
+  { value: 'volcano', label: 'Volcano · بركان' },
+  { value: 'crater', label: 'Crater · فوهة' },
 ];
 
 export function WorldPanel({

@@ -1,3 +1,4 @@
+import { KeepAlive } from './KeepAlive';
 import {
   useCallback,
   useEffect,
@@ -18,6 +19,7 @@ import {
 import { createStarterWorld } from '../../core/generation/starter';
 import { createId } from '../../core/utils/id';
 import { useEditor } from './store';
+import { useMapTrainer } from './useMapTrainer';
 import { useAutosave } from './useAutosave';
 import {
   ALL_AXES,
@@ -27,6 +29,7 @@ import {
   type TransformTool,
 } from './Viewport';
 import { ViewportToolbar } from './ViewportToolbar';
+import { ForgeHome } from './ForgeHome';
 import { WorldPanel } from './panels/WorldPanel';
 import { HierarchyPanel } from './panels/HierarchyPanel';
 import { AssetsPanel } from './panels/AssetsPanel';
@@ -42,27 +45,28 @@ type DesktopTab = 'world' | 'scene' | 'assets' | 'ai';
 type MobilePanel = DesktopTab | 'inspector';
 
 const DESKTOP_TABS: { id: DesktopTab; label: string; icon: IconName }[] = [
-  { id: 'world', label: 'World', icon: 'sliders' },
-  { id: 'scene', label: 'Scene', icon: 'layers' },
-  { id: 'assets', label: 'Assets', icon: 'cube' },
-  { id: 'ai', label: 'AI', icon: 'sparkles' },
+  { id: 'world', label: 'العالم', icon: 'sliders' },
+  { id: 'scene', label: 'العناصر', icon: 'layers' },
+  { id: 'assets', label: 'أشكال', icon: 'cube' },
+  { id: 'ai', label: 'بناء وتعديل', icon: 'sparkles' },
 ];
 
 const MOBILE_TABS: { id: MobilePanel; label: string; icon: IconName }[] = [
   ...DESKTOP_TABS,
-  { id: 'inspector', label: 'Inspect', icon: 'info' },
+  { id: 'inspector', label: 'الخصائص', icon: 'info' },
 ];
 
 const PANEL_TITLES: Record<MobilePanel, string> = {
-  world: 'World',
-  scene: 'Scene',
-  assets: 'Assets',
-  ai: 'AI world',
-  inspector: 'Inspector',
+  world: 'العالم',
+  scene: 'العناصر',
+  assets: 'أشكال',
+  ai: 'بناء وتعديل',
+  inspector: 'الخصائص',
 };
 
 export function Workspace() {
-  const { state, dispatch } = useEditor();
+  const { state, dispatch, constructionPreview } = useEditor();
+  const mapTrainer = useMapTrainer();
   const [repository, setRepository] = useState<WorldRepository>(() => getWorldRepository());
   const [storageKind, setStorageKind] = useState<'indexeddb' | 'memory'>(
     () => getWorldRepository().kind,
@@ -70,13 +74,17 @@ export function Workspace() {
   const [ready, setReady] = useState(false);
   const [worlds, setWorlds] = useState<WorldSummary[]>([]);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [view, setView] = useState<'forge' | 'studio'>('forge');
   const [libraryLoading, setLibraryLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<DesktopTab>('world');
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel | null>(null);
+  const [activeTab, setActiveTab] = useState<DesktopTab>('ai');
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel | null>('ai');
   const [tool, setTool] = useState<TransformTool>('translate');
   const [space, setSpace] = useState<TransformSpace>('world');
   const [snap, setSnap] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
+  const [walkMode, setWalkMode] = useState(false);
+  useEffect(() => { if (view !== 'studio') setWalkMode(false); }, [view]);
+  useEffect(() => { setWalkMode(false); }, [state.plan.id]);
   const [axes, setAxes] = useState<AxisFilter>(ALL_AXES);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const isMobile = useIsMobile();
@@ -183,6 +191,7 @@ export function Workspace() {
     const plan = createEmptyWorldPlan({ name: 'Untitled World' });
     dispatch({ type: 'replacePlan', plan });
     setLibraryOpen(false);
+    setView('studio');
     setMobilePanel(null);
     notify('Blank world created.', 'success');
   }, [dispatch, notify]);
@@ -197,6 +206,7 @@ export function Workspace() {
       }
       dispatch({ type: 'replacePlan', plan });
       setLibraryOpen(false);
+      setView('studio');
       setMobilePanel(null);
       notify(`Opened “${plan.name}”.`, 'success');
     } catch (error) {
@@ -256,6 +266,7 @@ export function Workspace() {
       const plan = await readWorldFile(file);
       dispatch({ type: 'replacePlan', plan });
       setLibraryOpen(false);
+      setView('studio');
       setMobilePanel(null);
       notify(`Imported “${plan.name}”.`, 'success');
     } catch (error) {
@@ -264,6 +275,7 @@ export function Workspace() {
         const repaired = await readWorldFileLenient(file);
         dispatch({ type: 'replacePlan', plan: repaired.plan });
         setLibraryOpen(false);
+        setView('studio');
         setMobilePanel(null);
         notify(
           repaired.warnings.length > 0
@@ -289,10 +301,6 @@ export function Workspace() {
     [dispatch, isMobile],
   );
 
-  const handleGenerated = () => {
-    if (isMobile) setMobilePanel(null);
-  };
-
   // Keyboard shortcuts (ignored while typing in a field).
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -302,6 +310,7 @@ export function Workspace() {
         (Boolean(target.closest('input, textarea, select')) || target.isContentEditable);
 
       if (event.key === 'Escape') {
+        if (walkMode) { setWalkMode(false); return; }
         if (libraryOpen) {
           setLibraryOpen(false);
         } else if (mobilePanel) {
@@ -316,6 +325,7 @@ export function Workspace() {
 
       const modifier = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
+      if (walkMode && !modifier) return;
 
       if (modifier && key === 's') {
         event.preventDefault();
@@ -396,6 +406,7 @@ export function Workspace() {
   }, [
     dispatch,
     libraryOpen,
+    walkMode,
     mobilePanel,
     saveNow,
     state.plan.groups,
@@ -419,7 +430,7 @@ export function Workspace() {
           />
         );
       case 'ai':
-        return <AiPanel notify={notify} onGenerated={handleGenerated} />;
+        return <AiPanel notify={notify} mapTrainer={mapTrainer} />;
       case 'inspector':
         return (
           <InspectorPanel
@@ -455,7 +466,15 @@ export function Workspace() {
         notify={notify}
       />
 
-      <main className={`workspace ${isMobile && mobilePanel ? 'has-sheet' : ''}`}>
+      <nav className="forge-navigation" aria-label="WorldForge navigation">
+        <button type="button" className={view === 'forge' ? 'is-active' : ''} onClick={() => setView('forge')} aria-current={view === 'forge' ? 'page' : undefined}><Icon name="sparkles" size={16} /><span>إنشاء</span></button>
+        <button type="button" onClick={openLibrary}><Icon name="folder" size={16} /><span>المكتبة</span></button>
+        <button type="button" className={view === 'studio' ? 'is-active' : ''} onClick={() => setView('studio')} aria-current={view === 'studio' ? 'page' : undefined}><Icon name="cube" size={16} /><span>المحرر</span></button>
+        {view === 'studio' && <button type="button" className="mobile-undo" disabled={!state.past.length} onClick={() => dispatch({type:'undo'})}><Icon name="undo" size={16} /><span>تراجع</span></button>}
+      </nav>
+
+      <KeepAlive active={view === 'forge'}><ForgeHome active={view === 'forge'} worlds={worlds} mapTrainer={mapTrainer} storageKind={storageKind} notify={notify} onOpenStudio={() => { setView('studio'); setMobilePanel(null); }} onOpenLibrary={openLibrary} onOpenWorld={(id) => void openWorld(id)} /></KeepAlive>
+      <main hidden={view !== 'studio'} className={`workspace ${isMobile && mobilePanel ? 'has-sheet' : ''}`}>
         <aside className="sidebar desktop-only" aria-label="Editor panels">
           <nav className="panel-tabs" role="tablist">
             {DESKTOP_TABS.map((tab) => (
@@ -472,24 +491,30 @@ export function Workspace() {
               </button>
             ))}
           </nav>
-          <div className="panel-content">{renderPanel(activeTab)}</div>
+          <div className="panel-content">
+            {!isMobile && <KeepAlive active={view === 'studio' && activeTab === 'ai'}><AiPanel notify={notify} mapTrainer={mapTrainer} /></KeepAlive>}
+            {activeTab !== 'ai' && renderPanel(activeTab)}
+          </div>
         </aside>
 
         <section className="viewport-wrap" aria-label="3D viewport">
-          <Viewport
+          {view === 'studio' && <Viewport
             plan={state.plan}
+            constructionPreview={constructionPreview}
             selection={state.selection}
             tool={tool}
             space={space}
             snap={snap}
             showGrid={showGrid}
+            walkMode={walkMode}
+            onWalkModeChange={(enabled) => { setWalkMode(enabled); if (enabled) setMobilePanel(null); }}
             axes={axes}
             onSelect={handleSelect}
             onTransformCommit={(id, transform) =>
               dispatch({ type: 'setTransform', id, transform })
             }
-          />
-          <ViewportToolbar
+          />}
+          {!walkMode && <ViewportToolbar
             tool={tool}
             space={space}
             snap={snap}
@@ -501,7 +526,7 @@ export function Workspace() {
             onSnapChange={setSnap}
             onGridChange={setShowGrid}
             onAxesChange={setAxes}
-          />
+          />}
         </section>
 
         <aside className="inspector-panel desktop-only" aria-label="Inspector">
@@ -509,11 +534,11 @@ export function Workspace() {
         </aside>
       </main>
 
-      {isMobile && mobilePanel && (
-        <div className="mobile-sheet" role="dialog" aria-label={PANEL_TITLES[mobilePanel]}>
+      {isMobile && (
+        <div className="mobile-sheet" role="dialog" hidden={!mobilePanel || view !== 'studio'} aria-label={mobilePanel ? PANEL_TITLES[mobilePanel] : 'Editor panel'}>
           <div className="sheet-head">
             <span className="sheet-handle" />
-            <h2>{PANEL_TITLES[mobilePanel]}</h2>
+            <h2>{mobilePanel ? PANEL_TITLES[mobilePanel] : ''}</h2>
             <button
               type="button"
               className="icon-btn"
@@ -523,12 +548,12 @@ export function Workspace() {
               <Icon name="close" size={17} />
             </button>
           </div>
-          <div className="sheet-body">{renderPanel(mobilePanel)}</div>
+          <div className="sheet-body"><KeepAlive active={view === 'studio' && mobilePanel === 'ai'}><AiPanel notify={notify} mapTrainer={mapTrainer} onOpenStudio={() => setMobilePanel(null)} /></KeepAlive>{mobilePanel && mobilePanel !== 'ai' && renderPanel(mobilePanel)}</div>
         </div>
       )}
 
       {isMobile && (
-        <nav className="mobile-dock" aria-label="Editor panels">
+        <nav className="mobile-dock" hidden={view !== 'studio'} aria-label="Editor panels">
           {MOBILE_TABS.map((tab) => (
             <button
               key={tab.id}
@@ -543,6 +568,7 @@ export function Workspace() {
           ))}
         </nav>
       )}
+
 
       <WorldLibraryDialog
         open={libraryOpen}

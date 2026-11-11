@@ -1,3 +1,7 @@
+import { EXPANDED_ASSET_IDS } from '../../core/assets/expandedDefinitions';
+import type { TerrainStyle } from '../../core/world-plan/schema';
+import { correctBuildSpelling, spellingNotice } from './spelling';
+import { parseAssetRequests } from './assetRequests';
 import { clamp, titleFromPrompt } from '../../core/utils/id';
 import { seedFromPrompt } from '../../core/world-plan/factory';
 import {
@@ -304,9 +308,37 @@ function detectExplicitCounts(text: string): {
   return { counts, matched };
 }
 
+// Arabic descriptions are converted into the same explicit cues used by the
+// offline planner. This is deliberately a small vocabulary, not a translation
+// service: the original prompt remains in the saved project unchanged.
+function addArabicCues(text: string): string {
+  const normalized = text.replace(/[\u064b-\u065f\u0670]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي');
+  const vocabulary: [RegExp, string][] = [
+    [/جزير|جزر/, 'island'], [/صحراء|صحراوي|كثبان|رمال/, 'desert'],
+    [/واحه|واحة/, 'oasis'], [/جبل|جبال|ثلج/, 'mountain'],
+    [/غاب|احراش|ادغال/, 'forest'], [/مرج|مروج|سهل|وادي/, 'meadow'],
+    [/اطلال|اثار|معبد/, 'ruins'], [/قريه|قرية|قري|مدين|بلد|منازل|بيوت/, 'village'],
+    [/ليل|قمر|نجوم/, 'night'], [/غروب|شروق|مساء/, 'sunset'],
+    [/بحير|نهر|جدول|ماء|بحر|محيط/, 'water'], [/نهر|جدول/, 'river'],
+    [/جسر/, 'bridge'], [/مزرع|ضيعه|ضيعة|حظير|قمح|دجاج/, 'farm'],
+    [/حظير/, 'barn'], [/دجاج|قن/, 'chicken'], [/قمح|حقول/, 'wheat fields'],
+    [/سياج|اسوار|سور/, 'fence'], [/طريق|طرق|ممر/, 'path'], [/بستان/, 'orchard'],
+    [/صغير|صغيره|صغيرة/, 'small'], [/كبير|واسع|ضخم/, 'large'],
+    [/كرتون|كرتوني/, 'cartoon'], [/واقعي|طبيعي/, 'natural'],
+    [/كثيف|كثيفه|كثيفة/, 'dense'], [/قليل|متناثر/, 'sparse'],
+    [/نخيل|نخل/, 'palm'], [/فانوس|فوانيس|مصابيح/, 'lantern'],
+  ];
+  const cues = vocabulary.filter(([pattern]) => pattern.test(normalized)).map(([, cue]) => cue);
+  if (/(بدون|بلا|دون)\s+(?:ال)?(?:ماء|مياه)/.test(normalized)) cues.push('no water');
+  if (/(بدون|بلا|دون)\s+(?:ال)?(?:اشجار|شجر)/.test(normalized)) cues.push('no trees');
+  if (/(بدون|بلا|دون)\s+(?:ال)?(?:صخور|حجار)/.test(normalized)) cues.push('no rocks');
+  return `${text} ${cues.join(' ')}`;
+}
+
 function buildIntent(prompt: string, options: InterpretOptions = {}): WorldIntent {
-  const text = prompt.toLowerCase().replace(/\s+/g, ' ').trim();
-  const biomeResult = detectBiome(text);
+  const text = addArabicCues(prompt.toLowerCase().replace(/\s+/g, ' ').trim());
+  const positiveBiomeText = addArabicCues(prompt.toLowerCase().replace(/(?:بدون|بلا|دون|\bwithout|\bno)\s+(?:(?:a|the)\s+|ال)?(?:غاب(?:ة|ه|ات)?|جبال|جبل|صحراء|forest|mountains?|desert)(?![\p{L}])/gu, ' '));
+  const biomeResult = detectBiome(positiveBiomeText);
   const timeResult = detectTime(text);
   const scaleResult = detectScale(text);
   const countResult = detectExplicitCounts(text);
@@ -314,18 +346,40 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
   const densityResult = detectDensity(text);
   const features = detectFarmFeatures(text, timeResult.timeOfDay);
   const farm = features !== undefined;
+  const parsedAssets = parseAssetRequests(prompt);
+  // The farm planner owns its established structures; add only new catalog props afterward.
+  const farmAssets = farm ? parsedAssets?.filter((asset) => EXPANDED_ASSET_IDS.includes(asset.assetId as typeof EXPANDED_ASSET_IDS[number])).map((asset) => ({ ...asset, relation: undefined })) : undefined;
+  const assets = farm ? (farmAssets?.length ? farmAssets : undefined) : parsedAssets;
+  const normalized = prompt.toLowerCase().replace(/[\u064b-\u065f\u0670]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي');
+  const villageRiver = !/(?:بدون|بلا|دون)\s+(?:ال)?(?:نهر|قريه|قرية)|\b(?:without|no)\s+(?:a\s+)?(?:river|village)/u.test(normalized) &&
+    /(?:قريه|قرية|\bvillage\b)/u.test(normalized) &&
+    (/(?:نهر(?:ا)?|النهر)\s+(?:(?:يمر|يمتد)\s+)?(?:(?:في|عبر)\s+)?(?:وسط|منتصف)\s+(?:ال)?(?:قريه|قرية)/u.test(normalized) ||
+     /(?:قريه|قرية).*?(?:نهر(?:ا)?|النهر)\s+(?:يمر|يمتد)\s+(?:في\s+)?(?:وسطها|منتصفها)/u.test(normalized) ||
+     /\briver\b.{0,40}\bthrough\s+(?:the\s+)?(?:center\s+of\s+|centre\s+of\s+)?(?:the\s+)?village\b/u.test(normalized));
+  const positiveLandform = normalized.replace(/(?:بدون|بلا|دون|لا|\bwithout|\bno)\s+(?:(?:a|the)\s+|ال)?(?:وادي|واد|هضبه|هضبة|اخدود|بركان|مسطح(?:ه|ة)?|فوهه(?:\s+بركاني(?:ه|ة)?)?|فوهة(?:\s+بركاني(?:ه|ة)?)?|valley|plateau|canyon|volcano|crater|flat)(?![\p{L}])/gu, ' ');
+  const landforms: [RegExp, TerrainStyle][] = [
+    [/مسطح|مستوي|مستوية|\bflat\b/u, 'flat'],
+    [/فوهه|فوهة|\bcrater\b/u, 'crater'], [/بركان|بركاني|\bvolcano\b|\bvolcanic\b/u, 'volcano'],
+    [/اخدود|\bcanyon\b/u, 'canyon'], [/هضبه|هضبة|\bplateau\b/u, 'plateau'],
+    [/وادي|\bvalley\b/u, 'valley'],
+  ];
+  const landform = landforms.find(([pattern]) => pattern.test(positiveLandform))?.[1];
   const settlementMatches = matches(text, SETTLEMENT_KEYWORDS);
   const settlement = settlementMatches.length > 0 || farm;
   const waterMatches = matches(text, WATER_KEYWORDS);
   const dry = matches(text, DRY_KEYWORDS).length > 0;
 
   // A farm is a meadow scene; farm cues outweigh a stray biome word.
-  const biome = farm ? 'meadow' : biomeResult.biome;
-  const scale = options.scale ?? scaleResult.scale;
+  const forestAndMountains = matches(positiveBiomeText, BIOME_KEYWORDS.forest).length > 0 && matches(positiveBiomeText, BIOME_KEYWORDS.mountains).length > 0;
+  const biome = farm ? 'meadow' : forestAndMountains ? 'forest' : biomeResult.biome;
+  // An adjective attached to an individual asset should not resize the entire world.
+  const explicitWorldSize = /(?:عالم|خريطه|خريطة|منظر)\s+(?:صغير|كبير|واسع|ضخم)|(?:small|large|big|huge)\s+(?:world|map|scene)/i.test(prompt);
+  const scale = options.scale ?? (assets?.some((asset) => asset.size) && !explicitWorldSize ? 'medium' : scaleResult.scale);
   const style = options.style ?? styleResult.style;
   const density = options.density ?? densityResult.density;
   const factor = SCALE_SETTINGS[scale].countFactor;
   const base = BASE_COUNTS[biome];
+  const densityFactor = density === 'dense' ? 1.4 : density === 'sparse' ? 0.65 : 1;
 
   let buildings = Math.round(base.buildings * factor);
   let lanterns = Math.round(base.lanterns * factor);
@@ -338,24 +392,35 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
   }
 
   const counts = {
-    trees: countResult.counts.trees ?? Math.round(base.trees * factor),
-    rocks: countResult.counts.rocks ?? Math.round(base.rocks * factor),
+    trees: countResult.counts.trees ?? Math.round(base.trees * factor * densityFactor),
+    rocks: countResult.counts.rocks ?? Math.round(base.rocks * factor * densityFactor),
     buildings: countResult.counts.buildings ?? buildings,
     lanterns: countResult.counts.lanterns ?? lanterns,
   };
 
-  const water = farm
-    ? Boolean(features?.river)
-    : biome === 'island'
-      ? true
-      : !dry && waterMatches.length > 0;
+  // Strip simple, directly negated water nouns before detecting a river or lake.
+  // This is intentionally not a complete natural-language negation parser.
+  const positiveWaterText = normalized.replace(/(?:بدون|بلا|دون|\bwithout|\bno)\s+(?:(?:a|the)\s+|ال)?(?:نهر|انهار|جدول|ماء|مياه|بحيره|بحيرة|بحر|river|rivers|water|lake|sea)(?![\p{L}])/gu, ' ');
+  const river = /نهر|انهار|جدول|\brivers?\b|\bstream\b/u.test(positiveWaterText);
+  const separateWater = /بحير|بحر|محيط|واحه|واحة|\b(?:lake|sea|ocean|pond|oasis)\b/u.test(positiveWaterText);
+  const noWater = /(?:بدون|بلا|دون|\bwithout|\bno)\s+(?:(?:a|the)\s+|ال)?(?:ماء|مياه|water)(?![\p{L}])/u.test(normalized);
+  const negativeWaterBody = /(?:بدون|بلا|دون|\bwithout|\bno)\s+(?:(?:a|the)\s+|ال)?(?:نهر|انهار|جدول|بحيره|بحيرة|بحر|river|rivers|lake|sea)(?![\p{L}])/u.test(normalized);
+  const water = farm ? Boolean(features?.river) : !dry && !noWater &&
+    (biome === 'island' || separateWater || (!river && !negativeWaterBody && waterMatches.length > 0));
 
   const cues: string[] = [];
   cues.push(`biome: ${biome}`);
   if (biomeResult.matched.length > 0) cues.push(`matched: ${biomeResult.matched.slice(0, 4).join(', ')}`);
   cues.push(`time: ${timeResult.timeOfDay}`);
+  if (assets?.length) {
+    cues.push(`assets: ${assets.map((asset) => `${asset.count} ${asset.size ? asset.size + ' ' : ''}${asset.assetId}`).join(', ')}`);
+    for (const asset of assets) if (asset.relation && assets[asset.relation.target]) cues.push(`${asset.assetId} ${asset.relation.direction} of ${assets[asset.relation.target]!.assetId}`);
+  }
   if (settlementMatches.length > 0) cues.push(`settlement: ${settlementMatches[0]}`);
+  if (landform) cues.push(`terrain: ${landform}`);
   if (water) cues.push('water: enabled');
+  if (river) cues.push('river: requested');
+  if (villageRiver) cues.push('river through village: requested');
   if (scale !== 'medium') cues.push(`scale: ${scale}`);
   if (options.scale) cues.push('size override');
   if (options.style) cues.push('style override');
@@ -382,15 +447,17 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
     if (density !== 'normal') cues.push(`density: ${density}`);
   }
 
-  const summaryParts = [
-    (features ? 'Farmstead' : BIOME_PROFILES[biome].label) + (settlement && !features ? ' settlement' : ''),
-    timeResult.timeOfDay,
-    features
-      ? `${features.wheatFields} wheat field${features.wheatFields === 1 ? '' : 's'}`
-      : `${counts.trees} trees`,
-    features ? `${style} style` : `${counts.rocks} rocks`,
-  ];
-  if (!features && counts.buildings > 0) summaryParts.push(`${counts.buildings} buildings`);
+  const summaryParts = assets?.length
+    ? [BIOME_PROFILES[biome].label + (settlement ? ' settlement' : ''), timeResult.timeOfDay, ...assets.map((asset) => `${asset.count} ${asset.assetId}`)]
+    : [
+        (features ? 'Farmstead' : BIOME_PROFILES[biome].label) + (settlement && !features ? ' settlement' : ''),
+        timeResult.timeOfDay,
+        features
+          ? `${features.wheatFields} wheat field${features.wheatFields === 1 ? '' : 's'}`
+          : `${counts.trees} trees`,
+        features ? `${style} style` : `${counts.rocks} rocks`,
+      ];
+  if (!assets?.length && !features && counts.buildings > 0) summaryParts.push(`${counts.buildings} buildings`);
 
   return {
     prompt,
@@ -401,7 +468,13 @@ function buildIntent(prompt: string, options: InterpretOptions = {}): WorldInten
     scale,
     settlement,
     water,
+    ...(landform ? { landform } : {}),
+    ...(biomeResult.matched.length || landform || /قريه|قرية|مدين|\b(?:village|city|town)\b/u.test(normalized) ? { landscape: true } : {}),
+    ...(forestAndMountains && !farm ? { mountainousForest: true } : {}),
+    ...(river && !farm ? { river: true } : {}),
+    ...(villageRiver ? { villageRiver: true } : {}),
     features,
+    assets,
     style,
     density,
     counts,
@@ -424,13 +497,7 @@ export const localPromptInterpreter: PromptInterpreter = {
   label: LOCAL_INTERPRETER_LABEL,
   offline: true,
   async interpret(prompt, options) {
-    const intent = buildIntent(prompt, options);
-    return {
-      intent,
-      providerId: LOCAL_INTERPRETER_ID,
-      providerLabel: LOCAL_INTERPRETER_LABEL,
-      offline: true,
-    };
+    return interpretPromptLocally(prompt, options);
   },
 };
 
@@ -438,8 +505,13 @@ export const promptInterpreters: PromptInterpreter[] = [localPromptInterpreter];
 
 /** Exported for tests and for future provider implementations. */
 export function interpretPromptLocally(prompt: string, options?: InterpretOptions): PromptInterpretation {
+  const correction = correctBuildSpelling(prompt);
+  const intent = buildIntent(correction.text, { ...options, seed: options?.seed ?? seedFromPrompt(prompt) });
+  intent.prompt = prompt;
+  intent.name = titleFromPrompt(prompt);
   return {
-    intent: buildIntent(prompt, options),
+    intent,
+    ...(correction.changes.length ? { notes: [spellingNotice(correction.changes)] } : {}),
     providerId: localPromptInterpreter.id,
     providerLabel: localPromptInterpreter.label,
     offline: true,
