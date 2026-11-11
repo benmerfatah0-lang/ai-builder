@@ -1,7 +1,7 @@
 import { MeshBuilder, type Vec2, type Vec3 } from '../mesh';
 import { arch, box, cylinder, extrude, lathe, prism, sphere, sweep } from '../primitives';
 import {
-  BEVELLED_BOX_TRIANGLES, BOX_TRIANGLES, crenellations, dentils, door, framedPanel, planks,
+  BEVELLED_BOX_TRIANGLES, BOX_TRIANGLES, CORBEL_TRIANGLES, crenellations, dentils, door, framedPanel, planks,
   planRepeatedUnits, roofPanel, ridgeCap, stoneWall, stringCourse, windowUnit, corbel, detailRng,
   type MasonryStyle, type Quality, type RoofStyle,
 } from '../detail';
@@ -1274,7 +1274,7 @@ export function machicolation(options: { radius?: number; width?: number; depth?
   const budget = options.budget ?? 1200;
   if (options.round) {
     const radius = Math.max(1, options.radius ?? 3);
-    const corbels = planRepeatedUnits(Math.max(8, Math.round(radius * 5)), BEVELLED_BOX_TRIANGLES, budget, 8).modeled;
+    const corbels = planRepeatedUnits(Math.max(8, Math.round(radius * 5)), CORBEL_TRIANGLES, budget, 8).modeled;
     for (let index = 0; index < corbels; index += 1) {
       const angle = (index / corbels) * Math.PI * 2;
       const part = corbel({ depth: 0.42, width: 0.26, height: 0.36 });
@@ -1323,7 +1323,7 @@ export function corbelRun(options: { length: number; seed?: number; budget?: num
   const builder = new MeshBuilder();
   const length = Math.max(0.6, options.length);
   const wanted = Math.max(2, Math.round(length / (options.spacing ?? 0.8)));
-  const count = planRepeatedUnits(wanted, 92, options.budget ?? 900, 2).modeled;
+  const count = planRepeatedUnits(wanted, CORBEL_TRIANGLES, options.budget ?? 900, 2).modeled;
   for (let index = 0; index < count; index += 1) {
     const x = -length / 2 + (length * (index + 0.5)) / count;
     const part = corbel({});

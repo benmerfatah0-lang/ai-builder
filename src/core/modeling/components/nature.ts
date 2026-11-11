@@ -4,7 +4,7 @@ import {
   BEVELLED_BOX_TRIANGLES, blade, branch, branchSpine, componentBudget, detailRng, fracture,
   leafCluster, planChildren, planRepeatedUnits, qualityTriangles, trunk, tuft, type Quality,
 } from '../detail';
-import { normalize, seatOnGround } from '../scale';
+import { fitHeight } from '../scale';
 import { chance, intRange, pick, range } from '../../generation/rng';
 
 /**
@@ -96,11 +96,6 @@ function branchCost(segments: number, twigs: number): number {
  * Uniform is also honest — a taller fern really is a wider fern — and it never
  * stretches a normal, which non-uniform scaling would.
  */
-function fitHeight(builder: MeshBuilder, height: number, maxFactor = 2, center = true): void {
-  normalize(builder, { by: 'height', target: Math.max(0.02, height), maxFactor });
-  seatOnGround(builder, center);
-}
-
 /** A spine that leans away from vertical as it rises, in the XZ direction given. */
 function leaningSpine(height: number, lean: number, direction: number, segments = 5, sag = 0): Vec3[] {
   const count = Math.max(2, Math.round(segments));

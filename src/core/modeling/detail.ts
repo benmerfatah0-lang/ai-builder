@@ -44,9 +44,35 @@ export function qualityTriangles(quality: Quality | undefined): number {
   return QUALITY_TRIANGLES[quality ?? 'high'];
 }
 
-/** Triangles a plain box costs, and a single-segment chamfered box. */
+/** Triangles a plain box costs. */
 export const BOX_TRIANGLES = 12;
+
+/**
+ * Triangles a chamfered box costs **at one bevel segment**.
+ *
+ * A chamfer is not one strip: it is twelve edge strips of `steps` quads and eight
+ * corner patches of `steps²` quads, so the cost is quadratic — see
+ * `bevelledBoxTriangles`. At the two-segment default a chamfered box is 108
+ * triangles, two and a half times this figure, so anything that charges this
+ * constant has to pass `bevelSegments: 1` or it spends triangles it does not
+ * have. The test suite measures a real box at every step count to keep the two
+ * honest with each other.
+ */
 export const BEVELLED_BOX_TRIANGLES = 44;
+
+/** Triangles a chamfered box costs at any bevel resolution. */
+export function bevelledBoxTriangles(steps = 2): number {
+  const resolved = Math.max(1, Math.round(steps));
+  return 16 * resolved * resolved + 16 * resolved + 12;
+}
+
+/**
+ * Triangles a `corbel` costs: an eleven-point scroll profile, extruded.
+ *
+ * Charged as a chamfered box in one place, which halved the price of a
+ * machicolation and let a gallery build twice the corbels it could afford.
+ */
+export const CORBEL_TRIANGLES = 92;
 
 export interface RepeatedUnits {
   /** How many units to model as real geometry. */

@@ -6,7 +6,8 @@ import {
 } from './mesh';
 import { arch, box, cylinder, extrude, lathe, loft, plane, prism, sphere, sweep, torus } from './primitives';
 import {
-  QUALITY_TRIANGLES, banner, barrel, blade, bone, boulder, branch, chain, corbel, crag,
+  BEVELLED_BOX_TRIANGLES, BOX_TRIANGLES, CORBEL_TRIANGLES, QUALITY_TRIANGLES, banner, barrel,
+  bevelledBoxTriangles, blade, bone, boulder, branch, chain, corbel, crag,
   crenellations, crystalCluster, dentils, displace, door, dressedBlock, feather, fracture,
   framedPanel, gear, helix, hoopBand, leafCluster, palisade, planks, planRepeatedUnits, post,
   ridgeCap, rivetRow, rockCluster, rope, roofPanel, ruinTop, spikeRow, stairs, stoneWall,
@@ -20,6 +21,9 @@ import {
   bamboo, bush, cactus, conifer, deadTree, fallenLog, fern, fernFrond, flower, flowerCluster,
   grassTuft, hedge, leafLitter, mushroom, mushroomCluster, palm, reed, tree, treeStump,
 } from './components/nature';
+import {
+  boulderField, cairn, caveFormation, caveMouth, cliffFace, monolith, rockArch, scree, steppingStones,
+} from './components/rock';
 import { getModelTexture, cachedModelTextures, type ModelTextureKind } from './textures';
 import { SURFACES, getModelMaterial, materialsFor, pickSurface, PALETTES, surfaceTexel } from './materials';
 import { REFERENCE, dimensionsOf, normalize, scaleWarnings, seatOnGround, referenceSize } from './scale';
@@ -517,6 +521,20 @@ describe('detail generators', () => {
     expect(doubleFaces(data)).toBe(0);
     expect(data.indices.length / 3).toBeGreaterThan(0);
     expect(data.indices.length / 3).toBeLessThanOrEqual(maxTriangles);
+  });
+
+  it('charges what a chamfered box and a corbel actually cost', () => {
+    // Every budget in this library is arithmetic on constants like these, so a
+    // constant that drifts from the primitive it prices is a silent overspend:
+    // the wall is built, the wall is over budget, and nothing fails until a
+    // scene runs out of frame time.
+    for (const steps of [1, 2, 3, 4]) {
+      const built = box(1, 0.4, 0.6, { bevel: 0.05, bevelSegments: steps }).build().indices.length / 3;
+      expect(bevelledBoxTriangles(steps), `bevelSegments ${steps}`).toBe(built);
+    }
+    expect(BOX_TRIANGLES).toBe(box(1, 0.4, 0.6).build().indices.length / 3);
+    expect(BEVELLED_BOX_TRIANGLES).toBe(bevelledBoxTriangles(1));
+    expect(CORBEL_TRIANGLES).toBe(corbel({}).build().indices.length / 3);
   });
 
   it('covers the whole wall even when the budget cannot model every stone', () => {
@@ -1227,6 +1245,78 @@ function facingRadially(data: MeshData, band: [number, number], radius: [number,
 }
 
 /**
+ * How flat the front of a mass is, and which way it faces.
+ *
+ * A cliff has a face and a boulder does not, and the difference is not the
+ * bounding box — both can be made the same proportions — it is that the
+ * front-most vertices of a face are near-coplanar and their normals point at the
+ * viewer, while a blob's front-most vertices are the pole of a rounded surface.
+ */
+function frontFlatness(data: MeshData, fraction = 0.05): { spread: number; meanNormalZ: number; widthShare: number; heightShare: number } {
+  const count = data.positions.length / 3;
+  const depths: number[] = [];
+  for (let index = 0; index < count; index += 1) depths.push(data.positions[index * 3 + 2]!);
+  const cut = [...depths].sort((a, b) => b - a)[Math.max(0, Math.min(count - 1, Math.floor(count * fraction)))]!;
+  let sum = 0;
+  let taken = 0;
+  let front = cut;
+  let left = Infinity;
+  let right = -Infinity;
+  let low = Infinity;
+  let high = -Infinity;
+  for (let index = 0; index < count; index += 1) {
+    if (depths[index]! < cut) continue;
+    sum += data.normals[index * 3 + 2]!;
+    taken += 1;
+    front = Math.max(front, depths[index]!);
+    left = Math.min(left, data.positions[index * 3]!);
+    right = Math.max(right, data.positions[index * 3]!);
+    low = Math.min(low, data.positions[index * 3 + 1]!);
+    high = Math.max(high, data.positions[index * 3 + 1]!);
+  }
+  const size = boundsOf(data).size;
+  return {
+    spread: (front - cut) / Math.max(1e-4, size[2]),
+    meanNormalZ: sum / Math.max(1, taken),
+    widthShare: (right - left) / Math.max(1e-4, size[0]),
+    heightShare: (high - low) / Math.max(1e-4, size[1]),
+  };
+}
+
+/**
+ * Whether the walls of a throat face into it.
+ *
+ * A cave is the one place where a surface has to face *away* from the viewer who
+ * is standing outside it: the walls of the passage face the passage. Measured in
+ * the plane perpendicular to the throat, around the mouth's centre, ignoring
+ * faces that are more axial than radial — the floor and the back wall.
+ */
+function throatFacing(data: MeshData, alongZ: [number, number], centreY: number, radius: [number, number]): { inward: number; outward: number } {
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const cross = new THREE.Vector3();
+  let inward = 0;
+  let outward = 0;
+  for (let corner = 0; corner + 2 < data.indices.length; corner += 3) {
+    a.set(...vertexAt(data, corner));
+    b.set(...vertexAt(data, corner + 1));
+    c.set(...vertexAt(data, corner + 2));
+    const z = (a.z + b.z + c.z) / 3;
+    if (z < alongZ[0] || z > alongZ[1]) continue;
+    const x = (a.x + b.x + c.x) / 3;
+    const y = (a.y + b.y + c.y) / 3 - centreY;
+    const distance = Math.hypot(x, y);
+    if (distance < radius[0] || distance > radius[1]) continue;
+    cross.subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+    if (Math.abs(cross.z) > Math.hypot(cross.x, cross.y) * 1.2) continue;
+    if (cross.x * x + cross.y * y < 0) inward += 1;
+    else outward += 1;
+  }
+  return { inward, outward };
+}
+
+/**
  * The direction a mesh faces, from its winding and from its stored normals.
  *
  * The two are independent: winding decides which side is culled, normals decide
@@ -1796,5 +1886,328 @@ describe('nature components', () => {
     // Arms reach out, so the silhouette is wider than a plain column.
     const column = cactus({ style: 'column', height: 4, seed: 23, budget: 3000 }).build();
     expect(bounds.size[0]).toBeGreaterThan(boundsOf(column).size[0] * 1.2);
+  });
+});
+
+describe('rock components', () => {
+  const rocks: [string, MeshBuilder][] = [
+    ['scree/apron', scree({ width: 9, depth: 7, rise: 2.4, seed: 3, outcrop: true, greenery: true })],
+    ['scree/sand', scree({ width: 6, depth: 5, seed: 4, kind: 'sandstone', outcrop: false })],
+    ['cliff/granite', cliffFace({ width: 8, height: 12, seed: 5, ledges: 4, greenery: true, plateau: true, debris: 0.6 })],
+    ['cliff/slate', cliffFace({ width: 5, height: 7, seed: 6, kind: 'slate', ledges: 2 })],
+    ['cave/mouth', caveMouth({ radius: 1.6, depth: 5.5, seed: 7, heading: 210, debris: true, formations: true })],
+    ['cave/small', caveMouth({ radius: 0.9, seed: 8, debris: false, formations: false })],
+    ['monolith/menhir', monolith({ height: 3.2, seed: 11, style: 'menhir', moss: true, runes: true })],
+    ['monolith/hoodoo', monolith({ height: 6, seed: 12, style: 'hoodoo', moss: true })],
+    ['monolith/pillar', monolith({ height: 4.5, seed: 13, style: 'pillar' })],
+    ['monolith/tor', monolith({ height: 5, seed: 14, style: 'tor', moss: true })],
+    ['formation/stalactite', caveFormation({ height: 1.8, kind: 'stalactite', seed: 17 })],
+    ['formation/stalagmite', caveFormation({ height: 1.4, kind: 'stalagmite', seed: 18 })],
+    ['formation/column', caveFormation({ height: 2.6, kind: 'column', seed: 19 })],
+    ['arch/natural', rockArch({ span: 5, seed: 23 })],
+    ['arch/bridge', rockArch({ span: 6, seed: 24, style: 'bridge' })],
+    ['crossing/river', steppingStones({ length: 6, style: 'river', seed: 29 })],
+    ['crossing/path', steppingStones({ length: 8, style: 'path', seed: 30, wander: 0.6 })],
+    ['cairn/flags', cairn({ height: 1.8, seed: 31, marker: 'flags' })],
+    ['cairn/stone', cairn({ height: 1.2, seed: 32, marker: 'stone' })],
+    ['field/boulders', boulderField({ width: 22, depth: 18, seed: 37, greenery: true, outcrops: 3 })],
+  ];
+
+  it.each(rocks)('builds a sane, seated, honestly priced %s', (name, part) => {
+    const data = part.build();
+    expect(isSane(data), name).toBe(true);
+    const bounds = boundsOf(data);
+    expect(data.indices.length / 3, name).toBeGreaterThan(20);
+    // Rock sits on the ground it broke off: anything below y = 0 would sink the
+    // whole asset into the terrain it is placed on.
+    expect(bounds.min[1], name).toBeGreaterThanOrEqual(-1e-6);
+    expect(bounds.size[1], name).toBeGreaterThan(0.005);
+    expect(doubleFaces(data), name).toBe(0);
+    const materials = [...new Set(data.materials ?? [])];
+    expect(materials.length, name).toBeLessThanOrEqual(10);
+    for (const id of materials) expect(id in SURFACES, `${name}: ${id}`).toBe(true);
+  });
+
+  it('builds the same rock from the same seed', () => {
+    const builds: [string, () => MeshBuilder][] = [
+      ['scree', () => scree({ width: 9, depth: 7, rise: 2.4, seed: 3, outcrop: true, greenery: true })],
+      ['cliffFace', () => cliffFace({ width: 8, height: 12, seed: 5, ledges: 4, greenery: true, plateau: true })],
+      ['caveMouth', () => caveMouth({ radius: 1.6, depth: 5.5, seed: 7, heading: 210, formations: true })],
+      ['monolith', () => monolith({ height: 6, seed: 12, style: 'hoodoo', runes: true, moss: true })],
+      ['cairn', () => cairn({ height: 1.8, seed: 31, marker: 'flags' })],
+      ['boulderField', () => boulderField({ width: 22, depth: 18, seed: 37, greenery: true })],
+    ];
+    for (const [name, build] of builds) {
+      const first = build().build();
+      const second = build().build();
+      expect(Array.from(first.positions), name).toEqual(Array.from(second.positions));
+      expect(first.materials, name).toEqual(second.materials);
+    }
+  });
+
+  const heights: [string, MeshBuilder, number][] = [
+    ['cliff', cliffFace({ width: 8, height: 12, seed: 5, ledges: 4, plateau: true }), 12],
+    ['cliff/small', cliffFace({ width: 5, height: 7, seed: 6, kind: 'slate' }), 7],
+    ['menhir', monolith({ height: 3.2, seed: 11, runes: true, moss: true }), 3.2],
+    ['hoodoo', monolith({ height: 6, seed: 12, style: 'hoodoo' }), 6],
+    ['pillar', monolith({ height: 4.5, seed: 13, style: 'pillar' }), 4.5],
+    ['tor', monolith({ height: 5, seed: 14, style: 'tor' }), 5],
+    ['stalactite', caveFormation({ height: 1.8, kind: 'stalactite', seed: 17 }), 1.8],
+    ['stalagmite', caveFormation({ height: 1.4, kind: 'stalagmite', seed: 18 }), 1.4],
+    ['column', caveFormation({ height: 2.6, kind: 'column', seed: 19 }), 2.6],
+    ['cairn', cairn({ height: 1.8, seed: 31, marker: 'flags' }), 1.8],
+    ['cairn/stone', cairn({ height: 1.2, seed: 32, marker: 'stone' }), 1.2],
+    // An arch's height is its crown: the rise of the underside plus the band.
+    ['arch', rockArch({ span: 5, seed: 23 }), 5 * 0.69],
+    ['bridge', rockArch({ span: 6, seed: 24, style: 'bridge' }), 6 * 0.69],
+    // A cave mouth is placed by its radius, and the face around it follows.
+    ['caveMouth', caveMouth({ radius: 1.6, seed: 7 }), 1.6 * 3.7],
+  ];
+
+  it.each(heights)('holds the height it was asked for: %s', (_name, part, expected) => {
+    const ratio = boundsOf(part.build()).max[1] / expected;
+    expect(ratio).toBeGreaterThan(0.9);
+    expect(ratio).toBeLessThan(1.05);
+  });
+
+  it('spends what it is given', () => {
+    const builds: [string, (budget: number) => MeshBuilder][] = [
+      ['scree', (budget) => scree({ width: 9, depth: 7, rise: 2.4, seed: 3, budget, outcrop: true, greenery: true })],
+      ['cliff', (budget) => cliffFace({ width: 8, height: 12, seed: 5, budget, ledges: 4, greenery: true, plateau: true, debris: 0.6 })],
+      ['caveMouth', (budget) => caveMouth({ radius: 1.6, depth: 5.5, seed: 7, budget, debris: true, formations: true })],
+      ['menhir', (budget) => monolith({ height: 3.2, seed: 11, budget, runes: true, moss: true })],
+      ['hoodoo', (budget) => monolith({ height: 6, seed: 12, style: 'hoodoo', budget, moss: true })],
+      ['tor', (budget) => monolith({ height: 5, seed: 14, style: 'tor', budget, moss: true })],
+      ['column', (budget) => caveFormation({ height: 2.6, kind: 'column', seed: 19, budget })],
+      ['bridge', (budget) => rockArch({ span: 6, seed: 24, style: 'bridge', budget })],
+      ['crossing', (budget) => steppingStones({ length: 8, style: 'path', seed: 30, budget })],
+      ['cairn', (budget) => cairn({ height: 1.8, seed: 31, marker: 'flags', budget })],
+      ['boulderField', (budget) => boulderField({ width: 22, depth: 18, seed: 37, budget, greenery: true })],
+    ];
+    const over: string[] = [];
+    for (const budget of [400, 1200, 3000]) {
+      for (const [name, build] of builds) {
+        const triangles = build(budget).build().indices.length / 3;
+        if (triangles > budget * 1.4 + 120) over.push(`${name}@${budget}: ${triangles}`);
+      }
+    }
+    expect(over).toEqual([]);
+  });
+
+  it('grades a scree apron coarse to the toe', () => {
+    const width = 9;
+    const depth = 7;
+    const rise = 2.4;
+    const data = scree({ width, depth, rise, stone: 0.4, seed: 3, outcrop: false }).build();
+    const bounds = boundsOf(data);
+    expect(bounds.min[1]).toBeGreaterThanOrEqual(-1e-6);
+    expect(bounds.size[0]).toBeGreaterThan(width * 0.85);
+    let headTop = 0;
+    let toeTop = 0;
+    for (let index = 0; index < data.positions.length; index += 3) {
+      const y = data.positions[index + 1]!;
+      const z = data.positions[index + 2]!;
+      if (z < -depth / 6) headTop = Math.max(headTop, y);
+      if (z > depth / 6) toeTop = Math.max(toeTop, y);
+    }
+    // The apron falls from the head of the slope to its toe.
+    expect(headTop).toBeGreaterThan(rise * 0.8);
+    expect(toeTop).toBeLessThan(rise * 0.6);
+    // And the debris stands prouder of the sheet at the toe than at the head:
+    // blocks roll to the bottom of a talus slope and the fine stuff stays up top.
+    expect(toeTop).toBeGreaterThan((headTop - rise) * 1.4);
+  });
+
+  it('batters a cliff into a face instead of a blob', () => {
+    // No ledges and no debris: both stand proud of the face, and the point of the
+    // measurement is the face itself.
+    const cliff = cliffFace({ width: 8, height: 12, depth: 3.4, seed: 5, ledges: 0, debris: 0 }).build();
+    const size = boundsOf(cliff).size;
+    expect(size[1] / 12).toBeGreaterThan(0.97);
+    // A wall is thinner than it is wide.
+    expect(size[2]).toBeLessThan(size[0] * 0.85);
+    // A mass of the same proportions with no face battered onto it, which is what
+    // a cliff is not allowed to be.
+    const blob = boulder({ radius: 2.4, seed: 5, segments: 18, roughness: 0.6, stretch: [8 / 4.8, 12 / 4.8, 3.4 / 4.8] }).build();
+    const face = frontFlatness(cliff, 0.1);
+    const round = frontFlatness(blob, 0.1);
+    // The front of a face is near-coplanar and runs the whole height of it; the
+    // front of a blob is the pole of a rounded surface, standing proud of
+    // everything around it and bunched toward the middle.
+    expect(face.spread).toBeLessThan(round.spread * 0.5);
+    expect(face.heightShare).toBeGreaterThan(0.8);
+    expect(face.widthShare).toBeGreaterThan(0.6);
+    expect(face.meanNormalZ).toBeGreaterThan(0.6);
+  });
+
+  it('models cliff ledges as geometry and grows things on them', () => {
+    const bare = cliffFace({ width: 8, height: 12, seed: 5, ledges: 0 }).build();
+    const ledged = cliffFace({ width: 8, height: 12, seed: 5, ledges: 4 }).build();
+    // Four ledges, each a plain box: a ledge is real geometry, and `fractureStone`
+    // roughens it without adding a single triangle.
+    expect(ledged.indices.length / 3).toBeGreaterThanOrEqual(bare.indices.length / 3 + 4 * BOX_TRIANGLES);
+    const grown = cliffFace({ width: 8, height: 12, seed: 5, ledges: 4, greenery: true }).build();
+    const materials = new Set(grown.materials ?? []);
+    expect(materials.has('moss') || materials.has('grass') || materials.has('foliage-olive')).toBe(true);
+    expect(new Set(ledged.materials ?? []).has('moss')).toBe(false);
+  });
+
+  it('waists a hoodoo under the cap stone that saved it', () => {
+    const height = 6;
+    const data = monolith({ height, seed: 12, style: 'hoodoo' }).build();
+    const foot = widestAtHeight(data, height * 0.08, 0.28);
+    const waist = widestAtHeight(data, height * 0.5, 0.28);
+    const cap = widestAtHeight(data, height * 0.9, 0.18);
+    expect(foot).toBeGreaterThan(0.2);
+    expect(waist).toBeLessThan(foot * 0.7);
+    expect(waist).toBeLessThan(cap * 0.5);
+    // The cap overhangs the foot: a harder bed sheltering the spire under it.
+    expect(cap).toBeGreaterThan(foot);
+  });
+
+  it('sets a menhir as a slab and a basalt pillar as a column', () => {
+    const menhir = boundsOf(monolith({ height: 3.2, seed: 11 }).build()).size;
+    const pillar = boundsOf(monolith({ height: 4.5, seed: 13, style: 'pillar' }).build()).size;
+    expect(menhir[2] / menhir[0]).toBeLessThan(0.7);
+    expect(pillar[2] / pillar[0]).toBeGreaterThan(0.72);
+  });
+
+  it('leans a standing stone off the vertical by the amount asked', () => {
+    const upright = monolith({ height: 4, seed: 21, lean: 0 }).build();
+    const leaning = monolith({ height: 4, seed: 21, lean: 0.18 }).build();
+    const drift = (data: MeshData): number => centroidAt(data, 3, 4)[0] - centroidAt(data, 0, 1)[0];
+    expect(Math.abs(drift(upright))).toBeLessThan(0.25);
+    expect(drift(leaning)).toBeGreaterThan(0.4);
+    // Leaning about the foot, not about the world origin: the base stays put.
+    expect(boundsOf(leaning).min[1]).toBeGreaterThanOrEqual(-1e-6);
+  });
+
+  it('carves runes into the stone and leaves them out when not asked', () => {
+    const carved = monolith({ height: 3.2, seed: 11, runes: true }).build();
+    const plain = monolith({ height: 3.2, seed: 11 }).build();
+    expect(new Set(carved.materials ?? []).has('slate')).toBe(true);
+    expect(new Set(plain.materials ?? []).has('slate')).toBe(false);
+    expect(carved.indices.length / 3).toBeGreaterThan(plain.indices.length / 3);
+  });
+
+  it('opens a cave mouth you can look down and walk into', () => {
+    const radius = 1.6;
+    const depth = 5.5;
+    const mouthY = radius * 1.04;
+    const data = caveMouth({ radius, depth, seed: 7, debris: false, formations: false }).build();
+    // Down the axis of the throat from well in front of it. Nothing may stop the
+    // ray until the back wall: a mouth that is painted on, or a hill that stands
+    // inside its own passage, both show up here as an early hit.
+    for (const offset of [-0.6, 0, 0.6]) {
+      const hits = rayHits(data, [0, mouthY + radius * offset, radius * 4], [0, 0, -1], radius * 4 + depth + 6);
+      expect(hits.length, `at ${offset} of the radius`).toBeGreaterThan(0);
+      expect(hits[0]!, `at ${offset} of the radius`).toBeGreaterThan(radius * 4 + depth * 0.92);
+    }
+  });
+
+  it('faces the throat of a cave into the passage', () => {
+    const radius = 1.6;
+    const depth = 5.5;
+    const data = caveMouth({ radius, depth, seed: 7, debris: false, formations: false }).build();
+    const facing = throatFacing(data, [-depth * 0.9, -depth * 0.15], radius * 1.04, [radius * 0.5, radius * 1.3]);
+    // Standing in the entrance, the walls have to be visible: a throat built from
+    // an outward-facing tube is culled from inside and shows the sky behind it.
+    expect(facing.inward).toBeGreaterThan(20);
+    expect(facing.outward).toBeLessThan(facing.inward * 0.1);
+  });
+
+  it('turns a cave mouth to face down its surveyed heading', () => {
+    const radius = 1.6;
+    const depth = 5.5;
+    const mouthY = radius * 1.04;
+    const reach = radius * 4 + depth + 6;
+    // heading 0 means the passage runs toward +Z, so the opening faces −Z.
+    const north = caveMouth({ radius, depth, seed: 7, heading: 0, debris: false, formations: false }).build();
+    expect(rayHits(north, [0, mouthY, -radius * 4], [0, 0, 1], reach)[0]!).toBeGreaterThan(radius * 4 + depth * 0.9);
+    expect(rayHits(north, [0, mouthY, radius * 4], [0, 0, -1], reach)[0]!).toBeLessThan(radius * 2);
+    // heading 90 puts the same opening on the −X side.
+    const east = caveMouth({ radius, depth, seed: 7, heading: 90, debris: false, formations: false }).build();
+    expect(rayHits(east, [-radius * 4, mouthY, 0], [1, 0, 0], reach)[0]!).toBeGreaterThan(radius * 4 + depth * 0.9);
+    expect(rayHits(east, [radius * 4, mouthY, 0], [-1, 0, 0], reach)[0]!).toBeLessThan(radius * 2);
+  });
+
+  it('leaves a rock arch open under its crown and solid at its feet', () => {
+    const span = 5;
+    const rise = span * 0.52;
+    const data = rockArch({ span, seed: 23 }).build();
+    const clear = rayHits(data, [0, 0.05, 0], [0, 1, 0], rise * 3);
+    expect(clear.length).toBeGreaterThan(0);
+    // Headroom under the crown: an arch is the opening, and rubble at its feet
+    // must not choke the thing it was built to be.
+    expect(Math.min(...clear)).toBeGreaterThan(rise * 0.8);
+    const foot = rayHits(data, [span * 0.68, 0.05, 0], [0, 1, 0], rise * 3);
+    expect(foot.length).toBeGreaterThan(0);
+    expect(Math.min(...foot)).toBeLessThan(rise * 0.3);
+  });
+
+  it('lays a bridge deck a road can cross', () => {
+    const span = 6;
+    const crown = span * 0.69;
+    const data = rockArch({ span, seed: 24, style: 'bridge' }).build();
+    const top = boundsOf(data).max[1];
+    expect(top / crown).toBeGreaterThan(0.97);
+    for (const x of [-span * 0.4, 0, span * 0.4]) {
+      const down = rayHits(data, [x, top + 2, 0], [0, -1, 0], 4);
+      expect(down.length, `at x ${x}`).toBeGreaterThan(0);
+      expect(Math.min(...down), `at x ${x}`).toBeLessThan(2.4);
+    }
+  });
+
+  it('levels a crossing without turning it into paving', () => {
+    const length = 8;
+    const stone = 0.4;
+    const tread = stone * 0.62;
+    const data = steppingStones({ length, stone, wander: 0.6, style: 'path', seed: 30 }).build();
+    const bounds = boundsOf(data);
+    expect(bounds.min[1]).toBeGreaterThanOrEqual(-1e-6);
+    expect(bounds.size[2]).toBeGreaterThan(length * 0.9);
+    expect(bounds.max[1]).toBeGreaterThan(tread * 0.85);
+    expect(bounds.max[1]).toBeLessThan(tread * 1.45);
+    // The line wanders: whoever laid it stepped where the footing was.
+    expect(bounds.size[0]).toBeGreaterThan(stone * 1.2);
+    const wet = new Set(steppingStones({ length: 6, stone, style: 'river', seed: 29 }).build().materials ?? []);
+    expect(wet.has('slate')).toBe(true);
+  });
+
+  it('builds every rock at a scale the reference table accepts', () => {
+    // The reference table is what tells the pipeline that a 40 m chair is a bug,
+    // so a generator whose default build trips it is either mis-scaled or missing
+    // from the table — and a missing entry means no check at all.
+    const kinds: [string, MeshBuilder][] = [
+      ['cliff-face', cliffFace({ width: 8, height: 12, seed: 5 })],
+      ['scree-slope', scree({ width: 9, depth: 7, rise: 2.4, seed: 3 })],
+      ['boulder-field', boulderField({ width: 22, depth: 18, seed: 37 })],
+      ['cave-mouth', caveMouth({ radius: 1.6, seed: 7 })],
+      ['rock-arch', rockArch({ span: 5, seed: 23 })],
+      ['stepping-stones', steppingStones({ length: 8, seed: 30 })],
+      ['cairn', cairn({ height: 1.8, seed: 31 })],
+      ['menhir', monolith({ height: 3.2, seed: 11 })],
+      ['hoodoo', monolith({ height: 6, seed: 12, style: 'hoodoo' })],
+      ['rock-pillar', monolith({ height: 4.5, seed: 13, style: 'pillar' })],
+      ['tor', monolith({ height: 5, seed: 14, style: 'tor' })],
+      ['stalactite', caveFormation({ height: 1.8, kind: 'stalactite', seed: 17 })],
+      ['stalagmite', caveFormation({ height: 1.4, kind: 'stalagmite', seed: 18 })],
+    ];
+    for (const [kind, part] of kinds) {
+      expect(referenceSize(kind), kind).not.toBeNull();
+      expect(scaleWarnings(kind, part.build()), kind).toEqual([]);
+    }
+  });
+
+  it('covers a boulder field even when it can only afford a few stones', () => {
+    const rich = boulderField({ width: 22, depth: 18, seed: 37, outcrops: 2 }).build();
+    const poor = boulderField({ width: 22, depth: 18, seed: 37, budget: 500, outcrops: 2 }).build();
+    expect(poor.indices.length / 3).toBeLessThan((rich.indices.length / 3) * 0.25);
+    const wide = boundsOf(rich).size;
+    const narrow = boundsOf(poor).size;
+    expect(wide[0]).toBeGreaterThan(22 * 0.6);
+    // A poor field is a sparse field, not a pile at one end of an empty one.
+    expect(narrow[0]).toBeGreaterThan(wide[0] * 0.6);
+    expect(narrow[2]).toBeGreaterThan(wide[2] * 0.6);
   });
 });

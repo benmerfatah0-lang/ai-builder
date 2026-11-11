@@ -67,6 +67,21 @@ export const REFERENCE: Record<string, [number, number, number]> = {
   reeds: [1, 1.6, 1],
   mushroom: [0.3, 0.25, 0.3],
 
+  /* geology, measured across × high × deep */
+  'cliff-face': [8, 12, 4],
+  'scree-slope': [9, 3, 7],
+  'boulder-field': [22, 3, 18],
+  'cave-mouth': [10, 6, 12],
+  'rock-arch': [7, 3.5, 3],
+  'stepping-stones': [2, 0.4, 8],
+  cairn: [1.2, 1.8, 1.2],
+  menhir: [1.2, 3.5, 0.7],
+  hoodoo: [2.6, 6, 2.6],
+  'rock-pillar': [1.6, 4.5, 1.4],
+  tor: [4, 5, 4],
+  stalactite: [0.6, 1.8, 0.6],
+  stalagmite: [0.5, 1.4, 0.5],
+
   /* animals, measured at the withers and nose to tail */
   horse: [2.4, 1.6, 0.8],
   camel: [2.8, 2.1, 0.9],
@@ -263,6 +278,24 @@ export function seatOnGround(builder: MeshBuilder, centerHorizontally = true): M
     centerHorizontally ? -bounds.center[2] : 0,
   );
   return boundsOf(builder.build());
+}
+
+/**
+ * Brings a component to the height it was asked for and seats it on the ground.
+ *
+ * Every generator ends with this, because a model whose real height drifted from
+ * its requested height is a model whose footprint, collision box and scale
+ * warning are all wrong. The correction is uniform and clamped: a generator that
+ * overshot by a factor of nine has a bug, and `maxFactor` keeps that bug from
+ * being hidden by shrinking the asset to a speck.
+ *
+ * `center` is false for anything deliberately off-axis — a trunk buttressed on
+ * one side, a palm leaning into the wind — where centring on the bounding box
+ * would undo the lean the generator just built.
+ */
+export function fitHeight(builder: MeshBuilder, height: number, maxFactor = 2, center = true): void {
+  normalize(builder, { by: 'height', target: Math.max(0.02, height), maxFactor });
+  seatOnGround(builder, center);
 }
 
 /** Recentres on X and Z without touching the base height. */
