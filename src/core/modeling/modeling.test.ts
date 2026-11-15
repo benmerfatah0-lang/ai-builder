@@ -57,6 +57,10 @@ import {
   throne,
   wardrobe,
 } from './components/furniture';
+import {
+  aqueduct, bridge, cropRow, dock, haystack, ladder, loom, millstone, mineEntrance,
+  scaffold, scarecrow, waterWheel,
+} from './components/works';
 import { getModelTexture, cachedModelTextures, type ModelTextureKind } from './textures';
 import { SURFACES, getModelMaterial, materialsFor, pickSurface, PALETTES, surfaceTexel } from './materials';
 import { REFERENCE, dimensionsOf, normalize, scaleWarnings, seatOnGround, referenceSize } from './scale';
@@ -191,6 +195,44 @@ function rayHits(data: MeshData, origin: [number, number, number], direction: [n
     if (distance > 1e-4 && distance <= maxDistance) hits.push(distance);
   }
   return hits.sort((first, second) => first - second);
+}
+
+/**
+ * How much of a span is open water, counted from underneath the bed.
+ *
+ * A bridge or an arcade is not a wall: whatever it crosses still has to be there.
+ * Sampling downward rays cannot say so, because a ray started inside a pier finds
+ * nothing above it either. Shot upward from below the bed, the two cases part at
+ * once — a pier is met half a metre up, while under an arch there is nothing
+ * overhead for metres. Runs are counted so that one wide opening is not mistaken
+ * for the several a long crossing needs.
+ */
+function openWater(data: MeshData, from: number, to: number, samples = 33): { open: number; total: number; runs: number } {
+  let open = 0;
+  let runs = 0;
+  let wasOpen = false;
+  for (let index = 0; index < samples; index += 1) {
+    const x = from + ((to - from) * index) / (samples - 1);
+    const clear = rayHits(data, [x, -0.5, 0], [0, 1, 0], 3).length === 0;
+    if (clear) {
+      open += 1;
+      if (!wasOpen) runs += 1;
+    }
+    wasOpen = clear;
+  }
+  return { open, total: samples, runs };
+}
+
+/** Groups numbers into runs, splitting wherever two neighbours are `gap` apart. */
+function runsOf(values: number[], gap: number): number[][] {
+  const sorted = [...values].sort((first, second) => first - second);
+  const runs: number[][] = [];
+  for (const value of sorted) {
+    const last = runs[runs.length - 1];
+    if (last && value - last[last.length - 1]! < gap) last.push(value);
+    else runs.push([value]);
+  }
+  return runs;
 }
 
 function report(builder: MeshBuilder): { data: MeshData; tris: number; bounds: ReturnType<typeof boundsOf> } {
@@ -3734,5 +3776,533 @@ describe('furniture components', () => {
       expect(outsideBounds(data, bounds.min, bounds.max), name).toBeLessThan(1e-5);
       expect(dimensionsOf(data).every((size) => Number.isFinite(size) && size >= 0.05), name).toBe(true);
     }
+  });
+});
+
+/** The iron a mine's rails, pulley and lamp cage are sold in. */
+const IRON_SURFACE = 'iron-rusted';
+
+describe('works components', () => {
+  /**
+   * Every work in the file at its richest, with its poorest beside it: a ladder,
+   * a scaffold, a quay, four bridges, three aqueducts, three mine portals, three
+   * haystacks, five crop rows, three scarecrows, three looms, three water wheels
+   * and three millstones.
+   */
+  const pieces: [string, MeshBuilder, MeshBuilder][] = [
+    ['ladder/straight', ladder({ seed: 901 }), ladder({ budget: 400, seed: 901 })],
+    ['ladder/extension', ladder({ style: 'extension', seed: 902 }), ladder({ style: 'extension', budget: 400, seed: 902 })],
+    ['ladder/step', ladder({ style: 'step', seed: 903 }), ladder({ style: 'step', budget: 400, seed: 903 })],
+    ['scaffold/timber', scaffold({ seed: 904 }), scaffold({ budget: 400, seed: 904 })],
+    ['scaffold/tube', scaffold({ style: 'tube', seed: 905 }), scaffold({ style: 'tube', budget: 400, seed: 905 })],
+    ['scaffold/bays', scaffold({ bays: 2, lifts: 2, seed: 906 }), scaffold({ bays: 2, lifts: 2, budget: 400, seed: 906 })],
+    ['dock/pile', dock({ seed: 907 }), dock({ budget: 400, seed: 907 })],
+    ['dock/stone', dock({ style: 'stone', seed: 908 }), dock({ style: 'stone', budget: 400, seed: 908 })],
+    ['dock/float', dock({ style: 'float', seed: 909 }), dock({ style: 'float', budget: 400, seed: 909 })],
+    ['bridge/timber', bridge({ seed: 910 }), bridge({ budget: 400, seed: 910 })],
+    ['bridge/stone', bridge({ style: 'stone', seed: 911 }), bridge({ style: 'stone', budget: 400, seed: 911 })],
+    ['bridge/covered', bridge({ style: 'covered', seed: 912 }), bridge({ style: 'covered', budget: 400, seed: 912 })],
+    ['bridge/rope', bridge({ style: 'rope', seed: 913 }), bridge({ style: 'rope', budget: 400, seed: 913 })],
+    ['aqueduct/arcade', aqueduct({ seed: 914 }), aqueduct({ budget: 400, seed: 914 })],
+    ['aqueduct/tiers', aqueduct({ tiers: 2, seed: 915 }), aqueduct({ tiers: 2, budget: 400, seed: 915 })],
+    ['aqueduct/brick', aqueduct({ style: 'brick', arches: 5, seed: 916 }), aqueduct({ style: 'brick', arches: 5, budget: 400, seed: 916 })],
+    ['mine/timber', mineEntrance({ seed: 917 }), mineEntrance({ budget: 400, seed: 917 })],
+    ['mine/stone', mineEntrance({ style: 'stone', seed: 918 }), mineEntrance({ style: 'stone', budget: 400, seed: 918 })],
+    ['mine/adit', mineEntrance({ style: 'adit', seed: 919 }), mineEntrance({ style: 'adit', budget: 400, seed: 919 })],
+    ['haystack/round', haystack({ seed: 920 }), haystack({ budget: 400, seed: 920 })],
+    ['haystack/long', haystack({ style: 'long', seed: 921 }), haystack({ style: 'long', budget: 400, seed: 921 })],
+    ['haystack/rick', haystack({ style: 'rick', seed: 922 }), haystack({ style: 'rick', budget: 400, seed: 922 })],
+    ['crop/wheat', cropRow({ seed: 923 }), cropRow({ budget: 400, seed: 923 })],
+    ['crop/maize', cropRow({ crop: 'maize', seed: 924 }), cropRow({ crop: 'maize', budget: 400, seed: 924 })],
+    ['crop/cabbage', cropRow({ crop: 'cabbage', seed: 925 }), cropRow({ crop: 'cabbage', budget: 400, seed: 925 })],
+    ['crop/vine', cropRow({ crop: 'vine', seed: 926 }), cropRow({ crop: 'vine', budget: 400, seed: 926 })],
+    ['crop/bean', cropRow({ crop: 'bean', rows: 2, seed: 927 }), cropRow({ crop: 'bean', rows: 2, budget: 400, seed: 927 })],
+    ['scarecrow/rag', scarecrow({ seed: 928 }), scarecrow({ budget: 400, seed: 928 })],
+    ['scarecrow/straw', scarecrow({ dress: 'straw', seed: 929 }), scarecrow({ dress: 'straw', budget: 400, seed: 929 })],
+    ['scarecrow/coat', scarecrow({ dress: 'coat', seed: 930 }), scarecrow({ dress: 'coat', budget: 400, seed: 930 })],
+    ['loom/floor', loom({ seed: 931 }), loom({ budget: 400, seed: 931 })],
+    ['loom/upright', loom({ style: 'upright', seed: 932 }), loom({ style: 'upright', budget: 400, seed: 932 })],
+    ['loom/tapestry', loom({ style: 'tapestry', seed: 933 }), loom({ style: 'tapestry', budget: 400, seed: 933 })],
+    ['wheel/undershot', waterWheel({ style: 'undershot', seed: 934 }), waterWheel({ style: 'undershot', budget: 400, seed: 934 })],
+    ['wheel/overshot', waterWheel({ seed: 935 }), waterWheel({ budget: 400, seed: 935 })],
+    ['wheel/breast', waterWheel({ style: 'breast', seed: 936 }), waterWheel({ style: 'breast', budget: 400, seed: 936 })],
+    ['millstone/coupled', millstone({ seed: 937 }), millstone({ budget: 400, seed: 937 })],
+    ['millstone/single', millstone({ rest: 'single', seed: 938 }), millstone({ rest: 'single', budget: 400, seed: 938 })],
+    ['millstone/leaning', millstone({ rest: 'leaning', seed: 939 }), millstone({ rest: 'leaning', budget: 400, seed: 939 })],
+  ];
+
+  it.each(pieces)('builds a sane, seated, honestly priced %s', (name, rich, poor) => {
+    const data = rich.build();
+    const bounds = boundsOf(data);
+    expect(isSane(data), name).toBe(true);
+    expect(isSane(poor.build()), `${name} at a poor budget`).toBe(true);
+    // A mine entrance is cut into a hillside, so its rock goes down below the
+    // surface it is cut into and the model is centred rather than seated: seating
+    // it on its lowest point would lift the portal out of the hill.
+    if (!name.startsWith('mine')) expect(bounds.min[1], `${name} base`).toBeGreaterThanOrEqual(-1e-6);
+    expect(doubleFaces(data), `${name} doubled`).toBe(0);
+    expect(data.materials.length, `${name} materials`).toBeLessThanOrEqual(10);
+    for (const material of data.materials) expect(SURFACES[material], `${name} surface ${material}`).toBeDefined();
+  });
+
+  it.each([
+    ['ladder', () => ladder({ seed: 941 })],
+    ['scaffold', () => scaffold({ seed: 942 })],
+    ['dock', () => dock({ seed: 943 })],
+    ['bridge', () => bridge({ seed: 944 })],
+    ['aqueduct', () => aqueduct({ seed: 945 })],
+    ['mine entrance', () => mineEntrance({ seed: 946 })],
+    ['haystack', () => haystack({ seed: 947 })],
+    ['crop row', () => cropRow({ seed: 948 })],
+    ['scarecrow', () => scarecrow({ seed: 949 })],
+    ['loom', () => loom({ seed: 950 })],
+    ['water wheel', () => waterWheel({ seed: 951 })],
+    ['millstone', () => millstone({ seed: 952 })],
+  ] as [string, () => MeshBuilder][])('builds the same %s twice from one seed', (_name, make) => {
+    const first = make().build();
+    const second = make().build();
+    expect(Array.from(second.positions)).toEqual(Array.from(first.positions));
+    expect(Array.from(second.indices)).toEqual(Array.from(first.indices));
+    expect(second.materials).toEqual(first.materials);
+  });
+
+  /**
+   * The heights these works are judged by. A ladder stands as tall as it was
+   * asked; a scaffold is its lift plus a rail a metre above the platform; a
+   * bridge is its deck plus whatever it carries over that; an aqueduct brings its
+   * channel to the height asked, which is the whole point of it.
+   */
+  const heights: [string, MeshBuilder, number][] = [
+    ['a climbing ladder stands four metres tall', ladder({ height: 4, seed: 961 }), 4],
+    ['an extension ladder reaches a third past its own stiles', ladder({ style: 'extension', height: 4, seed: 962 }), 5.36],
+    ['a step ladder stands as tall as it was asked', ladder({ style: 'step', height: 4, seed: 963 }), 4],
+    ['a scaffold rails its platform a metre above the deck', scaffold({ height: 3, seed: 964 }), 4.03],
+    ['a two lift scaffold stands twice as tall and rails the top', scaffold({ height: 3, lifts: 2, seed: 965 }), 7.03],
+    ['a quay stands a step and a bollard above the water', dock({ height: 1, seed: 966 }), 1.2],
+    ['a pontoon rides lower than a piled quay', dock({ style: 'float', height: 1, seed: 967 }), 1.03],
+    ['a timber bridge carries its railing over its deck', bridge({ height: 3.5, seed: 968 }), 3.6],
+    ['a stone bridge stands to the height it was asked for', bridge({ style: 'stone', height: 5, seed: 969 }), 5.01],
+    ['a covered bridge is roofed to its ridge', bridge({ style: 'covered', height: 4.6, seed: 970 }), 4.64],
+    ['an aqueduct brings its channel to twelve metres', aqueduct({ height: 12, seed: 971 }), 12.01],
+    ['a two tier aqueduct is no taller for its second arcade', aqueduct({ height: 12, tiers: 2, seed: 972 }), 12.02],
+    ['a haystack stands as tall as it was built', haystack({ height: 2, seed: 973 }), 2.12],
+    ['a scarecrow is a person tall, hat and all', scarecrow({ height: 1.9, seed: 974 }), 2],
+    ['a floor loom stands at its frame height', loom({ height: 1.6, seed: 975 }), 1.6],
+    ['an upright loom stands at its frame height', loom({ style: 'upright', height: 1.7, seed: 976 }), 1.73],
+    ['a water wheel is as tall as it is across', waterWheel({ radius: 2, seed: 977 }), 4.49],
+    ['an undershot wheel has no launder over its crown', waterWheel({ style: 'undershot', radius: 2, seed: 978 }), 4.09],
+    ['a coupled pair of millstones is two stones and a plinth', millstone({ seed: 979 }), 0.79],
+    ['one millstone lying flat is one stone thick', millstone({ rest: 'single', seed: 980 }), 0.25],
+  ];
+
+  it.each(heights)('%s', (_label, builder, expected) => {
+    const { bounds } = report(builder);
+    expect(bounds.size[1]).toBeGreaterThan(expected * 0.94);
+    expect(bounds.size[1]).toBeLessThan(expected * 1.08);
+  });
+
+  /**
+   * The budget, three ways. A poorer work is a sparser work: fewer piles, fewer
+   * arches, fewer buckets, no couplers and no voussoir joints. It is never a
+   * smaller work, and it never bills more than it was given plus the members that
+   * carry its span, which are charged whatever they cost.
+   */
+  const budgets: [string, (budget: number) => MeshBuilder][] = [
+    ['ladder', (budget) => ladder({ style: 'step', budget, seed: 981 })],
+    ['scaffold', (budget) => scaffold({ bays: 2, budget, seed: 982 })],
+    ['dock', (budget) => dock({ budget, seed: 983 })],
+    ['bridge', (budget) => bridge({ budget, seed: 984 })],
+    ['stone bridge', (budget) => bridge({ style: 'stone', budget, seed: 985 })],
+    ['covered bridge', (budget) => bridge({ style: 'covered', budget, seed: 986 })],
+    ['rope bridge', (budget) => bridge({ style: 'rope', budget, seed: 987 })],
+    ['aqueduct', (budget) => aqueduct({ budget, seed: 988 })],
+    ['mine entrance', (budget) => mineEntrance({ budget, seed: 989 })],
+    ['haystack', (budget) => haystack({ budget, seed: 990 })],
+    ['crop row', (budget) => cropRow({ crop: 'vine', budget, seed: 991 })],
+    ['scarecrow', (budget) => scarecrow({ budget, seed: 992 })],
+    ['loom', (budget) => loom({ budget, seed: 993 })],
+    ['water wheel', (budget) => waterWheel({ budget, seed: 994 })],
+    ['millstone', (budget) => millstone({ budget, seed: 995 })],
+  ];
+
+  it.each(budgets)('%s stays inside the allowance it is given', (name, make) => {
+    for (const budget of [400, 1200, 3000]) {
+      const { tris } = report(make(budget));
+      expect(tris, `${name} at ${budget}`).toBeLessThanOrEqual(budget * 1.4 + 120);
+    }
+  });
+
+  it.each(budgets)('builds a poorer %s than a richer one', (name, make) => {
+    const poor = report(make(400)).tris;
+    const rich = report(make(3000)).tris;
+    expect(poor, name).toBeLessThan(rich);
+  });
+
+  /**
+   * What a work still covers when the allowance is thin. These are the nominal
+   * dimensions a placement sweeps for: the span of a bridge, the length of a
+   * quay, the diameter of a wheel, the reach of a scarecrow's arms. Everything
+   * that comes and goes with the budget — steps, moorings, launders, benches —
+   * is outside them by design.
+   */
+  const extents: [string, MeshBuilder, number, number][] = [
+    ['a ladder is as wide as its stiles', ladder({ budget: 400, seed: 901 }), 0.5, 0.07],
+    ['a scaffold covers its bay', scaffold({ budget: 400, seed: 904 }), 3, 1.5],
+    ['two bays of scaffold cover both bays', scaffold({ bays: 2, budget: 400, seed: 906 }), 6, 1.5],
+    ['a quay runs its whole length', dock({ budget: 400, seed: 907 }), 8, 3],
+    ['a timber bridge spans its span', bridge({ budget: 400, seed: 910 }), 12, 3.6],
+    ['a stone bridge spans its span', bridge({ style: 'stone', budget: 400, seed: 911 }), 16, 4.5],
+    ['a rope bridge spans its span', bridge({ style: 'rope', budget: 400, seed: 913 }), 14, 1],
+    ['an aqueduct runs its whole length', aqueduct({ budget: 400, seed: 914 }), 20, 4],
+    ['a haystack covers its own litter', haystack({ budget: 400, seed: 920 }), 3, 3],
+    ['a crop row covers its length', cropRow({ budget: 400, seed: 923 }), 3, 0.85],
+    ['a scarecrow reaches its arms out', scarecrow({ budget: 400, seed: 928 }), 0.84, 0.4],
+    ['a loom is as wide as its warp', loom({ budget: 400, seed: 931 }), 1.4, 0.9],
+    ['a water wheel is as wide as it is tall', waterWheel({ budget: 400, seed: 935 }), 4, 0.9],
+    ['a millstone covers its own diameter', millstone({ budget: 400, seed: 937 }), 1.56, 1.56],
+  ];
+
+  it.each(extents)('%s when the budget drops', (_label, builder, across, deep) => {
+    const { bounds } = report(builder);
+    expect(bounds.size[0], 'across').toBeGreaterThan(across * 0.94);
+    expect(bounds.size[2], 'deep').toBeGreaterThan(deep * 0.94);
+  });
+
+  it.each([
+    ['ladder', ladder({ seed: 901 })],
+    ['scaffold-section', scaffold({ seed: 904 })],
+    ['dock', dock({ seed: 907 })],
+    ['bridge', bridge({ seed: 910 })],
+    ['bridge-stone', bridge({ style: 'stone', seed: 911 })],
+    ['aqueduct', aqueduct({ seed: 914 })],
+    ['mine-entrance', mineEntrance({ seed: 917 })],
+    ['haystack', haystack({ seed: 920 })],
+    ['crop-row', cropRow({ seed: 923 })],
+    ['scarecrow', scarecrow({ seed: 928 })],
+    ['loom', loom({ seed: 931 })],
+    ['water-wheel', waterWheel({ seed: 935 })],
+    ['mill-stone', millstone({ seed: 937 })],
+  ] as [string, MeshBuilder][])('keeps %s inside a plausible scale', (kind, builder) => {
+    expect(scaleWarnings(kind, builder.build())).toEqual([]);
+  });
+
+  it('puts a ladder\'s rungs where a foot goes, all the way up', () => {
+    const { data } = report(ladder({ height: 4, rise: 0.28, seed: 901 }));
+    // The stiles are boxes, so they have corners only at the foot and the top;
+    // anything standing at a rung height in the middle of the ladder is a rung.
+    for (let rung = 1; rung <= 13; rung += 1) {
+      expect(countVerticesInside(data, { x: 0, y: rung * 0.28, z: 0, radius: 0.24 }), `rung ${rung}`).toBeGreaterThan(0);
+    }
+    // And a step ladder carries boards, not rungs, wide enough to stand on.
+    const step = report(ladder({ style: 'step', height: 3, seed: 903 }));
+    expect(step.bounds.size[2], 'a step ladder stands on four feet').toBeGreaterThan(0.6);
+    for (const y of [0.24, 0.72, 1.2]) {
+      expect(countVerticesInside(step.data, { x: 0, y, z: 0.34, radius: 0.3 }), `step at ${y}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('stands a scaffold on its four corners and rails the platform a metre up', () => {
+    const { data, bounds } = report(scaffold({ height: 3, seed: 904 }));
+    for (const x of [-1.5, 1.5]) {
+      for (const z of [-0.75, 0.75]) {
+        expect(countVerticesInside(data, { x, y: 0.05, z, radius: 0.24 }), `standard at ${x},${z}`).toBeGreaterThan(0);
+      }
+    }
+    // The platform is at the top of the lift and can be walked onto from above.
+    // It is boards, and boards have gaps, so it is walked at several places
+    // across its depth rather than down its centre line.
+    const walked = [-0.6, -0.12, 0.12, 0.6]
+      .map((z) => rayHits(data, [0, 6, z], [0, -1, 0], 6))
+      .filter((hits) => hits.length > 0)
+      .map((hits) => 6 - Math.min(...hits));
+    expect(walked.length, 'a platform to stand on').toBeGreaterThan(2);
+    for (const deckY of walked) {
+      expect(deckY, 'deck height').toBeGreaterThan(2.9);
+      expect(deckY, 'deck height').toBeLessThan(3.3);
+    }
+    // A guard rail a metre above that, which is the height a rail is asked for.
+    // A rail is a strut, so its vertices are at its two ends and not along it:
+    // it is found at the standard it meets, and then walked along to the next.
+    for (const z of [-0.75, 0.75]) {
+      expect(countVerticesInside(data, { x: 1.5, y: 4, z, radius: 0.3 }), `a rail at ${z}`).toBeGreaterThan(0);
+      const along = rayHits(data, [-3, 4, z], [1, 0, 0], 6);
+      expect(along.length, `the rail runs to the far standard at ${z}`).toBeGreaterThan(0);
+      expect(along[0]!, `and starts at the near one at ${z}`).toBeGreaterThan(1.3);
+      expect(along[0]!, `and starts at the near one at ${z}`).toBeLessThan(1.8);
+    }
+    expect(bounds.size[1], 'rail above deck').toBeGreaterThan(3.9);
+    // And the faces are braced, so the scaffold does not fold sideways.
+    expect(countDiagonalMembers(data), 'braces').toBeGreaterThan(2);
+  });
+
+  it('lays a quay deck at the height asked and stands its piles on the bed', () => {
+    const { data } = report(dock({ height: 1, seed: 907 }));
+    const onto = rayHits(data, [0, 4, 0], [0, -1, 0], 4);
+    expect(onto.length, 'a deck').toBeGreaterThan(0);
+    expect(4 - onto[0]!, 'deck height').toBeGreaterThan(0.94);
+    expect(4 - onto[0]!, 'deck height').toBeLessThan(1.16);
+    // Piles from the bed up to the deck, in two rows under the two edges of it.
+    // The quay is centred over its own footprint rather than over its deck, so
+    // the rows are found from the footprint and not from a remembered offset.
+    // Mid-quay, where the steps down to the water are not underfoot, everything
+    // standing on the bed is a pile, and the piles come in two rows, one under
+    // each edge of the deck. The quay is centred over its own footprint rather
+    // than over its deck, so the rows are found by clustering what is actually
+    // there instead of being read off a remembered offset.
+    const feet: number[] = [];
+    for (let index = 0; index < data.positions.length; index += 3) {
+      if (data.positions[index + 1]! < 0.15 && Math.abs(data.positions[index]!) < 1) feet.push(data.positions[index + 2]!);
+    }
+    expect(feet.length, 'piles standing on the bed').toBeGreaterThan(10);
+    const rows = runsOf(feet, 0.6);
+    expect(rows.length, 'two rows of them').toBe(2);
+    const mean = (run: number[]): number => run.reduce((sum, value) => sum + value, 0) / run.length;
+    const nearRow = mean(rows[0]!);
+    const farRow = mean(rows[1]!);
+    expect(farRow - nearRow, 'one row under each edge of the deck').toBeGreaterThan(1.5);
+    // Each row reaches from the bed up to the beam that carries the deck.
+    for (const row of [nearRow, farRow]) {
+      expect(countVerticesInside(data, { x: 0, y: 0.95, z: row, radius: 0.45 }), `a pile head at ${row.toFixed(2)}`).toBeGreaterThan(0);
+    }
+    // Iron at the water: shoes on the piles and rings to tie a boat to.
+    expect(verticesOfMaterial(data, IRON_SURFACE).length, 'iron at the quay').toBeGreaterThan(0);
+  });
+
+  it('carries a bridge deck the whole way across its span', () => {
+    const { data } = report(bridge({ span: 12, height: 3.5, seed: 910 }));
+    // Walked from one abutment to the other, the deck is underfoot the whole way.
+    for (const x of [-5.4, -3, 0, 3, 5.4]) {
+      const onto = rayHits(data, [x, 6, 0], [0, -1, 0], 6);
+      expect(onto.length, `deck at ${x}`).toBeGreaterThan(0);
+      expect(6 - onto[0]!, `deck height at ${x}`).toBeGreaterThan(2.4);
+      expect(6 - onto[0]!, `deck height at ${x}`).toBeLessThan(2.9);
+    }
+    // A covered bridge still has that deck, and a roof over it.
+    const covered = report(bridge({ style: 'covered', span: 12, height: 4.6, seed: 912 }));
+    expect(covered.bounds.size[1], 'a roof').toBeGreaterThan(4.4);
+    const poorCovered = report(bridge({ style: 'covered', span: 12, height: 4.6, budget: 400, seed: 912 }));
+    expect(poorCovered.bounds.size[1], 'a poor bridge is still covered').toBeGreaterThan(4.4);
+    // A rope bridge hangs: the walk at mid span is below the walk at its ends.
+    const rope = report(bridge({ style: 'rope', span: 14, seed: 913 })).data;
+    const atEnd = rayHits(rope, [-5.6, 6, 0], [0, -1, 0], 6);
+    const atMiddle = rayHits(rope, [0, 6, 0], [0, -1, 0], 6);
+    expect(atEnd.length, 'walk at the end').toBeGreaterThan(0);
+    expect(atMiddle.length, 'walk at mid span').toBeGreaterThan(0);
+    expect(6 - atMiddle[0]!, 'the walk sags').toBeLessThan(6 - atEnd[0]!);
+  });
+
+  it('leaves a stone bridge open underneath, where the water goes', () => {
+    const { data } = report(bridge({ style: 'stone', span: 16, height: 5, seed: 911 }));
+    // Looking up from below the bed, the waterway is open and the piers are not:
+    // under an arch nothing is overhead for three metres, while a pier is met at
+    // once. Sampling from underneath is what tells the two apart, since a ray
+    // started inside a pier also finds nothing close above it.
+    const waterway = openWater(data, -7.8, 7.8);
+    expect(waterway.open / waterway.total, 'water under the deck').toBeGreaterThan(0.24);
+    expect(waterway.runs, 'several waterways').toBeGreaterThan(2);
+    // A poorer bridge crosses the same span on fewer arches, so it has less water
+    // under it — but it still has an arch, and it is not a dam.
+    const poor = openWater(report(bridge({ style: 'stone', span: 16, height: 5, budget: 400, seed: 911 })).data, -7.8, 7.8);
+    expect(poor.open / poor.total, 'a poor bridge still crosses on an arch').toBeGreaterThan(0.18);
+    expect(poor.runs, 'and still has a waterway').toBeGreaterThan(0);
+    // And the deck above is walked on from one abutment to the other.
+    for (const x of [-7, 0, 7]) {
+      const onto = rayHits(data, [x, 8, 0], [0, -1, 0], 8);
+      expect(onto.length, `deck at ${x}`).toBeGreaterThan(0);
+      expect(8 - onto[0]!, `deck height at ${x}`).toBeGreaterThan(3.3);
+      expect(8 - onto[0]!, `deck height at ${x}`).toBeLessThan(4);
+    }
+  });
+
+  it('brings an aqueduct\'s water to the top of its own arcade', () => {
+    const { data, bounds } = report(aqueduct({ height: 12, seed: 914 }));
+    const water = verticesOfMaterial(data, 'glass');
+    expect(water.length, 'water in the channel').toBeGreaterThan(0);
+    for (const point of water) expect(point[1], 'water at the top').toBeGreaterThan(bounds.size[1] * 0.8);
+    // The channel is walled both sides, and the water runs between the walls.
+    const wallLow = water.reduce((worst, point) => Math.max(worst, Math.abs(point[2])), 0);
+    expect(wallLow, 'the water is held in the channel').toBeLessThan(bounds.size[2] * 0.42);
+    // Under the channel the arcade is open: the valley still gets its weather,
+    // and the road through it is not walled off by the piers.
+    const valley = openWater(data, -9.8, 9.8);
+    expect(valley.open / valley.total, 'the valley is open under the arcade').toBeGreaterThan(0.4);
+    expect(valley.runs, 'one opening at least between every pair of piers').toBeGreaterThan(2);
+    // A second tier is twice the masonry, so a thin allowance builds one arcade
+    // and keeps the height and the length the valley was measured for.
+    const poor = report(aqueduct({ height: 12, tiers: 2, budget: 400, seed: 915 }));
+    expect(poor.bounds.size[1], 'still twelve metres up').toBeGreaterThan(11.3);
+    expect(poor.bounds.size[0], 'still across the valley').toBeGreaterThan(19);
+  });
+
+  it('cuts a mine mouth out of a hillside and holds it open', () => {
+    const { data } = report(mineEntrance({ width: 1.6, height: 2, seed: 917 }));
+    // A ray driven into the mouth from the front stops at the back of it, in the
+    // dark, rather than passing through a hill that is not there.
+    const into = rayHits(data, [0, 1, 4], [0, 0, -1], 6);
+    expect(into.length, 'a mouth to go into').toBeGreaterThan(0);
+    expect(into[0]!, 'the recess is set back into the hill').toBeGreaterThan(3.2);
+    expect(into[0]!, 'and stops at the back of it').toBeLessThan(4);
+    // The hillside is on both sides of it and over the top of it.
+    for (const x of [-1.5, 1.5]) {
+      expect(countVerticesInside(data, { x, y: 1, z: 0, radius: 1.1 }), `rock at ${x}`).toBeGreaterThan(0);
+    }
+    expect(countVerticesInside(data, { x: 0, y: 3.4, z: 0, radius: 1.2 }), 'rock over the mouth').toBeGreaterThan(0);
+    // The portal holds the mouth open: a head across the top of it, and legs each
+    // side, all of them timber and all of them in front of the rock.
+    const legs = verticesOfMaterial(data, 'wood-dark');
+    expect(legs.length, 'a portal').toBeGreaterThan(0);
+    expect(legs.reduce((tallest, point) => Math.max(tallest, point[1]), 0), 'the head is over the mouth').toBeGreaterThan(1.9);
+    expect(legs.reduce((widest, point) => Math.max(widest, Math.abs(point[0])), 0), 'timber each side of the mouth').toBeGreaterThan(0.6);
+    expect(legs.reduce((front, point) => Math.max(front, point[2]), 0), 'the portal stands in the mouth, not at the back of it').toBeGreaterThan(0.2);
+    // A worked mine has rails coming out of it.
+    const rails = verticesOfMaterial(data, IRON_SURFACE);
+    expect(rails.length, 'rails in the mouth').toBeGreaterThan(0);
+    expect(rails.reduce((furthest, point) => Math.max(furthest, point[2]), 0), 'rails run out of the hill').toBeGreaterThan(2);
+  });
+
+  it('builds a haystack that bellies where it was thrown and narrows to its crown', () => {
+    const { data } = report(haystack({ height: 2, radius: 1.2, seed: 920 }));
+    const belly = widestAtHeight(data, 0.7, 0.3);
+    const crown = widestAtHeight(data, 1.8, 0.2);
+    expect(belly, 'a belly').toBeGreaterThan(crown * 1.3);
+    expect(crown, 'a crown that sheds rain').toBeGreaterThan(0.05);
+    // Straw pulled out of the surface stands proud of it, which is what makes a
+    // stack read as straw rather than as a brown solid.
+    const wisps = verticesOfMaterial(data, 'thatch');
+    expect(wisps.length, 'straw').toBeGreaterThan(0);
+    const litter = verticesOfMaterial(data, 'soil');
+    expect(litter.length, 'trodden ground under the stack').toBeGreaterThan(0);
+    expect(litter.reduce((widest, point) => Math.max(widest, Math.hypot(point[0], point[2])), 0), 'the litter spreads').toBeGreaterThan(belly);
+  });
+
+  it('stands a crop row on its ridge and covers the length of it', () => {
+    const { data, bounds } = report(cropRow({ length: 3, crop: 'wheat', seed: 923 }));
+    expect(bounds.size[0], 'the row runs its length').toBeGreaterThan(3);
+    // The ridge the roots are in is the low part, and the crop stands on it.
+    const soil = verticesOfMaterial(data, 'soil');
+    expect(soil.length, 'a ridge').toBeGreaterThan(0);
+    expect(soil.reduce((highest, point) => Math.max(highest, point[1]), 0), 'the ridge is low').toBeLessThan(0.3);
+    const crop = verticesOfMaterial(data, 'thatch');
+    expect(crop.length, 'a crop').toBeGreaterThan(0);
+    expect(crop.reduce((tallest, point) => Math.max(tallest, point[1]), 0), 'the crop stands up').toBeGreaterThan(0.7);
+    // A climber is grown on stakes and a wire, and the wire runs the whole row.
+    const vine = report(cropRow({ length: 3, crop: 'vine', seed: 926 })).data;
+    const wire = verticesOfMaterial(vine, 'rope');
+    expect(wire.length, 'a wire').toBeGreaterThan(0);
+    expect(wire.reduce((widest, point) => Math.max(widest, Math.abs(point[0])), 0), 'the wire runs the row').toBeGreaterThan(1.2);
+    expect(verticesOfMaterial(vine, 'wood-weathered').length, 'stakes').toBeGreaterThan(0);
+  });
+
+  it('gives a scarecrow arms at its shoulders and a head above them', () => {
+    const { data, bounds } = report(scarecrow({ height: 1.9, seed: 928 }));
+    const shoulder = 1.9 * 0.78;
+    for (const x of [-0.42, 0.42]) {
+      expect(countVerticesInside(data, { x, y: shoulder, z: 0, radius: 0.14 }), `a hand at ${x}`).toBeGreaterThan(0);
+    }
+    // The head is above the arms and the hat is above the head.
+    const head = verticesOfMaterial(data, 'fabric-linen');
+    expect(head.length, 'a head').toBeGreaterThan(0);
+    const headTop = head.reduce((tallest, point) => Math.max(tallest, point[1]), 0);
+    expect(headTop, 'the head is above the shoulders').toBeGreaterThan(shoulder + 0.1);
+    const hat = verticesOfMaterial(data, 'thatch');
+    expect(hat.length, 'a hat or straw').toBeGreaterThan(0);
+    expect(bounds.size[1], 'dressed to be seen').toBeGreaterThan(1.85);
+    expect(bounds.size[1], 'and no taller than a person with a hat on').toBeLessThan(2.2);
+    // A figure in a coat is buttoned down the front of it.
+    const coat = report(scarecrow({ dress: 'coat', seed: 930 })).data;
+    expect(verticesOfMaterial(coat, 'brass').length, 'buttons').toBeGreaterThan(0);
+    expect(verticesOfMaterial(coat, 'fabric-blue').length, 'a coat').toBeGreaterThan(0);
+  });
+
+  it('stretches a loom\'s warp from its back beam down to its cloth beam', () => {
+    const { data, bounds } = report(loom({ width: 1.4, height: 1.6, seed: 931 }));
+    const warp = verticesOfMaterial(data, 'fabric-linen');
+    expect(warp.length, 'a warp').toBeGreaterThan(0);
+    // The warp runs the depth of the frame, from the beam at the back to the
+    // cloth beam at the front, and it is under tension between them.
+    const back = warp.reduce((least, point) => Math.min(least, point[2]), Infinity);
+    const front = warp.reduce((most, point) => Math.max(most, point[2]), -Infinity);
+    expect(back, 'to the back beam').toBeLessThan(-0.3);
+    expect(front - back, 'the warp runs the depth of the frame').toBeGreaterThan(0.6);
+    expect(warp.reduce((widest, point) => Math.max(widest, Math.abs(point[0])), 0), 'across the warp').toBeGreaterThan(0.5);
+    // The weaver sits at it, so there is a bench at sitting height in front, just
+    // past the frame — where the frame ends is measured, not remembered.
+    const bench = rayHits(data, [0, 2, bounds.max[2] - 0.18], [0, -1, 0], 2);
+    expect(bench.length, 'a bench').toBeGreaterThan(0);
+    expect(2 - bench[0]!, 'at sitting height').toBeGreaterThan(0.38);
+    expect(2 - bench[0]!, 'at sitting height').toBeLessThan(0.55);
+    // An upright loom holds its tension with weights instead, hung at the bottom.
+    const upright = report(loom({ style: 'upright', seed: 932 })).data;
+    const weights = verticesOfMaterial(upright, 'terracotta');
+    expect(weights.length, 'loom weights').toBeGreaterThan(0);
+    expect(weights.reduce((lowest, point) => Math.min(lowest, point[1]), Infinity), 'hung low').toBeLessThan(0.7);
+    expect(verticesOfMaterial(upright, 'wool').length, 'a wool warp').toBeGreaterThan(0);
+  });
+
+  it('builds a water wheel round, on an axle laid across the stream', () => {
+    const radius = 2;
+    const hubY = radius * 1.02;
+    const { data, bounds } = report(waterWheel({ style: 'undershot', radius, seed: 934 }));
+    // Round is measured on the wheel's own timber: the disc stands its full
+    // diameter, it reaches the whole radius at the axle, and it narrows toward the
+    // foot the way a circle does. The launder and the trough of an overshot wheel
+    // are not part of that disc, so they are left out of it.
+    const disc = verticesOfMaterial(data, 'wood-oak');
+    expect(disc.length, 'a wheel').toBeGreaterThan(0);
+    const reach = (from: number, to: number): number =>
+      disc.filter((point) => point[1] >= from && point[1] <= to)
+        .reduce((widest, point) => Math.max(widest, Math.abs(point[0])), 0);
+    const atAxle = reach(hubY - 0.15, hubY + 0.15);
+    const atFoot = reach(0, 0.5);
+    expect(atAxle, 'the full radius at the axle').toBeGreaterThan(radius * 0.92);
+    expect(atAxle, 'and no more than the radius').toBeLessThan(radius * 1.12);
+    expect(atFoot, 'narrower toward the foot').toBeLessThan(atAxle * 0.62);
+    expect(atFoot, 'but still a curve, not a spike').toBeGreaterThan(radius * 0.3);
+    const standing = disc.reduce((tallest, point) => Math.max(tallest, point[1]), 0)
+      - disc.reduce((lowest, point) => Math.min(lowest, point[1]), Infinity);
+    expect(standing, 'the disc stands its diameter').toBeGreaterThan(radius * 1.9);
+    expect(bounds.size[1], 'and the wheel is as tall as it is round').toBeGreaterThan(radius * 1.9);
+    // The axle is laid across the stream, so the hub is wider along Z than it is
+    // tall, and the buckets are between the two rims.
+    const hub = verticesOfMaterial(data, 'wood-dark');
+    expect(hub.length, 'an axle').toBeGreaterThan(0);
+    expect(hub.reduce((widest, point) => Math.max(widest, Math.abs(point[2])), 0), 'the axle spans the wheel').toBeGreaterThan(0.6);
+    expect(disc.reduce((deepest, point) => Math.max(deepest, Math.abs(point[2])), 0), 'the rims are at both sides').toBeGreaterThan(0.34);
+    const overshot = report(waterWheel({ radius, seed: 935 }));
+    // An overshot wheel is fed from above, so there is a launder over its crown;
+    // an undershot one is driven by the current and has none.
+    // Both wheels sit in a race wider than the wheel itself, but only an overshot
+    // one is fed from above: its launder reaches over the crown, so it stands
+    // taller than its own diameter, while an undershot wheel is driven by the
+    // current passing under it and has nothing over its head.
+    expect(bounds.size[0], 'a race wider than the wheel').toBeGreaterThan(radius * 2.6);
+    expect(overshot.bounds.size[0], 'and the overshot wheel is raced too').toBeGreaterThan(radius * 2.6);
+    expect(overshot.bounds.size[1], 'a launder over the crown').toBeGreaterThan(radius * 2.15);
+    expect(bounds.size[1], 'nothing over the crown of an undershot wheel').toBeLessThan(radius * 2.1);
+  });
+
+  it('sets a millstone\'s runner on its bedstone and cuts the face it grinds on', () => {
+    const { data } = report(millstone({ radius: 0.78, seed: 937 }));
+    const bed = verticesOfMaterial(data, 'stone-rough');
+    const runner = verticesOfMaterial(data, 'stone-dressed');
+    expect(bed.length, 'a bedstone').toBeGreaterThan(0);
+    expect(runner.length, 'a runner').toBeGreaterThan(0);
+    const bedTop = bed.reduce((highest, point) => Math.max(highest, point[1]), 0);
+    const runnerLow = runner.reduce((lowest, point) => Math.min(lowest, point[1]), Infinity);
+    // The runner turns on the bed: the two faces meet, they do not float apart.
+    expect(bedTop - runnerLow, 'the runner sits on the bed').toBeLessThan(0.05);
+    expect(bedTop - runnerLow, 'and does not sink through it').toBeGreaterThan(-0.05);
+    // The eye is in the middle of the runner, where the grain comes down and the
+    // shaft comes up, and the furrows run out from it to the rim.
+    expect(countVerticesInside(data, { x: 0, y: bedTop + 0.1, z: 0, radius: 0.2 }), 'the eye').toBeGreaterThan(0);
+    const furrows = verticesOfMaterial(data, 'stone-pale');
+    expect(furrows.length, 'furrows cut in the face').toBeGreaterThan(0);
+    expect(furrows.reduce((widest, point) => Math.max(widest, Math.hypot(point[0], point[2])), 0), 'the furrows reach the rim').toBeGreaterThan(0.5);
+    // A runner stood on its edge rests on the ground beside the bed it came off.
+    const leaning = report(millstone({ rest: 'leaning', seed: 939 }));
+    const leaningRunner = verticesOfMaterial(leaning.data, 'stone-dressed');
+    expect(leaningRunner.reduce((lowest, point) => Math.min(lowest, point[1]), Infinity), 'on the ground').toBeLessThan(0.05);
+    expect(leaningRunner.reduce((furthest, point) => Math.max(furthest, Math.abs(point[0])), 0), 'off to one side').toBeGreaterThan(0.78);
+    expect(leaning.bounds.size[1], 'stood on its edge').toBeGreaterThan(1.4);
   });
 });
