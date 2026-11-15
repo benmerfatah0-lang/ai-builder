@@ -36,6 +36,13 @@ import {
   tent,
   well,
 } from './components/props';
+import {
+  barrel,
+  basket,
+  cauldron,
+  crate,
+  jar,
+} from './components/containers';
 import { getModelTexture, cachedModelTextures, type ModelTextureKind } from './textures';
 import { SURFACES, getModelMaterial, materialsFor, pickSurface, PALETTES, surfaceTexel } from './materials';
 import { REFERENCE, dimensionsOf, normalize, scaleWarnings, seatOnGround, referenceSize } from './scale';
@@ -2859,6 +2866,516 @@ describe('props components', () => {
 
   it('keeps every prop inside the box it reports', () => {
     for (const [name, part] of props) {
+      const data = part.build();
+      const bounds = boundsOf(data);
+      expect(outsideBounds(data, bounds.min, bounds.max), name).toBeLessThan(1e-5);
+      expect(dimensionsOf(data).every((size) => Number.isFinite(size) && size >= 0.05), name).toBe(true);
+    }
+  });
+});
+
+/* -------------------------------------------------------------- containers */
+
+describe('containers components', () => {
+  const containers: [string, MeshBuilder][] = [
+    ['barrel/closed', barrel({ radius: 0.3, height: 0.95, head: 'closed', seed: 301 })],
+    ['barrel/open', barrel({ radius: 0.3, height: 0.95, head: 'open', contents: 'grain', seed: 302 })],
+    ['barrel/lidded', barrel({ radius: 0.32, height: 1, head: 'lid', contents: 'water', seed: 303 })],
+    ['barrel/on-its-side', barrel({ radius: 0.3, height: 0.95, rest: 'side', seed: 304 })],
+    ['barrel/chocked', barrel({ radius: 0.3, height: 0.95, rest: 'chocked', seed: 305 })],
+    ['barrel/tapped', barrel({ radius: 0.28, height: 0.9, head: 'open', tap: true, wood: 'weathered', seed: 306 })],
+    ['barrel/worn', barrel({ radius: 0.3, height: 0.95, wear: 1, hoops: 5, seed: 307 })],
+    ['barrel/poor', barrel({ radius: 0.28, height: 0.9, budget: 400, seed: 308 })],
+    ['crate/slatted', crate({ style: 'slatted', seed: 311 })],
+    ['crate/boarded', crate({ style: 'boarded', lid: 'open', contents: 'pots', seed: 312 })],
+    ['crate/reinforced', crate({ style: 'reinforced', lid: 'prised', contents: 'straw', marked: true, seed: 313 })],
+    ['crate/small', crate({ width: 0.4, depth: 0.4, height: 0.35, style: 'slatted', budget: 400, seed: 314 })],
+    ['basket/round', basket({ style: 'round', seed: 321 })],
+    ['basket/trug', basket({ style: 'trug', contents: 'bread', seed: 322 })],
+    ['basket/market', basket({ style: 'market', contents: 'produce', seed: 323 })],
+    ['basket/creel', basket({ style: 'creel', lid: true, seed: 324 })],
+    ['basket/tall', basket({ style: 'tall', weave: 'reed', seed: 325 })],
+    ['basket/split', basket({ style: 'round', weave: 'split', handle: 'bail', seed: 326 })],
+    ['basket/poor', basket({ style: 'market', budget: 400, seed: 327 })],
+    ['cauldron/legs', cauldron({ rest: 'legs', seed: 331 })],
+    ['cauldron/stand', cauldron({ rest: 'stand', lid: 'on', seed: 332 })],
+    ['cauldron/ash', cauldron({ rest: 'ash', lid: 'ajar', metal: 'bronze', seed: 333 })],
+    ['cauldron/hook', cauldron({ rest: 'hook', contents: 'stew', seed: 334 })],
+    ['cauldron/poor', cauldron({ rest: 'legs', budget: 400, seed: 335 })],
+    ['jar/amphora', jar({ style: 'amphora', seed: 341 })],
+    ['jar/jug', jar({ style: 'jug', stopper: 'cloth', seed: 342 })],
+    ['jar/urn', jar({ style: 'urn', contents: 'oil', seed: 343 })],
+    ['jar/bottle', jar({ style: 'bottle', stopper: 'cork', seed: 344 })],
+    ['jar/pot', jar({ style: 'pot', painted: true, seed: 345 })],
+    ['jar/storage', jar({ style: 'jar', finish: 'stoneware', seed: 346 })],
+    ['jar/fallen', jar({ style: 'amphora', fallen: true, seed: 347 })],
+    ['jar/poor', jar({ style: 'urn', budget: 400, seed: 348 })],
+  ];
+
+  it.each(containers)('builds a sane, seated, honestly priced %s', (name, part) => {
+    const data = part.build();
+    expect(isSane(data), name).toBe(true);
+    const bounds = boundsOf(data);
+    expect(data.indices.length / 3, name).toBeGreaterThan(20);
+    // A container is set down on the floor it stands on. The two exceptions are a
+    // cauldron hung from a hook, which is tested below, and a jar sunk into a
+    // floor, whose buried foot is under y = 0 because y = 0 is that floor.
+    expect(bounds.min[1], name).toBeGreaterThanOrEqual(-1e-6);
+    expect(bounds.size[1], name).toBeGreaterThan(0.005);
+    expect(doubleFaces(data), name).toBe(0);
+    const materials = [...new Set(data.materials ?? [])];
+    expect(materials.length, name).toBeLessThanOrEqual(10);
+    for (const id of materials) expect(id in SURFACES, `${name}: ${id}`).toBe(true);
+  });
+
+  it('builds the same container from the same seed', () => {
+    const builds: [string, () => MeshBuilder][] = [
+      ['barrel', () => barrel({ head: 'open', contents: 'grain', rest: 'chocked', seed: 302 })],
+      ['crate', () => crate({ style: 'reinforced', lid: 'prised', contents: 'straw', marked: true, seed: 313 })],
+      ['basket', () => basket({ style: 'creel', handle: 'strap', lid: true, seed: 324 })],
+      ['cauldron', () => cauldron({ rest: 'hook', lid: 'ajar', contents: 'stew', seed: 334 })],
+      ['jar', () => jar({ style: 'amphora', painted: true, contents: 'oil', seed: 341 })],
+    ];
+    for (const [name, build] of builds) {
+      const first = build().build();
+      const second = build().build();
+      expect(Array.from(first.positions), name).toEqual(Array.from(second.positions));
+      expect(first.materials, name).toEqual(second.materials);
+    }
+  });
+
+  const heights: [string, MeshBuilder, number][] = [
+    ['barrel/closed', barrel({ radius: 0.3, height: 0.95, head: 'closed', seed: 301 }), 0.95],
+    ['barrel/open', barrel({ radius: 0.3, height: 0.95, head: 'open', seed: 302 }), 0.95],
+    ['crate/slatted', crate({ style: 'slatted', width: 0.7, height: 0.7, depth: 0.7, seed: 311 }), 0.7],
+    ['crate/boarded', crate({ style: 'boarded', width: 0.6, height: 0.5, depth: 0.6, seed: 312 }), 0.5],
+    ['jar/amphora', jar({ style: 'amphora', seed: 341 }), 1],
+    ['jar/jug', jar({ style: 'jug', seed: 342 }), 0.52],
+    ['jar/urn', jar({ style: 'urn', seed: 343 }), 0.74],
+    ['jar/bottle', jar({ style: 'bottle', seed: 344 }), 0.66],
+    ['jar/pot', jar({ style: 'pot', seed: 345 }), 0.44],
+    ['jar/storage', jar({ style: 'jar', seed: 346 }), 0.56],
+  ];
+
+  it.each(heights)('%s holds the height it was asked for', (_name, part, height) => {
+    const built = boundsOf(part.build()).size[1];
+    expect(built / height).toBeGreaterThan(0.9);
+    expect(built / height).toBeLessThan(1.05);
+  });
+
+  it('puts a cask on its side the length it was asked to stand', () => {
+    // A cask rolled over is as long as it was tall and as tall as it is wide, and
+    // +Z still faces whoever draws from it, because the turn is about Z.
+    for (const rest of ['side', 'chocked'] as const) {
+      const bounds = boundsOf(barrel({ radius: 0.3, height: 0.95, rest, seed: 304 }).build());
+      expect(bounds.size[0], rest).toBeGreaterThan(0.95 * 0.97);
+      expect(bounds.size[0], rest).toBeLessThan(0.95 * 1.08);
+      expect(bounds.size[1] / 0.6, rest).toBeGreaterThan(0.97);
+      expect(bounds.size[1] / 0.6, rest).toBeLessThan(1.12);
+      expect(bounds.min[1], rest).toBeGreaterThanOrEqual(-1e-6);
+    }
+  });
+
+  it('stands a cauldron to the rim height asked for, feet and rolled rim proud of it', () => {
+    // `height` is the rim, and a rolled rim with a foot under it lands a hair above
+    // it: the allowance is the pot's own wall thickness rather than a fraction, so a
+    // small pot is not asked to be proportionally taller than a big one.
+    for (const rest of ['legs', 'stand', 'ash'] as const) {
+      const radius = 0.34;
+      const bounds = boundsOf(cauldron({ rest, radius, height: 0.6, seed: 331 }).build());
+      expect(bounds.max[1] - 0.6, rest).toBeGreaterThan(0);
+      expect(bounds.max[1] - 0.6, rest).toBeLessThan(radius * 0.12);
+      expect(bounds.min[1], rest).toBeGreaterThanOrEqual(-1e-6);
+      expect(bounds.min[1], rest).toBeLessThan(0.02);
+    }
+  });
+
+  it('weaves a basket to the rim height asked for, its binding a hair proud', () => {
+    const radius = 0.225;
+    for (const style of ['round', 'market', 'creel', 'tall'] as const) {
+      const data = basket({ style, handle: 'none', radius, height: 0.4, seed: 321 }).build();
+      const bounds = boundsOf(data);
+      // The weave itself reaches the rim that was asked for; the binding round it
+      // is thicker than the wall and stands proud by less than the wall's thickness.
+      const weave = Math.max(...verticesOfMaterial(data, style === 'creel' ? 'rope' : 'wattle').map(([, y]) => y));
+      expect(weave / 0.4, style).toBeGreaterThan(0.98);
+      expect(weave / 0.4, style).toBeLessThan(1.02);
+      expect(bounds.max[1] - 0.4, style).toBeGreaterThan(0);
+      expect(bounds.max[1] - 0.4, style).toBeLessThan(radius * 0.12);
+    }
+  });
+
+  const budgets: [string, (budget: number) => MeshBuilder][] = [
+    ['barrel/closed', (budget) => barrel({ radius: 0.3, height: 0.95, head: 'closed', seed: 301, budget })],
+    ['barrel/open', (budget) => barrel({ radius: 0.3, height: 0.95, head: 'open', contents: 'grain', seed: 302, budget })],
+    ['barrel/chocked', (budget) => barrel({ radius: 0.3, height: 0.95, rest: 'chocked', seed: 305, budget })],
+    ['crate/slatted', (budget) => crate({ style: 'slatted', seed: 311, budget })],
+    ['crate/reinforced', (budget) => crate({ style: 'reinforced', lid: 'prised', marked: true, seed: 313, budget })],
+    ['basket/round', (budget) => basket({ style: 'round', seed: 321, budget })],
+    ['basket/market', (budget) => basket({ style: 'market', contents: 'produce', seed: 323, budget })],
+    ['cauldron/legs', (budget) => cauldron({ rest: 'legs', seed: 331, budget })],
+    ['cauldron/ash', (budget) => cauldron({ rest: 'ash', lid: 'ajar', seed: 333, budget })],
+    ['jar/amphora', (budget) => jar({ style: 'amphora', seed: 341, budget })],
+    ['jar/dressed', (budget) => jar({ style: 'urn', painted: true, contents: 'oil', stopper: 'cloth', seed: 343, budget })],
+  ];
+
+  it.each(budgets)('%s spends what it is given', (name, build) => {
+    for (const budget of [400, 1200, 3000]) {
+      const triangles = build(budget).build().indices.length / 3;
+      expect(triangles, `${name} at ${budget}`).toBeLessThan(budget * 1.4 + 120);
+      expect(triangles, `${name} at ${budget}`).toBeGreaterThan(20);
+    }
+  });
+
+  it('keeps the extent of a container when the budget drops', () => {
+    // A poor container is a coarse one, never a smaller one: what a caller places
+    // on a shelf, in a hold or on a stall does not shrink with the allowance.
+    const pairs: [string, (budget: number) => MeshBuilder][] = [
+      ['barrel', (budget) => barrel({ radius: 0.3, height: 0.95, seed: 301, budget })],
+      ['crate', (budget) => crate({ style: 'reinforced', seed: 313, budget })],
+      ['basket', (budget) => basket({ style: 'round', radius: 0.225, seed: 321, budget })],
+      ['cauldron', (budget) => cauldron({ rest: 'legs', radius: 0.34, seed: 331, budget })],
+      ['jar', (budget) => jar({ style: 'amphora', seed: 341, budget })],
+    ];
+    for (const [name, build] of pairs) {
+      const rich = boundsOf(build(3000).build());
+      const poor = boundsOf(build(400).build());
+      expect(poor.size[1] / rich.size[1], name).toBeGreaterThan(0.97);
+      // Widths lose a little more than heights: a coarse turn is a polygon inscribed
+      // in the circle rather than the circle, and a poor cask carries less iron on
+      // it. What is not allowed is the thing shrinking to fit its allowance.
+      expect(poor.size[0] / rich.size[0], name).toBeGreaterThan(0.88);
+      expect(poor.size[2] / rich.size[2], name).toBeGreaterThan(0.88);
+    }
+  });
+
+  it('builds every container at a scale the reference table accepts', () => {
+    const kinds: [string, string, MeshBuilder][] = [
+      ['barrel/upright', 'barrel', barrel({ radius: 0.3, height: 0.95, seed: 301 })],
+      ['barrel/tapped', 'barrel', barrel({ radius: 0.3, height: 0.95, rest: 'chocked', seed: 305 })],
+      ['crate/slatted', 'crate', crate({ style: 'slatted', seed: 311 })],
+      ['crate/reinforced', 'crate', crate({ style: 'reinforced', seed: 313 })],
+      ['basket/round', 'basket', basket({ style: 'round', seed: 321 })],
+      ['basket/trug', 'basket', basket({ style: 'trug', seed: 322 })],
+      ['basket/market', 'basket', basket({ style: 'market', seed: 323 })],
+      ['basket/creel', 'basket', basket({ style: 'creel', lid: true, seed: 324 })],
+      ['basket/tall', 'basket', basket({ style: 'tall', seed: 325 })],
+      ['cauldron/legs', 'cauldron', cauldron({ rest: 'legs', seed: 331 })],
+      ['cauldron/stand', 'cauldron', cauldron({ rest: 'stand', lid: 'on', seed: 332 })],
+      ['cauldron/ash', 'cauldron', cauldron({ rest: 'ash', seed: 333 })],
+      ['cauldron/hook', 'cauldron', cauldron({ rest: 'hook', seed: 334 })],
+      ['jar/amphora', 'amphora', jar({ style: 'amphora', seed: 341 })],
+      ['jar/painted', 'amphora', jar({ style: 'amphora', painted: true, seed: 341 })],
+      ['jar/fallen', 'amphora', jar({ style: 'amphora', fallen: true, seed: 347 })],
+    ];
+    for (const [name, kind, part] of kinds) {
+      expect(referenceSize(kind), name).not.toBeNull();
+      expect(scaleWarnings(kind, part.build()), name).toEqual([]);
+    }
+  });
+
+  it('sizes a basket and a jar against the reference table', () => {
+    // The basket a reference table gives is the one a person carries in one hand,
+    // and the round basket is it: as wide as the table says and as tall.
+    const round = boundsOf(basket({ style: 'round', seed: 321 }).build());
+    const table = REFERENCE.basket!;
+    for (const axis of [0, 1, 2] as const) {
+      expect(round.size[axis] / table[axis], `basket axis ${axis}`).toBeGreaterThan(0.9);
+      expect(round.size[axis] / table[axis], `basket axis ${axis}`).toBeLessThan(1.15);
+    }
+    // A trug is an oval: long across the hands, shallow front to back.
+    const trug = boundsOf(basket({ style: 'trug', seed: 322 }).build());
+    expect(trug.size[0] / trug.size[2]).toBeGreaterThan(1.3);
+    expect(trug.size[0] / trug.size[2]).toBeLessThan(1.75);
+    // An amphora is the table's amphora in the belly, and wider across its handles.
+    const amphora = boundsOf(jar({ style: 'amphora', seed: 341 }).build());
+    expect(amphora.size[1] / REFERENCE.amphora![1]).toBeGreaterThan(0.98);
+    expect(amphora.size[1] / REFERENCE.amphora![1]).toBeLessThan(1.02);
+    expect(amphora.size[2] / REFERENCE.amphora![0]).toBeGreaterThan(0.9);
+    expect(amphora.size[2] / REFERENCE.amphora![0]).toBeLessThan(1.1);
+    expect(amphora.size[0]).toBeGreaterThan(amphora.size[2] * 1.2);
+  });
+
+  it('opens a cask at the head a caller asks for', () => {
+    // Sampling vertices cannot answer this, because a closed head has a vertex on
+    // the axis and so does the floor of an open cask. A ray dropped in from just
+    // above the rim tells the three apart: shut, it stops at the head; open, it
+    // falls the whole cask to the floor inside; lidded, it stops on the loose lid
+    // lying askew above the chime.
+    const height = 0.95;
+    const closed = barrel({ radius: 0.3, height, head: 'closed', wear: 0.2, seed: 301 }).build();
+    const open = barrel({ radius: 0.3, height, head: 'open', wear: 0.2, seed: 302 }).build();
+    const lidded = barrel({ radius: 0.3, height, head: 'lid', wear: 0.2, seed: 303 }).build();
+    expect(rayHits(closed, [0.1, height + 0.07, 0], [0, -1, 0], 1.2)[0]).toBeLessThan(0.2);
+    expect(rayHits(closed, [0.1, height - 0.02, 0], [0, -1, 0], 1.2)).toEqual([]);
+    expect(rayHits(open, [0.1, height + 0.07, 0], [0, -1, 0], 1.2)[0]).toBeGreaterThan(height * 0.9);
+    expect(rayHits(lidded, [0.1, height + 0.07, 0], [0, -1, 0], 1.2)[0]).toBeLessThan(0.2);
+    // And an open cask is a vessel rather than a drum: its wall comes back down the
+    // inside, so in the band between the chimes it has about twice the wall an
+    // equally sized closed cask has. Counted rather than sampled at a radius, because
+    // the hull of a closed cask tucks in at the heads and would look like an inside.
+    const wall = (data: MeshData): number => verticesOfMaterial(data, 'wood-oak')
+      .filter(([, y]) => y > height * 0.2 && y < height * 0.8).length;
+    expect(wall(closed)).toBeGreaterThan(40);
+    expect(wall(open) / wall(closed)).toBeGreaterThan(1.6);
+  });
+
+  it('hoops a cask on the hull it hoops, and chocks one that lies down', () => {
+    const radius = 0.3;
+    const data = barrel({ radius, height: 0.95, hoops: 4, wear: 0.2, seed: 301 }).build();
+    // Nothing on a cask reaches past its own belly by more than a hoop's thickness,
+    // which is the difference between a hoop driven on and a ring hovering off it.
+    let widest = 0;
+    for (let index = 0; index < data.positions.length; index += 3) {
+      widest = Math.max(widest, Math.hypot(data.positions[index]!, data.positions[index + 2]!));
+    }
+    expect(widest / radius).toBeGreaterThan(0.99);
+    expect(widest / radius).toBeLessThan(1.12);
+    const hoops = verticesOfMaterial(data, 'iron-wrought');
+    expect(hoops.length).toBeGreaterThan(40);
+    expect(Math.min(...hoops.map(([, y]) => y))).toBeGreaterThan(0.05);
+    expect(Math.max(...hoops.map(([, y]) => y))).toBeLessThan(0.9);
+
+    // Grain in an open cask is inside the cask: below the rim and off the wall.
+    const grain = verticesOfMaterial(
+      barrel({ radius, height: 0.95, head: 'open', contents: 'grain', seed: 302 }).build(),
+      'sand',
+    );
+    expect(grain.length).toBeGreaterThan(20);
+    expect(Math.max(...grain.map((point) => Math.hypot(point[0], point[2])))).toBeLessThan(radius);
+    expect(Math.max(...grain.map(([, y]) => y))).toBeLessThan(0.95 * 0.75);
+
+    // A chocked cask has something under it either side, standing on the floor.
+    const chocked = barrel({ radius, height: 0.95, rest: 'chocked', seed: 305 }).build();
+    const chocks = verticesOfMaterial(chocked, 'wood-dark');
+    expect(chocks.length).toBeGreaterThan(8);
+    expect(Math.min(...chocks.map(([, y]) => y))).toBeLessThan(0.06);
+    expect(Math.max(...chocks.map(([x]) => x))).toBeGreaterThan(0.95 * 0.2);
+    expect(Math.min(...chocks.map(([x]) => x))).toBeLessThan(-0.95 * 0.2);
+  });
+
+  it('leaves a gap between the slats of a crate and none between its boards', () => {
+    // The gaps are the read, so they are measured as what they are: heights at
+    // which a ray goes clean through the crate. A slatted crate has many of them
+    // and a boarded one has a few, and the difference is the shadow line.
+    const through = (style: 'slatted' | 'boarded'): number => {
+      const data = crate({ style, width: 0.7, height: 0.7, depth: 0.7, seed: 311, budget: 3000 }).build();
+      let clear = 0;
+      for (let y = 0.05; y < 0.65; y += 0.005) {
+        if (rayHits(data, [0, y, 0.9], [0, 0, -1], 1.8).length === 0) clear += 1;
+      }
+      return clear;
+    };
+    const slatted = through('slatted');
+    const boarded = through('boarded');
+    expect(slatted).toBeGreaterThan(10);
+    expect(boarded).toBeGreaterThan(0);
+    expect(slatted / boarded).toBeGreaterThan(1.8);
+  });
+
+  it('levers a crate lid proud of the crate and paints its mark on the boards', () => {
+    const height = 0.7;
+    const closed = boundsOf(crate({ style: 'boarded', lid: 'closed', height, seed: 311 }).build());
+    const open = boundsOf(crate({ style: 'boarded', lid: 'open', height, seed: 311 }).build());
+    const prised = boundsOf(crate({ style: 'boarded', lid: 'prised', height, seed: 311 }).build());
+    expect(closed.max[1] / height).toBeGreaterThan(0.98);
+    expect(closed.max[1] / height).toBeLessThan(1.05);
+    // Open, the lid deck is gone: a crate that has been emptied is shorter than one
+    // that has not, and the difference is a lid rather than a rounding.
+    expect(open.max[1]).toBeLessThan(closed.max[1]);
+    expect(prised.max[1] / height).toBeGreaterThan(1.15);
+    expect(prised.max[1] / height).toBeLessThan(1.5);
+
+    // A crate is the width it was asked for, corner cleats and all, at any budget.
+    for (const budget of [400, 1200, 3000]) {
+      const bounds = boundsOf(crate({ width: 0.7, height: 0.7, depth: 0.7, seed: 311, budget }).build());
+      expect(bounds.size[0], `crate at ${budget}`).toBeGreaterThan(0.7 * 0.97);
+      expect(bounds.size[2], `crate at ${budget}`).toBeGreaterThan(0.7 * 0.97);
+      expect(Math.abs(bounds.center[0]), `crate at ${budget}`).toBeLessThan(0.02);
+    }
+
+    // The stencil is on the boards, not floating out at the cleats' own face.
+    const data = crate({ style: 'boarded', lid: 'closed', marked: true, seed: 311, budget: 3000 }).build();
+    const paint = verticesOfMaterial(data, 'paint');
+    expect(paint.length).toBeGreaterThan(3);
+    expect(Math.min(...paint.map(([, , z]) => z))).toBeGreaterThan(0.7 / 2 - 0.7 * 0.09);
+    expect(Math.max(...paint.map(([, , z]) => z))).toBeLessThan(0.7 / 2);
+  });
+
+  it('binds a basket rim and crowns it with the handle it was asked for', () => {
+    const radius = 0.225;
+    const height = 0.36;
+    const bare = basket({ style: 'round', handle: 'none', radius, height, seed: 321 }).build();
+    // The rim binding and the wales lie on the weave: nothing of theirs reaches
+    // further from the axis than the rim does, which is what a ring floating off
+    // the wall would do.
+    const binding = verticesOfMaterial(bare, 'wood-dark');
+    expect(binding.length).toBeGreaterThan(40);
+    const reach = Math.max(...binding.map((point) => Math.hypot(point[0], point[2])));
+    expect(reach / radius).toBeGreaterThan(0.9);
+    expect(reach / radius).toBeLessThan(1.1);
+    expect(boundsOf(bare).max[1]).toBeGreaterThan(height);
+
+    // A bail and a hoop stand over the mouth and come down onto the rim either
+    // side; shoulder straps run down the outside and add no height at all.
+    const bailed = boundsOf(basket({ style: 'round', handle: 'bail', radius, height, seed: 321 }).build());
+    const hooped = boundsOf(basket({ style: 'round', handle: 'hoop', radius, height, seed: 321 }).build());
+    const strapped = boundsOf(basket({ style: 'round', handle: 'strap', radius, height, seed: 321 }).build());
+    expect(bailed.max[1] - height).toBeGreaterThan(radius * 0.8);
+    expect(bailed.max[1] - height).toBeLessThan(radius * 1.3);
+    expect(hooped.max[1]).toBeGreaterThan(bailed.max[1]);
+    expect(strapped.max[1]).toBeLessThan(height + radius * 0.15);
+    // Hinged at the rim, not welded to the crown: the iron starts at the top of the
+    // weave and rises from there.
+    const iron = verticesOfMaterial(basket({ style: 'round', handle: 'bail', radius, height, seed: 321 }).build(), 'iron-wrought');
+    expect(iron.length).toBeGreaterThan(20);
+    expect(Math.min(...iron.map(([, y]) => y))).toBeGreaterThan(height * 0.8);
+    expect(Math.min(...iron.map(([, y]) => y))).toBeLessThan(height * 1.05);
+  });
+
+  it('gives every cauldron somewhere to be, and hangs the one on a hook', () => {
+    const radius = 0.34;
+    const height = 0.6;
+    for (const rest of ['legs', 'stand', 'ash'] as const) {
+      const data = cauldron({ rest, radius, height, seed: 331 }).build();
+      const bounds = boundsOf(data);
+      expect(bounds.min[1], rest).toBeLessThan(0.02);
+      // Something stands between the belly and the floor, and it reaches the ground
+      // wider than the pot's own base: three splayed legs, a trivet on three feet,
+      // or a bed of ash banked up round it.
+      let low = 0;
+      for (let index = 0; index < data.positions.length; index += 3) {
+        if (data.positions[index + 1]! > 0.05) continue;
+        low = Math.max(low, Math.hypot(data.positions[index]!, data.positions[index + 2]!));
+      }
+      expect(low / radius, rest).toBeGreaterThan(rest === 'ash' ? 1.3 : 0.8);
+    }
+
+    // Stew is inside the pot: below the rim and off the wall. Taken where there is
+    // no bed of ash under the pot, because an ash bed is sold in the same surface
+    // as the stew and is wider than the pot on purpose.
+    for (const rest of ['legs', 'stand'] as const) {
+      const stew = verticesOfMaterial(cauldron({ rest, radius, height, contents: 'stew', seed: 331 }).build(), 'soil');
+      expect(stew.length, rest).toBeGreaterThan(8);
+      expect(Math.max(...stew.map((point) => Math.hypot(point[0], point[2]))), rest).toBeLessThan(radius);
+      expect(Math.max(...stew.map(([, y]) => y)), rest).toBeLessThan(height);
+    }
+
+    // A pot in a trivet sits in the ring rather than on the floor: the ring is iron
+    // and it touches the ground, while the pot's own belly starts above it.
+    const stand = cauldron({ rest: 'stand', radius, height, seed: 332 }).build();
+    const trivet = verticesOfMaterial(stand, 'iron-rusted');
+    expect(trivet.length).toBeGreaterThan(20);
+    expect(Math.min(...trivet.map(([, y]) => y))).toBeLessThan(0.02);
+    const pot = verticesOfMaterial(stand, 'iron-wrought');
+    expect(Math.min(...pot.map(([, y]) => y))).toBeGreaterThan(radius * 0.2);
+
+    // Hung, the pot is off the ground on its bail, and the bail crowns the rim: it
+    // is the one container in the library that does not touch y = 0, and it is the
+    // only way a cauldron hangs over a fire instead of sitting in one.
+    const hung = cauldron({ rest: 'hook', radius, height, seed: 334 }).build();
+    const hungBounds = boundsOf(hung);
+    expect(hungBounds.min[1]).toBeGreaterThan(radius * 0.4);
+    expect(hungBounds.max[1]).toBeGreaterThan(height + radius * 0.9);
+    let nearGround = 0;
+    for (let index = 0; index < hung.positions.length; index += 3) {
+      if (hung.positions[index + 1]! < 0.05) nearGround += 1;
+    }
+    expect(nearGround).toBe(0);
+  });
+
+  it('covers a cauldron with the lid it was asked for', () => {
+    const radius = 0.34;
+    const height = 0.6;
+    const on = cauldron({ rest: 'legs', radius, height, lid: 'on', seed: 332 }).build();
+    const ajar = cauldron({ rest: 'legs', radius, height, lid: 'ajar', seed: 332 }).build();
+    const off = cauldron({ rest: 'legs', radius, height, lid: 'none', seed: 332 }).build();
+    // Shut, a ray dropped down the axis meets the cover before it meets the pot, and
+    // there is nothing to see inside because nothing inside was built.
+    expect(rayHits(on, [0.05, boundsOf(on).max[1] + 0.2, 0], [0, -1, 0], 0.6)[0]).toBeLessThan(radius);
+    // Propped ajar with a ladle under one edge, the cover is higher on one side than
+    // the other and its knob is off the axis it was centred on.
+    expect(boundsOf(ajar).max[1]).toBeGreaterThan(boundsOf(on).max[1]);
+    const knob = verticesOfMaterial(ajar, 'wood-dark');
+    expect(knob.length).toBeGreaterThan(8);
+    expect(Math.max(...knob.map(([x]) => Math.abs(x)))).toBeGreaterThan(radius * 0.1);
+    // And with no lid at all the pot is shorter than either, because a cover stands
+    // proud of the rim it covers.
+    expect(boundsOf(off).max[1]).toBeLessThan(boundsOf(on).max[1]);
+  });
+
+  it('keeps a jar\'s contents inside it and its band on its shoulder', () => {
+    for (const style of ['amphora', 'jug', 'urn', 'bottle', 'pot', 'jar'] as const) {
+      const plain = boundsOf(jar({ style, seed: 341 }).build());
+      const filled = boundsOf(jar({ style, seed: 341, contents: 'oil' }).build());
+      // What is left of the oil is a level inside the neck: if it were wider than
+      // the mouth it is seen through, the jar's own box would grow to hold it.
+      for (const axis of [0, 1, 2] as const) {
+        expect(Math.abs(filled.size[axis] - plain.size[axis]), `${style} axis ${axis}`).toBeLessThan(1e-3);
+      }
+    }
+    // A painted band is at the widest station and proud of it by its own thickness:
+    // a ring that floats off the shoulder is a ring round nothing.
+    const radius = 0.225;
+    const data = jar({ style: 'amphora', painted: true, seed: 341 }).build();
+    const band = verticesOfMaterial(data, 'paint');
+    expect(band.length).toBeGreaterThan(20);
+    const bandReach = Math.max(...band.map((point) => Math.hypot(point[0], point[2])));
+    expect(bandReach / radius).toBeGreaterThan(0.98);
+    expect(bandReach / radius).toBeLessThan(1.2);
+    expect(Math.max(...band.map(([, y]) => y)) - Math.min(...band.map(([, y]) => y))).toBeLessThan(0.08);
+    expect(Math.min(...band.map(([, y]) => y))).toBeGreaterThan(0.2);
+  });
+
+  it('stands a pointed jar in a ring of clay', () => {
+    // An amphora's foot is a point, so the ring it stands in is what lets it stand
+    // at all, and it is wider at the floor than the foot it holds.
+    const radius = 0.225;
+    const ringed = jar({ style: 'amphora', seed: 341 }).build();
+    const bare = jar({ style: 'amphora', stand: false, seed: 341 }).build();
+    expect(widestAtHeight(ringed, 0.03, 0.04)).toBeGreaterThan(radius * 0.45);
+    expect(widestAtHeight(bare, 0.03, 0.04)).toBeLessThan(radius * 0.25);
+    // A storage pot has a foot that stands on its own and needs nothing under it.
+    const pot = jar({ style: 'pot', seed: 345 }).build();
+    expect(pot.materials ?? []).not.toContain('terracotta');
+  });
+
+  it('sinks a storage jar into the floor it was dug into', () => {
+    const height = 1;
+    const data = jar({ style: 'amphora', height, seed: 341, sunken: true }).build();
+    const bounds = boundsOf(data);
+    // What stands above the floor is less than the jar is tall, and the buried foot
+    // is under y = 0 because y = 0 is the floor it is buried in. Seating it would
+    // pull the jar back out of the ground, so it is deliberately not seated.
+    expect(bounds.max[1]).toBeLessThan(height * 0.72);
+    expect(bounds.max[1]).toBeGreaterThan(height * 0.45);
+    expect(bounds.min[1]).toBeLessThan(-height * 0.2);
+    expect(bounds.min[1]).toBeGreaterThan(-height * 0.55);
+    // The floor is packed back up round it, on the floor, and wider than the jar.
+    const bank = verticesOfMaterial(data, 'soil');
+    expect(bank.length).toBeGreaterThan(20);
+    expect(Math.min(...bank.map(([, y]) => y))).toBeGreaterThan(-1e-6);
+    expect(Math.min(...bank.map(([, y]) => y))).toBeLessThan(0.02);
+    expect(Math.max(...bank.map((point) => Math.hypot(point[0], point[2])))).toBeGreaterThan(0.225 * 1.6);
+  });
+
+  it('knocks a jar over and breaks it', () => {
+    for (const style of ['amphora', 'urn', 'jar'] as const) {
+      const height = style === 'amphora' ? 1 : style === 'urn' ? 0.74 : 0.56;
+      const data = jar({ style, seed: 347, fallen: true }).build();
+      const bounds = boundsOf(data);
+      // Lying down, it is shorter than it is long, and it still rests on the floor.
+      expect(bounds.size[1] / height, style).toBeLessThan(0.85);
+      expect(Math.max(bounds.size[0], bounds.size[2]) / height, style).toBeGreaterThan(0.9);
+      expect(bounds.min[1], style).toBeGreaterThanOrEqual(-1e-6);
+      // The sherds are sold in the jar's own clay, because they are the jar.
+      const materials = [...new Set(data.materials ?? [])];
+      expect(materials, style).toHaveLength(1);
+    }
+  });
+
+  it('keeps every container inside the box it reports', () => {
+    for (const [name, part] of containers) {
       const data = part.build();
       const bounds = boundsOf(data);
       expect(outsideBounds(data, bounds.min, bounds.max), name).toBeLessThan(1e-5);
