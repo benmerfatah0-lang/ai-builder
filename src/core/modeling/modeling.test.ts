@@ -43,6 +43,20 @@ import {
   crate,
   jar,
 } from './components/containers';
+import {
+  anvil,
+  bed,
+  bench,
+  bookshelf,
+  chair,
+  chest,
+  forge,
+  shelf,
+  stool,
+  table,
+  throne,
+  wardrobe,
+} from './components/furniture';
 import { getModelTexture, cachedModelTextures, type ModelTextureKind } from './textures';
 import { SURFACES, getModelMaterial, materialsFor, pickSurface, PALETTES, surfaceTexel } from './materials';
 import { REFERENCE, dimensionsOf, normalize, scaleWarnings, seatOnGround, referenceSize } from './scale';
@@ -3376,6 +3390,345 @@ describe('containers components', () => {
 
   it('keeps every container inside the box it reports', () => {
     for (const [name, part] of containers) {
+      const data = part.build();
+      const bounds = boundsOf(data);
+      expect(outsideBounds(data, bounds.min, bounds.max), name).toBeLessThan(1e-5);
+      expect(dimensionsOf(data).every((size) => Number.isFinite(size) && size >= 0.05), name).toBe(true);
+    }
+  });
+});
+
+describe('furniture components', () => {
+  const furniture: [string, MeshBuilder][] = [
+    ['chair/ladder', chair({ style: 'ladder', seed: 401 })],
+    ['chair/stick', chair({ style: 'stick', cushion: 'linen', seed: 402 })],
+    ['chair/panel', chair({ style: 'panel', wood: 'walnut', seed: 403 })],
+    ['chair/arm', chair({ style: 'arm', cushion: 'velvet', seed: 404 })],
+    ['chair/poor', chair({ style: 'stick', budget: 400, seed: 405 })],
+    ['stool/round', stool({ style: 'round', seed: 411 })],
+    ['stool/three', stool({ style: 'three', wood: 'oak', seed: 412 })],
+    ['stool/milk', stool({ style: 'milk', seed: 413 })],
+    ['stool/square', stool({ style: 'square', seed: 414 })],
+    ['stool/plank', stool({ style: 'plank', seed: 415 })],
+    ['bench/plank', bench({ style: 'plank', back: true, seed: 421 })],
+    ['bench/trestle', bench({ style: 'trestle', length: 2.2, seed: 422 })],
+    ['bench/park', bench({ style: 'park', back: true, seed: 423 })],
+    ['bench/stone', bench({ style: 'stone', seed: 424 })],
+    ['table/dining', table({ style: 'dining', seed: 431 })],
+    ['table/round', table({ style: 'round', seed: 432 })],
+    ['table/trestle', table({ style: 'trestle', width: 2.4, seed: 433 })],
+    ['table/board', table({ style: 'board', seed: 434 })],
+    ['table/clothed', table({ style: 'dining', cloth: 'linen', seed: 435 })],
+    ['table/counter', table({ style: 'dining', height: 0.9, wood: 'pine', seed: 436 })],
+    ['bed/plain', bed({ style: 'plain', seed: 441 })],
+    ['bed/four-poster', bed({ style: 'four-poster', covering: 'velvet', seed: 442 })],
+    ['bed/cot', bed({ style: 'cot', seed: 443 })],
+    ['bed/straw', bed({ style: 'straw', made: false, seed: 444 })],
+    ['bed/unmade', bed({ style: 'plain', made: false, covering: 'linen', seed: 445 })],
+    ['wardrobe/panel', wardrobe({ style: 'panel', seed: 451 })],
+    ['wardrobe/open', wardrobe({ style: 'open', seed: 452 })],
+    ['wardrobe/plain', wardrobe({ style: 'plain', wood: 'painted', seed: 453 })],
+    ['shelf/open', shelf({ style: 'open', goods: 'pots', seed: 461 })],
+    ['shelf/wall', shelf({ style: 'wall', goods: 'books', seed: 462 })],
+    ['shelf/dresser', shelf({ style: 'dresser', goods: 'mixed', seed: 463 })],
+    ['shelf/empty', shelf({ style: 'open', goods: 'none', seed: 464 })],
+    ['chest/flat', chest({ style: 'flat', seed: 471 })],
+    ['chest/domed', chest({ style: 'domed', seed: 472 })],
+    ['chest/strong', chest({ style: 'strong', lid: 'ajar', contents: 'coin', seed: 473 })],
+    ['chest/open-cloth', chest({ style: 'flat', lid: 'open', contents: 'cloth', seed: 474 })],
+    ['chest/coffer', chest({ style: 'coffer', lid: 'off', seed: 475 })],
+    ['chest/tools', chest({ style: 'domed', lid: 'open', contents: 'tools', seed: 476 })],
+    ['throne/gothic', throne({ style: 'gothic', seed: 481 })],
+    ['throne/classical', throne({ style: 'classical', metal: 'bronze', upholstery: 'linen', seed: 482 })],
+    ['throne/warlord', throne({ style: 'warlord', metal: 'iron', dais: 0.36, seed: 483 })],
+    ['bookshelf/full', bookshelf({ fill: 1, seed: 491 })],
+    ['bookshelf/two-bays', bookshelf({ width: 2, bays: 2, seed: 492 })],
+    ['bookshelf/sparse', bookshelf({ fill: 0.3, budget: 700, seed: 493 })],
+    ['anvil/stump', anvil({ base: 'stump', seed: 495 })],
+    ['anvil/block', anvil({ base: 'block', metal: 'iron', seed: 496 })],
+    ['anvil/bare', anvil({ base: 'none', budget: 500, seed: 497 })],
+    ['forge/hearth', forge({ style: 'hearth', seed: 498 })],
+    ['forge/bellows', forge({ style: 'bellows', seed: 499 })],
+    ['forge/field', forge({ style: 'field', fitted: false, seed: 500 })],
+    ['forge/cold', forge({ style: 'hearth', lit: false, budget: 500, seed: 501 })],
+  ];
+
+  it.each(furniture)('builds a sane, seated, honestly priced %s', (name, part) => {
+    const data = part.build();
+    expect(isSane(data), name).toBe(true);
+    const bounds = boundsOf(data);
+    expect(data.indices.length / 3, name).toBeGreaterThan(20);
+    expect(bounds.min[1], name).toBeGreaterThanOrEqual(-1e-6);
+    expect(bounds.size[1], name).toBeGreaterThan(0.005);
+    expect(doubleFaces(data), name).toBe(0);
+    const materials = [...new Set(data.materials ?? [])];
+    expect(materials.length, name).toBeLessThanOrEqual(10);
+    for (const id of materials) expect(id in SURFACES, `${name}: ${id}`).toBe(true);
+  });
+
+  it('builds the same piece from the same seed', () => {
+    const builds: [string, () => MeshBuilder][] = [
+      ['chair', () => chair({ style: 'stick', cushion: 'linen', seed: 402 })],
+      ['stool', () => stool({ style: 'milk', seed: 413 })],
+      ['bench', () => bench({ style: 'park', back: true, seed: 423 })],
+      ['table', () => table({ style: 'dining', cloth: 'linen', seed: 435 })],
+      ['bed', () => bed({ style: 'four-poster', made: false, seed: 442 })],
+      ['wardrobe', () => wardrobe({ style: 'open', seed: 452 })],
+      ['shelf', () => shelf({ style: 'dresser', goods: 'mixed', seed: 463 })],
+      ['chest', () => chest({ style: 'domed', lid: 'open', contents: 'coin', seed: 476 })],
+      ['throne', () => throne({ style: 'gothic', seed: 481 })],
+      ['bookshelf', () => bookshelf({ width: 2, bays: 2, seed: 492 })],
+      ['anvil', () => anvil({ base: 'stump', seed: 495 })],
+      ['forge', () => forge({ style: 'bellows', seed: 499 })],
+    ];
+    for (const [name, build] of builds) {
+      const first = build().build();
+      const second = build().build();
+      expect(Array.from(first.positions), name).toEqual(Array.from(second.positions));
+      expect(first.materials, name).toEqual(second.materials);
+    }
+  });
+
+  const heights: [string, MeshBuilder, number][] = [
+    ['chair/ladder', chair({ style: 'ladder', seat: 0.45, back: 0.46, seed: 401 }), 0.91],
+    ['chair/stick', chair({ style: 'stick', seat: 0.45, back: 0.52, seed: 402 }), 0.97],
+    ['stool/round', stool({ style: 'round', seat: 0.45, seed: 411 }), 0.45],
+    ['stool/milk', stool({ style: 'milk', seat: 0.3, seed: 413 }), 0.3],
+    ['bench/plank', bench({ style: 'plank', seat: 0.45, back: false, seed: 421 }), 0.45],
+    ['table/dining', table({ style: 'dining', height: 0.75, seed: 431 }), 0.75],
+    ['table/round', table({ style: 'round', height: 0.74, seed: 432 }), 0.74],
+    ['table/counter', table({ style: 'dining', height: 0.9, seed: 436 }), 0.9],
+    ['wardrobe', wardrobe({ height: 2, seed: 451 }), 2.07],
+    ['shelf/open', shelf({ style: 'open', height: 1.8, seed: 461 }), 1.8],
+    ['chest/flat', chest({ style: 'flat', height: 0.55, seed: 471 }), 0.55],
+    ['bookshelf', bookshelf({ height: 2.2, seed: 491 }), 2.26],
+    ['anvil/stump', anvil({ base: 'stump', seed: 495 }), 0.72],
+  ];
+
+  it.each(heights)('%s stands at the human measure it was asked for', (_name, part, height) => {
+    const built = boundsOf(part.build()).size[1];
+    expect(built / height).toBeGreaterThan(0.94);
+    expect(built / height).toBeLessThan(1.08);
+  });
+
+  it('keeps a seat at the height a body sits at, whatever the budget', () => {
+    // The seat is the reason a chair exists, so it is the one thing a poor chair
+    // may not lower: measure it by walking a ray down through the seat's middle.
+    for (const budget of [400, 1200, 3000]) {
+      const data = chair({ style: 'ladder', seat: 0.45, budget, seed: 401 }).build();
+      const hits = rayHits(data, [0.1, 0.9, 0.1], [0, -1, 0], 2);
+      expect(hits.length, `budget ${budget}`).toBeGreaterThan(0);
+      expect(0.9 - hits[0]!, `budget ${budget}`).toBeGreaterThan(0.4);
+      expect(0.9 - hits[0]!, `budget ${budget}`).toBeLessThan(0.52);
+    }
+  });
+
+  const budgets: [string, (budget: number) => MeshBuilder][] = [
+    ['chair', (budget) => chair({ style: 'stick', cushion: 'wool', budget, seed: 402 })],
+    ['stool', (budget) => stool({ style: 'round', budget, seed: 411 })],
+    ['bench', (budget) => bench({ style: 'plank', back: true, budget, seed: 421 })],
+    ['table', (budget) => table({ style: 'dining', budget, seed: 431 })],
+    ['bed', (budget) => bed({ style: 'four-poster', budget, seed: 442 })],
+    ['wardrobe', (budget) => wardrobe({ style: 'panel', budget, seed: 451 })],
+    ['shelf', (budget) => shelf({ style: 'open', goods: 'pots', budget, seed: 461 })],
+    ['chest', (budget) => chest({ style: 'domed', lid: 'open', contents: 'coin', budget, seed: 476 })],
+    ['throne', (budget) => throne({ style: 'gothic', budget, seed: 481 })],
+    ['bookshelf', (budget) => bookshelf({ fill: 1, budget, seed: 491 })],
+    ['anvil', (budget) => anvil({ base: 'stump', budget, seed: 495 })],
+    ['forge', (budget) => forge({ style: 'bellows', budget, seed: 499 })],
+    // A forge's hood and flue are charged rather than planned, so its height is
+    // the same poor as rich; what a poor forge loses is its bellows and its tools.
+  ];
+
+  it.each(budgets)('%s stays inside the allowance it is given', (name, build) => {
+    for (const budget of [400, 1200, 3000]) {
+      const data = build(budget).build();
+      const triangles = data.indices.length / 3;
+      expect(triangles, `${name} at ${budget}`).toBeLessThanOrEqual(budget * 1.4 + 120);
+      expect(triangles, `${name} at ${budget}`).toBeGreaterThanOrEqual(20);
+    }
+  });
+
+  it.each(budgets)('keeps the extent of a %s when the budget drops', (name, build) => {
+    const rich = boundsOf(build(3000).build()).size;
+    const poor = boundsOf(build(400).build()).size;
+    // A poor piece loses decoration, not footprint: a chair that shrank is a
+    // chair in the wrong place, so width and depth are held to 88 per cent and
+    // height to 97 (a poor bed loses its tester, which is height by design).
+    expect(poor[0] / rich[0], `${name} width`).toBeGreaterThan(name === 'bed' ? 0.8 : 0.88);
+    expect(poor[2] / rich[2], `${name} depth`).toBeGreaterThan(name === 'bed' ? 0.8 : 0.88);
+    expect(poor[1] / rich[1], `${name} height`).toBeGreaterThan(name === 'bed' ? 0.4 : 0.9);
+  });
+
+  const references: [string, string, MeshBuilder][] = [
+    ['chair', 'chair', chair({ seed: 401 })],
+    ['stool', 'stool', stool({ seed: 411 })],
+    ['bench', 'bench', bench({ seed: 421 })],
+    ['table-dining', 'table-dining', table({ style: 'dining', seed: 431 })],
+    ['table-round', 'table-round', table({ style: 'round', seed: 432 })],
+    ['bed', 'bed', bed({ style: 'plain', seed: 441 })],
+    ['wardrobe', 'wardrobe', wardrobe({ seed: 451 })],
+    ['shelf', 'shelf', shelf({ seed: 461 })],
+    ['chest', 'chest', chest({ seed: 471 })],
+    ['throne', 'throne', throne({ seed: 481 })],
+    ['bookshelf', 'bookshelf', bookshelf({ seed: 491 })],
+    ['anvil', 'anvil', anvil({ seed: 495 })],
+    ['forge', 'forge', forge({ seed: 498 })],
+  ];
+
+  it.each(references)('builds a %s at a scale the reference table accepts', (name, kind, part) => {
+    const data = part.build();
+    expect(scaleWarnings(kind, data), name).toEqual([]);
+  });
+
+  it('keeps all four legs of a chair at every budget', () => {
+    // A chair that could only afford three legs is a broken chair, so the legs
+    // are charged rather than planned: each corner must still have wood at the floor.
+    for (const budget of [400, 900, 3000]) {
+      const data = chair({ style: 'ladder', budget, seed: 401 }).build();
+      const seat = 0.45;
+      const width = 0.46;
+      const depth = 0.44;
+      for (const corner of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+        const at = {
+          x: corner[0] * (width / 2 - 0.02),
+          y: seat * 0.25,
+          z: corner[1] * (depth / 2 - 0.02),
+          radius: 0.09,
+        };
+        expect(countVerticesInside(data, at), `budget ${budget} corner ${corner.join()}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('hangs a wardrobe door on its hinge line when it opens', () => {
+    // An open door is rotated about the stile it hangs on, so the hinge edge stays
+    // where the carcass has it and the free edge swings clear of the body.
+    const closed = wardrobe({ style: 'panel', width: 1.2, depth: 0.6, seed: 451 }).build();
+    const open = wardrobe({ style: 'open', width: 1.2, depth: 0.6, seed: 451 }).build();
+    const closedBounds = boundsOf(closed);
+    const openBounds = boundsOf(open);
+    // Swung clear, the door reaches forward past the carcass front.
+    expect(openBounds.max[2]).toBeGreaterThan(closedBounds.max[2] + 0.1);
+    // And the carcass itself has not moved: same height, same width.
+    expect(openBounds.size[1] / closedBounds.size[1]).toBeGreaterThan(0.97);
+    expect(openBounds.size[0] / closedBounds.size[0]).toBeGreaterThan(0.94);
+    // The hinge side stays at the carcass: wood within a hand of the closed front.
+    const hinge = countVerticesInside(open, { x: -0.55, y: 1, z: 0.28, radius: 0.12 });
+    expect(hinge).toBeGreaterThan(0);
+  });
+
+  it('swings a chest lid about its hinge and shows what is inside', () => {
+    const closed = boundsOf(chest({ style: 'flat', lid: 'closed', seed: 471 }).build());
+    const open = chest({ style: 'flat', lid: 'open', contents: 'coin', seed: 471 }).build();
+    const openBounds = boundsOf(open);
+    // The lid stands up behind the body rather than lying on it.
+    expect(openBounds.max[1]).toBeGreaterThan(closed.size[1] + 0.2);
+    expect(openBounds.max[2]).toBeGreaterThan(closed.max[2]);
+    // Gold in the bottom of it: a metal that is not the iron of the straps.
+    const gold = verticesOfMaterial(open, 'gold');
+    expect(gold.length, 'coin').toBeGreaterThan(0);
+    expect(Math.min(...gold.map((point) => point[1]))).toBeLessThan(closed.size[1] * 0.6);
+    // A lid taken off leaves a trough: the footprint a room was swept for does not
+    // change, the height does, and the inside is open to the ceiling.
+    const off = chest({ style: 'flat', lid: 'off', seed: 475 }).build();
+    const offBounds = boundsOf(off);
+    expect(offBounds.min[1]).toBeGreaterThanOrEqual(-1e-6);
+    expect(offBounds.size[0] / closed.size[0]).toBeGreaterThan(1.2);
+    // Taking the lid off removes the lid's own thickness and nothing more: the
+    // trough must not end up taller than the chest it came from, which is what
+    // happens when the lid leans and drags the whole piece up with it.
+    expect(offBounds.size[1]).toBeLessThanOrEqual(closed.size[1]);
+    expect(offBounds.size[1]).toBeGreaterThan(closed.size[1] * 0.8);
+    // And a ray dropped into the middle reaches what is lying in it, well below
+    // where the lid used to be.
+    const through = rayHits(off, [0, 1.2, 0], [0, -1, 0], 2);
+    expect(through.length, 'open to the ceiling').toBeGreaterThan(0);
+    expect(1.2 - through[0]!).toBeLessThan(closed.size[1] * 0.6);
+  });
+
+  it('fills a bookshelf by the fraction asked for and never shortens it', () => {
+    const empty = bookshelf({ fill: 0, seed: 491 }).build();
+    const sparse = bookshelf({ fill: 0.3, budget: 900, seed: 491 }).build();
+    const full = bookshelf({ fill: 1, budget: 6000, seed: 491 }).build();
+    const booksOf = (data: MeshData): number =>
+      verticesOfMaterial(data, 'leather').length + verticesOfMaterial(data, 'leather-dark').length;
+    expect(booksOf(empty), 'empty').toBe(0);
+    expect(booksOf(sparse), 'sparse').toBeGreaterThan(0);
+    expect(booksOf(full), 'full').toBeGreaterThan(booksOf(sparse) * 2);
+    // The carcass is the extent: the same height at every fill and every budget.
+    expect(boundsOf(empty).size[1] / boundsOf(full).size[1]).toBeGreaterThan(0.95);
+    expect(boundsOf(sparse).size[1] / boundsOf(full).size[1]).toBeGreaterThan(0.95);
+  });
+
+  it('puts a shelf\'s goods on its boards and inside its own footprint', () => {
+    const data = shelf({ style: 'open', goods: 'pots', width: 1, height: 1.8, depth: 0.35, seed: 461 }).build();
+    const pots = [...verticesOfMaterial(data, 'ceramic'), ...verticesOfMaterial(data, 'terracotta')];
+    expect(pots.length).toBeGreaterThan(0);
+    const bounds = boundsOf(data);
+    for (const point of pots) {
+      // Nothing leans out past the board it stands on.
+      expect(Math.abs(point[0]), 'x').toBeLessThan(bounds.max[0] + 1e-6);
+      expect(point[2], 'z').toBeGreaterThan(bounds.min[2] - 1e-6);
+      expect(point[2], 'z').toBeLessThan(bounds.max[2] + 1e-6);
+      expect(point[1], 'y').toBeGreaterThan(0.01);
+    }
+    // Every pot stands on a board: the shelf has one at each of its levels.
+    const levels = new Set(pots.map((point) => Math.round(point[1] * 8)));
+    expect(levels.size).toBeGreaterThan(1);
+  });
+
+  it('drives a forge fire under its hood and keeps the quench barrel on the floor', () => {
+    const data = forge({ style: 'hearth', lit: true, fitted: true, seed: 498 }).build();
+    const fire = verticesOfMaterial(data, 'glass-warm');
+    expect(fire.length, 'fire').toBeGreaterThan(0);
+    const hearth = 0.72;
+    expect(Math.min(...fire.map((point) => point[1])), 'fire on the bed').toBeGreaterThan(hearth * 0.8);
+    expect(Math.max(...fire.map((point) => point[1])), 'fire under the hood').toBeLessThan(hearth * 1.5);
+    const barrelWood = verticesOfMaterial(data, 'wood-weathered');
+    expect(barrelWood.length, 'quench barrel').toBeGreaterThan(0);
+    expect(Math.min(...barrelWood.map((point) => point[1])), 'barrel on the floor').toBeLessThan(0.05);
+    // A cold forge has no flame in it at all, and is cheaper for it.
+    const cold = forge({ style: 'hearth', lit: false, seed: 498 }).build();
+    expect(verticesOfMaterial(cold, 'glass-warm').length, 'cold').toBe(0);
+    expect(cold.indices.length / 3).toBeLessThan(data.indices.length / 3);
+  });
+
+  it('gives an anvil its horn, its waist and its hardened face', () => {
+    const data = anvil({ base: 'stump', seed: 495 }).build();
+    const bounds = boundsOf(data);
+    // The horn reaches past the stump on one side and the heel on the other, so
+    // the body is wider than the log it stands on.
+    const stump = verticesOfMaterial(data, 'bark');
+    const stumpSpan = Math.max(...stump.map((point) => Math.abs(point[0])));
+    expect(bounds.size[0] / 0.7).toBeGreaterThan(0.94);
+    expect(stumpSpan, 'stump narrower than the body').toBeLessThan(bounds.size[0] * 0.42);
+    // The face is a separate plate of hardened steel on top of the body.
+    const face = verticesOfMaterial(data, 'steel-blade');
+    expect(face.length, 'face').toBeGreaterThan(0);
+    expect(Math.max(...face.map((point) => point[1]))).toBeGreaterThan(bounds.max[1] - 0.05);
+    // Struck at about 0.72 m: stump and body together, which is the working height.
+    expect(bounds.max[1]).toBeGreaterThan(0.66);
+    expect(bounds.max[1]).toBeLessThan(0.8);
+  });
+
+  it('stands a throne on its dais and raises its back past a standing eye', () => {
+    const data = throne({ style: 'gothic', dais: 0.2, seed: 481 }).build();
+    const bounds = boundsOf(data);
+    expect(bounds.size[1]).toBeGreaterThan(1.9);
+    // The seat is on the dais, so a ray dropped at the seat lands above the floor
+    // by the dais height plus the seat's own height.
+    const hits = rayHits(data, [0.2, 2.4, 0.2], [0, -1, 0], 3);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(2.4 - hits[0]!).toBeGreaterThan(0.6);
+    // Marble or stone under it: the dais is masonry, the chair is wood.
+    const stone = verticesOfMaterial(data, 'marble');
+    expect(stone.length, 'dais').toBeGreaterThan(0);
+    expect(Math.max(...stone.map((point) => point[1]))).toBeLessThan(0.3);
+  });
+
+  it('keeps every piece of furniture inside the box it reports', () => {
+    for (const [name, part] of furniture) {
       const data = part.build();
       const bounds = boundsOf(data);
       expect(outsideBounds(data, bounds.min, bounds.max), name).toBeLessThan(1e-5);

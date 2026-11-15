@@ -1,4 +1,4 @@
-import { MeshBuilder, type Vec2, type Vec3 } from '../mesh';
+import { MeshBuilder, type MeshData, type Vec2, type Vec3 } from '../mesh';
 import { cylinder, lathe, plane } from '../primitives';
 import { POST_TRIANGLES_PER_SIDE, detailRng, dressedBlock } from '../detail';
 import { range } from '../../generation/rng';
@@ -57,6 +57,39 @@ export function ropeCost(pathPoints: number, segments: number, strands = 3): num
   const stations = spans * steps + 1;
   const section = Math.max(2, Math.round(strands)) * 6;
   return (stations - 1) * section * 2 + 2 * (section - 2) + 8;
+}
+
+/** What a generator has spent of its allowance so far. */
+export interface Spend {
+  spent: number;
+}
+
+/**
+ * Builds a part and charges what it actually cost, or refuses it.
+ *
+ * Every cost formula in this library is a measured estimate of what a primitive
+ * will build, and a part assembled from several primitives — a framed panel, a
+ * spoked wheel, a boarded deck — is expensive to price by hand and easy to price
+ * wrong, which is how a crate came out at four times its allowance. So the
+ * families that build such parts ask the part itself: build it, count it, and
+ * only add it when the allowance still covers it. Refusing is the library's
+ * answer to a shortfall — representation is dropped, extent is never shrunk — so
+ * a caller reserves the members that carry the extent unconditionally with
+ * `take` and puts everything else through `affordable`.
+ */
+export function affordable(state: Spend, part: MeshBuilder, budget: number): MeshData | null {
+  const data = part.build();
+  const cost = data.indices.length / 3;
+  if (state.spent + cost > budget) return null;
+  state.spent += cost;
+  return data;
+}
+
+/** Builds a part, charges it, and hands it over whether or not it fits. */
+export function take(state: Spend, part: MeshBuilder): MeshData {
+  const data = part.build();
+  state.spent += data.indices.length / 3;
+  return data;
 }
 
 /**
