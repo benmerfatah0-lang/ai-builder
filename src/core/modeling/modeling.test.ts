@@ -6,8 +6,8 @@ import {
 } from './mesh';
 import { arch, box, cylinder, extrude, lathe, loft, plane, prism, sphere, sweep, torus } from './primitives';
 import {
-  BEVELLED_BOX_TRIANGLES, BOX_TRIANGLES, CORBEL_TRIANGLES, QUALITY_TRIANGLES, banner, barrel,
-  bevelledBoxTriangles, blade, bone, boulder, branch, chain, corbel, crag,
+  BEVELLED_BOX_TRIANGLES, BOX_TRIANGLES, CORBEL_TRIANGLES, QUALITY_TRIANGLES, banner,
+  bevelledBoxTriangles, blade, bone, boulder, branch, cask, chain, corbel, crag,
   crenellations, crystalCluster, dentils, displace, door, dressedBlock, feather, fracture,
   framedPanel, gear, helix, hoopBand, leafCluster, palisade, planks, planRepeatedUnits, post,
   ridgeCap, rivetRow, rockCluster, rope, roofPanel, ruinTop, spikeRow, stairs, stoneWall,
@@ -514,7 +514,7 @@ describe('detail generators', () => {
     { name: 'gear', build: () => gear({ radius: 0.7, teeth: 14, thickness: 0.12 }), maxTriangles: 2000 },
     { name: 'wheel', build: () => wheel({ radius: 0.7, width: 0.16 }), maxTriangles: 2000 },
     { name: 'helix', build: () => helix({ radius: 0.2, pitch: 0.13, turns: 3 }), maxTriangles: 1400 },
-    { name: 'barrel', build: () => barrel({ radius: 0.35, height: 0.95 }), maxTriangles: 1400 },
+    { name: 'cask', build: () => cask({ radius: 0.35, height: 0.95 }), maxTriangles: 1400 },
     { name: 'vessel', build: () => vessel({ radius: 0.3, height: 0.9, style: 'amphora' }), maxTriangles: 1400 },
     { name: 'spike row', build: () => spikeRow({ length: 1.8, height: 0.5, count: 6 }), maxTriangles: 400 },
     { name: 'palisade', build: () => palisade({ length: 6, height: 2.9, seed: 12 }), maxTriangles: QUALITY_TRIANGLES.medium! },

@@ -2081,7 +2081,7 @@ export function helix(options: { radius: number; pitch: number; turns: number; t
 
 /* --------------------------------------------------------------- vessels */
 
-export interface BarrelOptions {
+export interface CaskOptions {
   height: number;
   radius: number;
   seed?: number;
@@ -2092,14 +2092,18 @@ export interface BarrelOptions {
 }
 
 /**
- * A barrel: staved, bilged and hooped.
+ * A cask: staved, bilged and hooped, and solid — the shape a barrel is built from.
  *
- * A cylinder is a drum, not a barrel. The bilge (a wider middle) lets it be
- * rolled and turned, the staves show as vertical seams, and the hoops are iron
- * bands with rivets — three details that make a 90 cm object readable across a
- * whole scene.
+ * A cylinder is a drum, not a cask. The bilge (a wider middle) lets it be rolled
+ * and turned, the staves show as vertical seams, and the hoops are iron bands with
+ * rivets — three details that make a 90 cm object readable across a whole scene.
+ *
+ * This is the detail-level shape, for a cask standing among goods on a stall or in
+ * a hold, where nothing looks inside it. `containers.barrel` is the component: it
+ * turns the same hull with an interior, takes its head off, taps it and lays it on
+ * its side, and it is what the `barrel` asset is built from.
  */
-export function barrel(options: BarrelOptions): MeshBuilder {
+export function cask(options: CaskOptions): MeshBuilder {
   const rng = detailRng(options.seed ?? 163);
   const height = Math.max(0.15, options.height);
   const radius = Math.max(0.05, options.radius);
@@ -2143,6 +2147,8 @@ export function vessel(options: {
   style?: 'amphora' | 'jug' | 'urn' | 'bottle' | 'pot' | 'jar';
   seed?: number;
   handles?: boolean;
+  /** Columns round the wheel. A poor vessel is turned coarser, never smaller. */
+  segments?: number;
 }): MeshBuilder {
   const rng = detailRng(options.seed ?? 167);
   const height = Math.max(0.08, options.height);
@@ -2157,8 +2163,22 @@ export function vessel(options: {
     jar: [0.42, 0.54, 0.6, 0.6, 0.56, 0.48, 0.4, 0.34, 0.32, 0.34, 0.36],
   };
   const factors = shape[style] ?? shape.urn!;
+  const widest = Math.max(...factors);
+  /**
+   * Radius of the wall at a fraction of the height, read off the same factors the
+   * pot is turned from. Handles and bands have to meet the pot where the pot is,
+   * and every style is widest somewhere different.
+   */
+  const wallAt = (t: number): number => {
+    const scaled = Math.min(factors.length - 1, Math.max(0, t * (factors.length - 1)));
+    const index = Math.floor(scaled);
+    const next = Math.min(factors.length - 1, index + 1);
+    const mix = scaled - index;
+    return radius * ((factors[index] ?? 0) * (1 - mix) + (factors[next] ?? 0) * mix);
+  };
   const profile: Vec2[] = factors.map((factor, index) => [radius * factor, (height * index) / (factors.length - 1)]);
-  const builder = lathe(profile, { segments: 22, caps: true });
+  const segments = Math.max(8, Math.round(options.segments ?? 22));
+  const builder = lathe(profile, { segments, caps: true });
   // A thrown pot is never perfectly round.
   for (let index = 0; index < builder.vertexCount; index += 1) {
     const point = builder.positionAt(index);
@@ -2170,13 +2190,21 @@ export function vessel(options: {
   builder.computeNormals();
   if (options.handles !== false && (style === 'amphora' || style === 'jug')) {
     for (const side of [-1, 1]) {
-      const top = height * (style === 'amphora' ? 0.72 : 0.68);
-      const bottom = height * (style === 'amphora' ? 0.48 : 0.36);
+      // An ear handle: out of the neck, round past the shoulder and back into the
+      // belly. Both ends start at the wall's own radius at their own height, so
+      // neither one floats off the pot or buries itself in it, and the loop stands
+      // proud of the belly by a fixed fraction of the belly rather than of the
+      // radius the profile happens to be scaled by.
+      const topT = style === 'amphora' ? 0.72 : 0.68;
+      const bottomT = style === 'amphora' ? 0.48 : 0.36;
+      const top = height * topT;
+      const bottom = height * bottomT;
+      const out = radius * widest * 1.22;
       const handle = sweep([
-        [radius * 0.2 * side, top, 0],
-        [radius * 1.05 * side, top + height * 0.05, 0],
-        [radius * 1.12 * side, (top + bottom) / 2, 0],
-        [radius * 0.86 * side, bottom, 0],
+        [wallAt(topT) * side, top, 0],
+        [out * side, top + height * 0.05, 0],
+        [out * side, (top + bottom) / 2, 0],
+        [wallAt(bottomT) * side, bottom, 0],
       ], {
         texel: radius,
         resample: 3,
