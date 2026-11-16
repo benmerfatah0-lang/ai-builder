@@ -17,7 +17,11 @@
     "site:demo": "esbuild website/src/demo.ts --bundle --minify --format=esm --target=es2020 --legal-comments=none --outfile=website/public/demo.js",
     "site:demo:watch": "esbuild website/src/demo.ts --bundle --format=esm --target=es2020 --outfile=website/public/demo.js --watch",
     "site:app": "tsc --noEmit && vite build --base=/app/ --outDir=website/public/app --emptyOutDir",
-    "site:build": "npm run site:demo && npm run site:app"
+    "site:build": "npm run site:demo && npm run site:app",
+    "map:render": "tsx scripts/renderGameMap.ts --view overview && tsx scripts/renderGameMap.ts --view top && tsx scripts/renderGameMap.ts --view start && tsx scripts/renderGameMap.ts --view farm && tsx scripts/renderGameMap.ts --view crops && tsx scripts/renderGameMap.ts --view pens && tsx scripts/renderGameMap.ts --view finale",
+    "map:paper": "tsx scripts/renderPaperMap.ts",
+    "map:all": "npm run map:paper && npm run map:render && npm run map:page",
+    "map:page": "tsx scripts/renderMapPage.ts"
   },
   "dependencies": {
     "react": "^19.3.1",

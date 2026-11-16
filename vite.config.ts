@@ -18,6 +18,10 @@ export default defineConfig({
   build: {
     chunkSizeWarningLimit: 900,
     rollupOptions: {
+      input: {
+        main: 'index.html',
+        gameMap: 'game-map.html',
+      },
       output: {
         manualChunks: {
           'three-vendor': ['three'],
