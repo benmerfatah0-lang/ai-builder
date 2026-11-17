@@ -10,6 +10,9 @@
 > — تهبط داخل المستوى بزعتر مباشرة. حركة `WASD`، جري `Shift`، قفز `Space`، خروج `E`.
 > بلا قتال: مجرّد المشي في المستوى.
 >
+> على **أندرويد / Termux**: `npm run install:termux` ثم `npm run dev:termux` — التفاصيل في
+> [`docs/TERMUX.md`](docs/TERMUX.md).
+>
 > التفاصيل الكاملة في [`docs/GAME-MAP.md`](docs/GAME-MAP.md).
 
 ---

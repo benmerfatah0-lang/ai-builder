@@ -22,7 +22,10 @@
     "map:paper": "tsx scripts/renderPaperMap.ts",
     "map:all": "npm run map:paper && npm run map:render && npm run map:page",
     "map:page": "tsx scripts/renderMapPage.ts",
-    "map:dev": "MAP_PREVIEW=1 vite --host 0.0.0.0 --port 4173"
+    "map:dev": "MAP_PREVIEW=1 vite --host 0.0.0.0 --port 4173",
+    "install:termux": "npm install --ignore-scripts --no-audit --no-fund",
+    "dev:termux": "vite --host 0.0.0.0 --port 5173",
+    "build:termux": "vite build"
   },
   "dependencies": {
     "react": "^19.3.1",
@@ -40,7 +43,6 @@
     "@vitejs/plugin-react": "^5.2.0",
     "fake-indexeddb": "^6.2.2",
     "happy-dom": "^21.0.4",
-    "sharp": "^0.35.5",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vite": "^7.3.7",
@@ -48,5 +50,8 @@
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.35.5"
   }
 }
