@@ -320,6 +320,9 @@ mkdirSync('docs', { recursive: true });
 // Portable copy: every image inlined, one file, nothing beside it.
 const portableHtml = html.replace('</body>', singleFileNote + '</body>');
 writeFileSync('docs/خريطة-زعتر.html', portableHtml);
+// Same bytes under a Latin name at the repo root: easy to find in a file
+// browser, easy to link, and served at /map-preview.html by the dev server.
+writeFileSync('map-preview.html', portableHtml);
 
 // Same page for serving/Browsing next to its sibling PNGs and the SVG: keep the
 // file references so the repo stays light and the images stay replaceable.
