@@ -1,5 +1,14 @@
 # AI World Builder
 
+> ## 🦊 خريطة «زعتر والحضيرة العظمى»
+> **أسهل طريقة للعرض:** انقر مرتين على الملف [`docs/خريطة-زعتر.html`](docs/خريطة-زعتر.html)
+> — ملف واحد مكتفٍ بذاته (٠٫٦ م.ب) يحتوي كل الخريطة: ديوراما ثلاثية الأبعاد،
+> خريطة ورقية للطباعة، وملفات البوسات الخمسة. لا تثبيت ولا خادم ولا إنترنت.
+>
+> التفاصيل الكاملة في [`docs/GAME-MAP.md`](docs/GAME-MAP.md).
+
+---
+
 A free-first, local-first 3D world editor for the browser. Describe a world in
 text, inspect and edit it in a Three.js viewport, save it locally, and export it
 as a project file or a glTF 2.0 model for Godot and Unity.

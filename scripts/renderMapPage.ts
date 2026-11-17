@@ -7,6 +7,7 @@
  *   npx tsx scripts/renderMapPage.ts
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import sharp from 'sharp';
 import {
   ARENAS,
   BOSSES,
@@ -22,6 +23,27 @@ import {
 
 const svg = readFileSync('docs/game-map/paper-map.svg', 'utf8');
 const inlineSvg = svg.replace(/^<\?xml[^>]*>\s*/, '');
+
+/**
+ * Every raster in the page is compressed and inlined as base64, so the finished
+ * page is ONE file that can be emailed, dropped in a chat, or opened from a USB
+ * stick with no server, no repo and no internet.
+ */
+const inlinedImages = new Map<string, string>();
+
+async function inlineRenders(): Promise<void> {
+  const renders = ['overview', 'farm', 'crops', 'pens', 'start', 'finale', 'top'];
+  let total = 0;
+  for (const name of renders) {
+    const jpeg = await sharp(`docs/game-map/${name}.png`)
+      .resize({ width: 1180, withoutEnlargement: true })
+      .jpeg({ quality: 74, mozjpeg: true })
+      .toBuffer();
+    total += jpeg.length;
+    inlinedImages.set(`${name}.png`, `data:image/jpeg;base64,${jpeg.toString('base64')}`);
+  }
+  console.log(`Inlined ${renders.length} renders (${(total / 1024).toFixed(0)} kB of JPEG)`);
+}
 
 const esc = (value: string) =>
   value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -103,6 +125,12 @@ const guideCards = GUIDE.map(
   (section) => `<article><h3>${esc(section.title)}</h3><p>${esc(section.body)}</p></article>`,
 ).join('\n');
 
+await inlineRenders();
+
+const singleFileNote =
+  '<p style="text-align:center;font-size:10px;color:#93826c;margin:10px 0 0">' +
+  'هذا الملف مكتفٍ بذاته: كل الصور والخريطة الورقية مدمجة داخله — أرسله كما هو.</p>';
+
 const html = `<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
@@ -127,6 +155,10 @@ const html = `<!doctype html>
   header.hero .mark { font-size: 46px; }
   header.hero h1 { font-family: var(--font); font-size: clamp(30px, 5vw, 48px); margin: 8px 0 4px; color: var(--gold-b); }
   header.hero p { margin: 0; color: var(--mute); font-size: 14px; }
+  .open-box { display: flex; gap: 14px; align-items: center; background: linear-gradient(180deg, rgba(240,181,82,.16), rgba(240,181,82,.06)); border: 1px solid rgba(240,181,82,.45); border-radius: 14px; padding: 14px 18px; margin: 6px 0 4px; }
+  .open-icon { font-size: 26px; flex: none; }
+  .open-box strong { display: block; font-family: var(--font); font-size: 17px; color: var(--gold-b); }
+  .open-box span { display: block; font-size: 12px; color: var(--dim); margin-top: 2px; }
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 22px 0 10px; }
   .stats div { background: var(--bg2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; text-align: center; }
   .stats strong { display: block; font-family: var(--font); font-size: 26px; color: var(--gold-b); }
@@ -180,6 +212,19 @@ const html = `<!doctype html>
   .how ol { padding-inline-start: 20px; }
   .how li { font-size: 12.5px; color: var(--dim); margin-bottom: 7px; }
   .how code { background: #0f0c09; border: 1px solid var(--line); padding: 1px 6px; border-radius: 6px; color: var(--gold-b); font-size: 11.5px; direction: ltr; display: inline-block; }
+  .print-btn { font-family: inherit; font-size: 12px; font-weight: 700; color: #2a1a08; background: var(--gold); border: 0; border-radius: 999px; padding: 5px 14px; cursor: pointer; }
+  .print-btn:hover { background: var(--gold-b); }
+  @media print {
+    :root { --bg: #fff; --bg1: #fff; --bg2: #fff; --text: #000; --dim: #222; --mute: #555; }
+    body { background: #fff; color: #000; }
+    .open-box, .stats, .hero-shots, .grid-3, .boss, .region, .cols, .route, .how, footer, header.hero p { display: none !important; }
+    header.hero h1 { color: #000; font-size: 22px; }
+    h2.sec { color: #000; border-color: #999; font-size: 14px; margin: 8px 0; }
+    h2.sec small { color: #444; }
+    .paper { border: 0; padding: 0; background: #fff; }
+    .paper svg { width: 100%; height: auto; }
+    @page { size: A3 portrait; margin: 8mm; }
+  }
   footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line); text-align: center; font-size: 11px; color: var(--mute); }
 </style>
 </head>
@@ -190,6 +235,14 @@ const html = `<!doctype html>
     <h1>زعتر والحضيرة العظمى</h1>
     <p>خريطة عالم ثلاثية الأبعاد · أسلوب Souls-like كرتوني كوميدي · إصدار 1.0</p>
   </header>
+
+  <div class="open-box">
+    <div class="open-icon">🖱️</div>
+    <div>
+      <strong>للعرض: انقر مرتين على هذا الملف فقط.</strong>
+      <span>لا تحتاج تثبيت أي شيء، ولا خادمًا، ولا إنترنت — كل الصور والخريطة مدمجة داخل الملف نفسه.</span>
+    </div>
+  </div>
 
   <div class="stats">
     <div><strong>${STATS.bosses}</strong><span>بوسات من حيوانات المزرعة</span></div>
@@ -202,15 +255,15 @@ const html = `<!doctype html>
 
   <h2 class="sec">الديوراما ثلاثية الأبعاد <small>لقطات من الخريطة الحقيقية (مصيّرة بدقة كاملة)</small></h2>
   <div class="hero-shots">
-    <figure><img src="overview.png" alt="نظرة عامة على الخريطة" /><figcaption>نظرة عامة — الخط المتقطّع الذهبي هو مسار زعتر المقترح بين نقاط الحفظ والأرينات</figcaption></figure>
+    <figure><img src="${inlinedImages.get('overview.png')}" alt="نظرة عامة على الخريطة" /><figcaption>نظرة عامة — الخط المتقطّع الذهبي هو مسار زعتر المقترح بين نقاط الحفظ والأرينات</figcaption></figure>
   </div>
   <div class="grid-3" style="margin-top:12px">
-    <figure><img src="farm.png" alt="المزرعة" loading="lazy" /><figcaption>🏠 المنطقة ١ — المزرعة: السوق، البئر، حوش الديك</figcaption></figure>
-    <figure><img src="crops.png" alt="منطقة الزراعة" loading="lazy" /><figcaption>🌾 المنطقة ٢ — الزراعة: الحقول، الجرن، الطاحونة</figcaption></figure>
-    <figure><img src="pens.png" alt="منطقة الحظائر" loading="lazy" /><figcaption>🐑 المنطقة ٣ — الحظائر: الجسر، المراعي، حلبة الكباش</figcaption></figure>
-    <figure><img src="start.png" alt="حافّة الغابة" loading="lazy" /><figcaption>🌲 المقدمة — حافّة الغابة حيث يبدأ زعتر</figcaption></figure>
-    <figure><img src="finale.png" alt="قصر الحضيرة" loading="lazy" /><figcaption>👑 الخاتمة — قصر الحضيرة وعرش التبن</figcaption></figure>
-    <figure><img src="top.png" alt="من أعلى" loading="lazy" /><figcaption>🧭 مخطط من أعلى — لقراءة الممرّات والحدود</figcaption></figure>
+    <figure><img src="${inlinedImages.get('farm.png')}" alt="المزرعة" loading="lazy" /><figcaption>🏠 المنطقة ١ — المزرعة: السوق، البئر، حوش الديك</figcaption></figure>
+    <figure><img src="${inlinedImages.get('crops.png')}" alt="منطقة الزراعة" loading="lazy" /><figcaption>🌾 المنطقة ٢ — الزراعة: الحقول، الجرن، الطاحونة</figcaption></figure>
+    <figure><img src="${inlinedImages.get('pens.png')}" alt="منطقة الحظائر" loading="lazy" /><figcaption>🐑 المنطقة ٣ — الحظائر: الجسر، المراعي، حلبة الكباش</figcaption></figure>
+    <figure><img src="${inlinedImages.get('start.png')}" alt="حافّة الغابة" loading="lazy" /><figcaption>🌲 المقدمة — حافّة الغابة حيث يبدأ زعتر</figcaption></figure>
+    <figure><img src="${inlinedImages.get('finale.png')}" alt="قصر الحضيرة" loading="lazy" /><figcaption>👑 الخاتمة — قصر الحضيرة وعرش التبن</figcaption></figure>
+    <figure><img src="${inlinedImages.get('top.png')}" alt="من أعلى" loading="lazy" /><figcaption>🧭 مخطط من أعلى — لقراءة الممرّات والحدود</figcaption></figure>
   </div>
 
   <h2 class="sec">الخريطة الورقية <small>SVG قابل للطباعة — كل الرموز والمسارات على ورقة واحدة</small></h2>
@@ -249,7 +302,7 @@ const html = `<!doctype html>
     <ol>
       <li><strong>هذه الصفحة:</strong> افتح <code>docs/game-map/index.html</code> مباشرة في المتصفح — كل شيء يعمل بدون خادم أو إنترنت.</li>
       <li><strong>الديوراما التفاعلية:</strong> من جذر المشروع نفّذ <code>npm install</code> ثم <code>npm run dev</code> وافتح <code>http://localhost:5173/game-map.html</code> — تدوير، تكبير، نقر المناطق والبوسات، وجولة تلقائية.</li>
-      <li><strong>ملف الورقة:</strong> <a href="paper-map.svg">paper-map.svg</a> قابل للفتح في المتصفح أو الطباعة، و<code>GAME-MAP.md</code> يحوي كل التفاصيل النصية.</li>
+      <li><strong>للطباعة:</strong> اضغط زرّ <button type="button" class="print-btn" onclick="window.print()">🖨️ طباعة الخريطة الورقية</button> — الخريطة أعلاه تُطبع على ورقة A3/٤ عمودية.</li>
     </ol>
   </div>
 
@@ -262,5 +315,23 @@ const html = `<!doctype html>
 `;
 
 mkdirSync('docs/game-map', { recursive: true });
-writeFileSync('docs/game-map/index.html', html);
-console.log(`Wrote docs/game-map/index.html (${(html.length / 1024).toFixed(1)} kB)`);
+mkdirSync('docs', { recursive: true });
+
+// Portable copy: every image inlined, one file, nothing beside it.
+const portableHtml = html.replace('</body>', singleFileNote + '</body>');
+writeFileSync('docs/خريطة-زعتر.html', portableHtml);
+
+// Same page for serving/Browsing next to its sibling PNGs and the SVG: keep the
+// file references so the repo stays light and the images stay replaceable.
+const folderHtml = portableHtml
+  .replace(/src="data:image\/jpeg;base64,[^"]+"/g, (_match, offset: number, whole: string) => {
+    // Restore the original file name by order of appearance.
+    const order = ['overview.png', 'farm.png', 'crops.png', 'pens.png', 'start.png', 'finale.png', 'top.png'];
+    const index = (whole.slice(0, offset).match(/src="data:/g) ?? []).length;
+    return `src="${order[index] ?? 'overview.png'}"`;
+  })
+  .replace(singleFileNote, '');
+writeFileSync('docs/game-map/index.html', folderHtml);
+
+console.log(`Wrote docs/خريطة-زعتر.html (${(portableHtml.length / 1024 / 1024).toFixed(2)} MB, self-contained)`);
+console.log(`Wrote docs/game-map/index.html (${(folderHtml.length / 1024).toFixed(1)} kB, uses sibling files)`);
