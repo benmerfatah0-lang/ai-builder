@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
@@ -70,6 +70,14 @@ export function GameMap({ embedded = false }: GameMapProps) {
   const controlsRef = useRef<OrbitControls | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
 
+  // `?explore` (or `#explore`) boots straight into the walk mode, so a shared
+  // link needs no second click.
+  const startInExplore = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.has('explore') || window.location.hash === '#explore';
+  }, []);
+
   const [selection, setSelection] = useState<MapSelection | null>({ kind: 'region', id: 'farm' });
   const [hovered, setHovered] = useState<string | null>(null);
   const [showRoute, setShowRoute] = useState(true);
@@ -80,10 +88,11 @@ export function GameMap({ embedded = false }: GameMapProps) {
   const [mode, setMode] = useState<'3d' | 'paper' | 'design'>('3d');
   const [overlay, setOverlay] = useState<'none' | 'regions' | 'bosses'>('none');
   const [guideOpen, setGuideOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(startInExplore);
+  const [webglFailed, setWebglFailed] = useState(false);
   const [selectedBoss, setSelectedBoss] = useState<string | null>(null);
   const [, setCameraTick] = useState(0);
-  const [exploring, setExploring] = useState(false);
+  const [exploring, setExploring] = useState(startInExplore);
   const [exploreStatus, setExploreStatus] = useState<ExploreStatus>({
     x: 0,
     z: 148,
@@ -142,6 +151,12 @@ export function GameMap({ embedded = false }: GameMapProps) {
     try {
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     } catch {
+      // No WebGL 2 (old GPU, remote desktop, blocked context). Explore mode has
+      // nothing to walk on, so fall back to the paper map — the whole design is
+      // still readable there.
+      setWebglFailed(true);
+      setExploring(false);
+      setMode('paper');
       return;
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -550,6 +565,19 @@ export function GameMap({ embedded = false }: GameMapProps) {
             <em>امشِ في المستوى · بلا قتال · مفتاح E</em>
           </span>
         </button>
+      )}
+
+      {webglFailed && (
+        <div className="map-webgl-notice" role="status">
+          <strong>جهازك لا يدعم WebGL 2</strong>
+          <span>
+            عرضنا لك الخريطة الورقية بدلًا من الديوراما ثلاثية الأبعاد — وضع الاستكشاف يحتاج
+            تسريع الرسومات. جرّب متصفحًا آخر أو فعّل تسريع العتاد.
+          </span>
+          <button type="button" onClick={() => setWebglFailed(false)} aria-label="إغلاق" className="map-webgl-close">
+            ✕
+          </button>
+        </div>
       )}
 
       {mode === 'paper' ? (

@@ -19,7 +19,9 @@ function mapLandingRedirect(): Plugin {
   ) => {
     const url = req.url ?? '/';
     if (url === '/' || url.startsWith('/?')) {
-      res.writeHead(302, { Location: `/game-map.html${url.slice(1)}` });
+      // `?explore` drops the visitor straight into the fox, so the preview link
+      // is a single click with nothing to find first.
+      res.writeHead(302, { Location: '/game-map.html?explore' });
       res.end();
       return;
     }

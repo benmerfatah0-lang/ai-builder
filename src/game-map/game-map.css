@@ -2690,3 +2690,44 @@
     inset-inline: 10px;
   }
 }
+
+/* WebGL fallback notice */
+.map-webgl-notice {
+  position: absolute;
+  z-index: 40;
+  inset-block-start: 12px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(640px, calc(100% - 24px));
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(228, 104, 92, 0.45);
+  background: rgba(38, 22, 18, 0.95);
+  color: #f2e8d7;
+  font-size: 11.5px;
+  line-height: 1.5;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(6px);
+}
+.map-webgl-notice strong {
+  flex: none;
+  color: #f0a89f;
+  font-size: 12px;
+}
+.map-webgl-notice span {
+  color: #c4b39b;
+}
+.map-webgl-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid #46382a;
+  background: #2a2119;
+  color: #c4b39b;
+  cursor: pointer;
+  font-size: 11px;
+}
