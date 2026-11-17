@@ -11,29 +11,34 @@ import { defineConfig } from 'vitest/config';
  * the map behind a URL the reviewer has to know. This middleware is opt-in via
  * `MAP_PREVIEW=1`, so `npm run dev` still opens the editor exactly as before.
  */
-function mapLandingRedirect(): Plugin {
-  const redirect = (
+function mapLanding(): Plugin {
+  /**
+   * Serves the map at `/` directly (HTTP 200) instead of redirecting to it.
+   *
+   * A 302 was the first implementation, but preview proxies do not all forward
+   * redirects to the browser — the visitor then sees a bare redirect body or an
+   * error. Rewriting the request path is invisible to the client and cannot be
+   * lost in transit.
+   */
+  const rewrite = (
     req: { url?: string },
-    res: { writeHead: (status: number, headers: Record<string, string>) => void; end: () => void },
+    _res: unknown,
     next: () => void,
   ) => {
     const url = req.url ?? '/';
     if (url === '/' || url.startsWith('/?')) {
-      // `?explore` drops the visitor straight into the fox, so the preview link
-      // is a single click with nothing to find first.
-      res.writeHead(302, { Location: '/game-map.html?explore' });
-      res.end();
-      return;
+      // `?explore` drops the visitor straight into the fox.
+      req.url = '/game-map.html?explore';
     }
     next();
   };
   return {
-    name: 'game-map-landing-redirect',
+    name: 'game-map-landing',
     configureServer(server) {
-      server.middlewares.use(redirect);
+      server.middlewares.use(rewrite);
     },
     configurePreviewServer(server) {
-      server.middlewares.use(redirect);
+      server.middlewares.use(rewrite);
     },
   };
 }
@@ -41,7 +46,7 @@ function mapLandingRedirect(): Plugin {
 const mapPreview = process.env.MAP_PREVIEW === '1';
 
 export default defineConfig({
-  plugins: [react(), ...(mapPreview ? [mapLandingRedirect()] : [])],
+  plugins: [react(), ...(mapPreview ? [mapLanding()] : [])],
   server: {
     host: '0.0.0.0',
     allowedHosts: true,

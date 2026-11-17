@@ -25,7 +25,8 @@
     "map:dev": "MAP_PREVIEW=1 vite --host 0.0.0.0 --port 4173",
     "install:termux": "npm install --ignore-scripts --no-audit --no-fund",
     "dev:termux": "vite --host 0.0.0.0 --port 5173",
-    "build:termux": "vite build"
+    "build:termux": "vite build",
+    "dev:map": "MAP_PREVIEW=1 vite --host 0.0.0.0 --port 5173"
   },
   "dependencies": {
     "react": "^19.3.1",
