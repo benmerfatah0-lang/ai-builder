@@ -26,8 +26,10 @@ import {
   ROADS,
   TREES,
   WATER,
+  WORLD,
 } from '../src/game-map/data';
 import { buildMapScene } from '../src/game-map/scene';
+import { createFoxPlayer } from '../src/game-map/player';
 import { buildOverlays } from '../src/game-map/overlays';
 
 interface Options {
@@ -51,6 +53,9 @@ const VIEWS: Record<string, { eye: [number, number, number]; target: [number, nu
   pens: { eye: [24, 54, -22], target: [-6, 2, -96], fov: 50 },
   finale: { eye: [-14, 30, -84], target: [-46, 2, -134], fov: 50 },
   south: { eye: [-92, 62, -178], target: [-20, 0, -80], fov: 46 },
+  // Character close-ups: the fox at spawn and mid-route, for art review.
+  fox: { eye: [8, 9.5, 138], target: [2, 3.4, 128], fov: 33 },
+  foxbridge: { eye: [11, 8.5, -48], target: [6, 0.6, -58], fov: 34 },
 };
 
 function parseArgs(argv: string[]): Options {
@@ -144,6 +149,8 @@ const options = parseArgs(process.argv.slice(2));
 const WIDTH = options.width;
 const HEIGHT = options.height;
 
+const withFox = options.view === 'fox' || options.view === 'foxbridge';
+
 const map = buildMapScene({
   water: WATER,
   roads: ROADS,
@@ -160,6 +167,20 @@ const map = buildMapScene({
 });
 const scene = new THREE.Group();
 scene.add(map.root);
+
+if (withFox) {
+  // Render the actual avatar the viewer uses, so the close-up cannot drift from
+  // what ships in the app.
+  const spawn: [number, number] = options.view === 'fox' ? [2, 128] : [6, -58];
+  const fox = createFoxPlayer({
+    heightAt: map.heightAt,
+    water: WATER,
+    bounds: WORLD,
+    spawn,
+  });
+  fox.group.rotation.y = Math.PI * 0.62;
+  scene.add(fox.group);
+}
 if (options.overlays) {
   const beaconRegion = options.beaconRegion
     ? REGIONS.find((region) => region.id === options.beaconRegion)
@@ -209,6 +230,9 @@ let skipped = 0;
 scene.traverse((node) => {
   const mesh = node as THREE.Mesh;
   if (!mesh.isMesh || !mesh.geometry) return;
+  // Texture-alpha decals (the fox's contact shadow) cannot be represented by a
+  // flat vertex-colour painter, so they are left out of offline stills.
+  if (node.userData.decal) return;
   const geometry = mesh.geometry as THREE.BufferGeometry;
   const position = geometry.getAttribute('position');
   if (!position) return;

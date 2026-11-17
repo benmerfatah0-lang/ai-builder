@@ -27,6 +27,8 @@ import { LegendPanel } from './ui/LegendPanel';
 import { MapTopBar } from './ui/MapTopBar';
 import { PaperMapView } from './ui/PaperMapView';
 import { DesignSheet } from './ui/DesignSheet';
+import { ExploreHud } from './ui/ExploreHud';
+import { bindKeyboard, createExplorer, type ExploreHandle, type ExploreStatus } from './explore';
 import './game-map.css';
 
 /**
@@ -81,6 +83,20 @@ export function GameMap({ embedded = false }: GameMapProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [selectedBoss, setSelectedBoss] = useState<string | null>(null);
   const [, setCameraTick] = useState(0);
+  const [exploring, setExploring] = useState(false);
+  const [exploreStatus, setExploreStatus] = useState<ExploreStatus>({
+    x: 0,
+    z: 148,
+    speed: 0,
+    sprinting: false,
+    regionName: 'حافّة الغابة',
+    progress: 0,
+    wading: false,
+  });
+  const [exploreHint, setExploreHint] = useState(true);
+  const [discovered, setDiscovered] = useState<string | null>(null);
+  const explorerRef = useRef<ExploreHandle | null>(null);
+  const exploringRef = useRef(false);
 
   const goTo = useCallback((preset: string) => {
     const target = VIEW_PRESETS[preset];
@@ -199,10 +215,20 @@ export function GameMap({ embedded = false }: GameMapProps) {
     let frame = 0;
     let disposed = false;
 
+    let lastExplorerTick = 0;
+
     const animate = () => {
       if (disposed) return;
       const elapsed = clock.getElapsedTime();
+      const dt = Math.min(0.05, elapsed - lastExplorerTick || 0.016);
+      lastExplorerTick = elapsed;
       map.update(elapsed);
+
+      // Explore mode owns the camera while it is active; the orbit rig steps
+      // aside so the two never fight over the same transform.
+      if (exploringRef.current && explorerRef.current) {
+        explorerRef.current.update(dt, elapsed);
+      }
       const flying = camera.userData.flying as
         | { from: THREE.Vector3; to: THREE.Vector3; targetFrom: THREE.Vector3; targetTo: THREE.Vector3; t: number }
         | undefined;
@@ -215,7 +241,7 @@ export function GameMap({ embedded = false }: GameMapProps) {
           delete camera.userData.flying;
         }
       }
-      controls.update();
+      if (!exploringRef.current) controls.update();
       renderer.render(scene, camera);
       frame = requestAnimationFrame(animate);
     };
@@ -318,6 +344,108 @@ export function GameMap({ embedded = false }: GameMapProps) {
   }, []);
 
 
+  /* ----------------------------------------------------- explore mode */
+  useEffect(() => {
+    exploringRef.current = exploring;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    const map = mapRef.current;
+    const controls = controlsRef.current;
+    if (!scene || !camera || !map) return;
+
+    if (!exploring) {
+      explorerRef.current?.dispose();
+      explorerRef.current = null;
+      if (controls) controls.enabled = true;
+      return;
+    }
+
+    // Orbit is disabled: in explore mode the chase camera is authoritative.
+    if (controls) controls.enabled = false;
+    // Cancel any in-flight fly-to so the camera does not teleport mid-walk.
+    delete camera.userData.flying;
+
+    const explorer = createExplorer({
+      heightAt: map.heightAt,
+      scene,
+      camera,
+      onFirstMove: () => setExploreHint(false),
+    });
+    explorerRef.current = explorer;
+    const unbind = bindKeyboard(() => explorer.intent);
+    const keydown = (event: KeyboardEvent) => {
+      if (event.code === 'KeyR' && !event.ctrlKey && !event.metaKey) {
+        explorer.player.reset();
+        explorer.snapCamera();
+      }
+    };
+    window.addEventListener('keydown', keydown);
+
+    // Poll the HUD at 10 Hz: enough to feel live, cheap enough not to thrash React.
+    let lastCheckpoint: string | null = null;
+    const timer = window.setInterval(() => {
+      setExploreStatus(explorer.status());
+      const checkpoint = explorer.nearestCheckpoint();
+      if (checkpoint && checkpoint.id !== lastCheckpoint) {
+        lastCheckpoint = checkpoint.id;
+        setDiscovered(checkpoint.name);
+        window.setTimeout(() => setDiscovered(null), 2600);
+      }
+    }, 100);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('keydown', keydown);
+      unbind();
+      explorer.dispose();
+      explorerRef.current = null;
+      if (controls) controls.enabled = true;
+    };
+  }, [exploring]);
+
+  // One-key entry, so the reviewer never has to hunt for the button.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (event.code !== 'KeyE' || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (mode !== '3d') return;
+      event.preventDefault();
+      const next = !exploringRef.current;
+      if (next) {
+        setCollapsed(true);
+        setExploreHint(true);
+      }
+      setExploring(next);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mode]);
+
+  const startExploring = useCallback(() => {
+    setMode('3d');
+    setCollapsed(true);
+    setExploreHint(true);
+    setExploring(true);
+  }, []);
+
+  const stopExploring = useCallback(() => {
+    setExploring(false);
+    setExploreHint(true);
+    // Hand the camera back to the orbit rig at the fox's last position.
+    const explorer = explorerRef.current;
+    const controls = controlsRef.current;
+    const camera = cameraRef.current;
+    if (explorer && controls && camera) {
+      controls.target.set(explorer.player.state.x, 0, explorer.player.state.z);
+      camera.position.set(
+        explorer.player.state.x + 60,
+        80,
+        explorer.player.state.z + 70,
+      );
+    }
+  }, []);
+
   /* -------------------------------------------------- design overlays */
   const overlayRef = useRef<OverlayHandle | null>(null);
   useEffect(() => {
@@ -412,6 +540,16 @@ export function GameMap({ embedded = false }: GameMapProps) {
           overlay={overlay}
           onOverlay={setOverlay}
         />
+      )}
+
+      {mode === '3d' && !exploring && (
+        <button type="button" className="explore-enter" onClick={startExploring}>
+          <span className="explore-enter-mark">🦊</span>
+          <span>
+            <strong>استكشف الخريطة بزعتر</strong>
+            <em>امشِ في المستوى · بلا قتال · مفتاح E</em>
+          </span>
+        </button>
       )}
 
       {mode === 'paper' ? (
@@ -532,9 +670,38 @@ export function GameMap({ embedded = false }: GameMapProps) {
             )}
           </div>
 
-          <div className="map-stage-hint">
-            اسحب للدوران · عجلة/إصبعان للتكبير · انقر منطقة أو بوسًا لقراءة التصميم
-          </div>
+          {exploring && (
+            <ExploreHud
+              status={exploreStatus}
+              discovered={discovered}
+              showHint={exploreHint}
+              onStick={(forward, strafe) => {
+                const explorer = explorerRef.current;
+                if (!explorer) return;
+                explorer.intent.forward = forward;
+                explorer.intent.strafe = strafe;
+              }}
+              onJump={() => {
+                const explorer = explorerRef.current;
+                if (explorer) explorer.intent.jump = true;
+              }}
+              onSprint={(active) => {
+                const explorer = explorerRef.current;
+                if (explorer) explorer.intent.sprint = active;
+              }}
+              onReset={() => {
+                explorerRef.current?.player.reset();
+                explorerRef.current?.snapCamera();
+              }}
+              onExit={stopExploring}
+            />
+          )}
+
+          {!exploring && (
+            <div className="map-stage-hint">
+              اسحب للدوران · عجلة/إصبعان للتكبير · انقر منطقة أو بوسًا لقراءة التصميم
+            </div>
+          )}
         </div>
       </div>
       )}
