@@ -21,7 +21,8 @@
     "map:render": "tsx scripts/renderGameMap.ts --view overview && tsx scripts/renderGameMap.ts --view top && tsx scripts/renderGameMap.ts --view start && tsx scripts/renderGameMap.ts --view farm && tsx scripts/renderGameMap.ts --view crops && tsx scripts/renderGameMap.ts --view pens && tsx scripts/renderGameMap.ts --view finale",
     "map:paper": "tsx scripts/renderPaperMap.ts",
     "map:all": "npm run map:paper && npm run map:render && npm run map:page",
-    "map:page": "tsx scripts/renderMapPage.ts"
+    "map:page": "tsx scripts/renderMapPage.ts",
+    "map:dev": "MAP_PREVIEW=1 vite --host 0.0.0.0 --port 4173"
   },
   "dependencies": {
     "react": "^19.3.1",
