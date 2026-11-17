@@ -560,6 +560,8 @@ export function buildMapScene(data: {
 
   /* ------------------------------------------------------- diorama base */
   buildDioramaBase(root, materials, heightAt);
+  // Horizon: small green hills ringing the slab, drawn behind everything.
+  buildDistantHills(root, animated);
 
   /* -------------------------------------------------------------- water */
   const waterUniforms = { uTime: { value: 0 } };
@@ -1872,6 +1874,214 @@ function buildBoundaryPosts(
   }
 }
 
+
+/* ==================================================== distant green hills */
+
+/**
+ * Height of the horizon saucer under a point, relative to its own rest Y.
+ *
+ * The ground and the hills both read from this single function: the bug it
+ * prevents was hills floating in the sky because the ground curved away faster
+ * than their fixed base heights assumed.
+ */
+export function horizonGroundOffset(x: number, z: number): number {
+  const radius = Math.min(1, Math.hypot(x, z) / HORIZON_RADIUS);
+  // Flat for the whole area the hills occupy; the falloff only starts past 80%
+  // of the radius. Curving under the hills was what made them look airborne.
+  const falloff = Math.max(0, radius - 0.8);
+  return -(falloff * falloff) * 22;
+}
+
+/** Rest height of the horizon saucer mesh. */
+export const HORIZON_Y = -3.2;
+
+/**
+ * Hill colour per ring, near to far. Exported so the aerial-perspective test
+ * can assert the real values instead of restating them, and so the backdrop
+ * cannot drift back to hill-green-on-ground-green (which erased the hills).
+ */
+/** Flat green of the horizon saucer the hills stand on. */
+export const HORIZON_GROUND_COLOR = '#a9c489';
+
+export const HILL_COLORS = {
+  near: '#4f8238',
+  mid: '#669447',
+  far: '#83a862',
+} as const;
+
+export const HILL_RINGS = [
+  // `minWidth`/`maxWidth` are HALF-extents: a hill is drawn `2 * width` across.
+  // Treating them as full widths made every hill twice as wide as intended,
+  // which is what turned the backdrop into flat green lily pads.
+  { radiusX: 186, radiusZ: 214, count: 30, minHeight: 5.0, maxHeight: 7.4, minWidth: 9, maxWidth: 13, materialKey: 'near' as const, seed: 3 },
+  { radiusX: 252, radiusZ: 290, count: 34, minHeight: 6.4, maxHeight: 8.6, minWidth: 12, maxWidth: 17, materialKey: 'mid' as const, seed: 21 },
+  { radiusX: 330, radiusZ: 378, count: 38, minHeight: 7.6, maxHeight: 9.6, minWidth: 16, maxWidth: 22, materialKey: 'far' as const, seed: 47 },
+] as const;
+
+/**
+ * Radius of the horizon saucer, derived from the farthest hill's reach.
+ *
+ * Computed rather than hand-picked: a hard-coded number silently drifts out of
+ * sync when a ring moves, and a hill beyond the disc renders against bare sky —
+ * the "floating green pancake" bug.
+ */
+export const HORIZON_RADIUS = (() => {
+  let reach = 0;
+  for (const ring of HILL_RINGS) {
+    // Jitter peaks at 1.1x; `maxWidth` is a half-extent, so one hill reaches
+    // exactly that far past its centre.
+    reach = Math.max(reach, Math.hypot(ring.radiusX, ring.radiusZ) * 1.1 + ring.maxWidth);
+  }
+  return Math.ceil(reach + 60);
+})();
+
+/**
+ * Ring layout for the horizon hills. Exported so tests can assert the actual
+ * numbers instead of restating them: the backdrop must stay outside the slab
+ * and must stay low and wide.
+ */
+
+
+/** World bounds of the diorama slab, mirrored for the hill spacing test. */
+export const DIORAMA_HALF = { x: 122, z: 156 } as const;
+
+
+/**
+ * Small rolling green hills ringing the diorama.
+ *
+ * The map is a table-top model, so without a horizon the slab floats in empty
+ * sky. These are low, wide and squashed — the silhouette of farmland beyond the
+ * farm, not mountains — and they get paler with distance so the eye reads depth
+ * instead of mistaking them for more playable map.
+ *
+ * Decorative only: never picked, never collidable.
+ */
+function buildDistantHills(
+  root: THREE.Group,
+  animated: ((elapsed: number) => void)[],
+) {
+  const group = new THREE.Group();
+  group.name = 'distant-hills';
+  // Backdrop only: the pointer picker skips anything under this flag, otherwise
+  // clicking a far hill would select whichever region happened to be nearest.
+  group.userData.decorative = true;
+
+  // Own materials (not the shared cache): these are tinted for atmosphere and
+  // must never bleed into a pickable surface's colour.
+  const nearMaterial = new THREE.MeshStandardMaterial({ color: HILL_COLORS.near, roughness: 1, flatShading: true });
+  const midMaterial = new THREE.MeshStandardMaterial({ color: HILL_COLORS.mid, roughness: 1, flatShading: true });
+  const farMaterial = new THREE.MeshStandardMaterial({ color: HILL_COLORS.far, roughness: 1, flatShading: true });
+
+  /* A ridge is a squashed hemisphere sliced at the base so it never shows a
+     floating underside: flat bottom, soft dome on top. */
+  const makeRidge = (
+    material: THREE.Material,
+    width: number,
+    height: number,
+    depth: number,
+  ) => {
+    const geometry = new THREE.SphereGeometry(1, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+    // Squash and pull the rim down slightly so it beds into the ground plane.
+    const position = geometry.attributes.position as THREE.BufferAttribute;
+    for (let index = 0; index < position.count; index += 1) {
+      position.setY(index, position.getY(index) * 0.92 - 0.04);
+    }
+    geometry.computeVertexNormals();
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.scale.set(width, height, depth);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    return mesh;
+  };
+
+  const ridges: THREE.Mesh[] = [];
+
+  const rings = HILL_RINGS.map((ring) => ({
+    ...ring,
+    material:
+      ring.materialKey === 'near' ? nearMaterial : ring.materialKey === 'mid' ? midMaterial : farMaterial,
+  }));
+
+  for (const ring of rings) {
+    for (let index = 0; index < ring.count; index += 1) {
+      const t = index / ring.count;
+      // Offset each ring so hills do not line up radially into visible spokes.
+      // The histogram-ish jitter here is what breaks the "beads on a wire" look:
+      // evenly spaced hills on a perfect ellipse read as a drawn arc, not a
+      // landscape. Clumping them irregularly is the whole difference.
+      const angleJitter = (hash2(index, ring.seed + 7) - 0.5) * 0.9;
+      const angle = t * Math.PI * 2 + hash2(ring.seed, index) * 0.3 + angleJitter / ring.count;
+      // Wide radial spread, biased outward, so hills form clusters and gaps.
+      const spread = hash2(index, ring.seed + 5) + hash2(index * 3, ring.seed + 8);
+      const jitter = 0.94 + (spread * 0.5) * 0.34;
+      const x = Math.cos(angle) * ring.radiusX * jitter;
+      const z = Math.sin(angle) * ring.radiusZ * jitter;
+
+      const height = ring.minHeight + hash2(index, ring.seed + 1) * (ring.maxHeight - ring.minHeight);
+      const width = ring.minWidth + hash2(index, ring.seed + 2) * (ring.maxWidth - ring.minWidth);
+
+      const ridge = makeRidge(ring.material, width, height, width * (0.7 + hash2(index, 9) * 0.5));
+      // Bed each hill into the saucer: follow its curve, then sink a little so
+      // no rim shows. Clamping to `ring.y` here was the bug that floated them.
+      const groundY = HORIZON_Y + horizonGroundOffset(x, z);
+      ridge.position.set(x, groundY - height * 0.18, z);
+      ridge.rotation.y = hash2(index, ring.seed + 4) * Math.PI;
+      ridge.name = `hill-${ring.seed}-${index}`;
+      group.add(ridge);
+      ridges.push(ridge);
+    }
+  }
+
+  /* A soft, wide ground plane under the hills, close to the sky/fog colour so
+     the model sits on a horizon rather than on a hard disc. Deliberately thin
+     and low: it must never read as a second map. */
+  // A grid, not a CircleGeometry fan.
+  //
+  // CircleGeometry makes 96 long triangles that all touch the centre. Any
+  // renderer that culls whole triangles against the near plane (the offline
+  // painter does) discards *all* of them, so the ground vanishes and the hills
+  // appear to float. Subdividing into small tiles fixes that and also lets the
+  // falloff be smooth.
+  const TILES = 40;
+  const groundGeometry = new THREE.PlaneGeometry(
+    HORIZON_RADIUS * 2,
+    HORIZON_RADIUS * 2,
+    TILES,
+    TILES,
+  );
+  groundGeometry.rotateX(-Math.PI / 2);
+  const groundPosition = groundGeometry.attributes.position as THREE.BufferAttribute;
+  for (let index = 0; index < groundPosition.count; index += 1) {
+    const x = groundPosition.getX(index);
+    const z = groundPosition.getZ(index);
+    const radius = Math.hypot(x, z);
+    if (radius > HORIZON_RADIUS) {
+      // Clip the square grid back to a disc by collapsing the outside ring down
+      // to a point; the far hills hide the seam.
+      groundPosition.setX(index, (x / radius) * HORIZON_RADIUS);
+      groundPosition.setZ(index, (z / radius) * HORIZON_RADIUS);
+    }
+    groundPosition.setY(index, horizonGroundOffset(x, z));
+  }
+  groundGeometry.computeVertexNormals();
+  const groundMaterial = new THREE.MeshStandardMaterial({ color: HORIZON_GROUND_COLOR, roughness: 1 });
+  const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+  ground.position.set(0, HORIZON_Y, 0);
+  ground.castShadow = false;
+  ground.receiveShadow = false;
+  ground.name = 'hill-ground';
+  group.add(ground);
+
+  root.add(group);
+
+  animated.push((elapsed) => {
+    // Nothing moves: distant terrain that breathes looks like a rendering bug.
+    // The handler stays so the animation array shape stays uniform.
+    void elapsed;
+    void ridges;
+  });
+}
+
 /* ============================================================ diorama base */
 
 /** The map as a table-top diorama: a cliff skirt around the terrain edge. */
@@ -1880,8 +2090,8 @@ function buildDioramaBase(
   materials: Materials,
   heightAt: (x: number, z: number) => number,
 ) {
-  const halfX = 122;
-  const halfZ = 156;
+  const halfX = DIORAMA_HALF.x;
+  const halfZ = DIORAMA_HALF.z;
   const bottom = -16;
   const radius = 20;
   const perimeter: [number, number][] = [];

@@ -278,6 +278,16 @@ export function GameMap({ embedded = false }: GameMapProps) {
 
     const resolveHit = (hits: THREE.Intersection[]): { kind: 'region' | 'boss'; id: string } | null => {
       for (const hit of hits) {
+        // Skip the decorative backdrop (distant hills, horizon plane): walking
+        // there is impossible, so a click must not resolve to a real region.
+        let probe: THREE.Object3D | null = hit.object;
+        let backdrop = false;
+        while (probe) {
+          if (probe.userData.decorative) { backdrop = true; break; }
+          probe = probe.parent;
+        }
+        if (backdrop) continue;
+
         let node: THREE.Object3D | null = hit.object;
         while (node) {
           const bossId = node.userData.bossId as string | undefined;

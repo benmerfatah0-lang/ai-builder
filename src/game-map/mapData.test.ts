@@ -6,7 +6,11 @@ import {
   BOSS_BY_ID,
   BUILDINGS,
   CHECKPOINTS,
+  CIRCLE_FENCES,
+  FENCES,
   FIELDS,
+  TREES,
+  BRIDGES,
   LANDMARKS,
   REGIONS,
   REGION_ORDER,
@@ -15,7 +19,16 @@ import {
   WATER,
   WORLD,
 } from './data';
-import { terrainHeight } from './scene';
+import * as THREE from 'three';
+import {
+  buildMapScene,
+  DIORAMA_HALF,
+  HILL_COLORS,
+  HILL_RINGS,
+  HORIZON_GROUND_COLOR,
+  HORIZON_RADIUS,
+  terrainHeight,
+} from './scene';
 
 /**
  * Design-integrity tests for the game map. They protect the properties a level
@@ -192,6 +205,112 @@ describe('map data integrity', () => {
       const height = terrainHeight(arena.position[0], arena.position[1], WATER);
       expect(height, `${arena.id} is underwater`).toBeGreaterThan(-0.4);
       expect(height, `${arena.id} is too steep`).toBeLessThan(4.2);
+    }
+  });
+});
+
+describe('distant hills backdrop', () => {
+  it('keeps every ring clear of the playable slab', () => {
+    for (const ring of HILL_RINGS) {
+      expect(ring.radiusX, 'ring overlaps the slab on X').toBeGreaterThan(DIORAMA_HALF.x + 30);
+      expect(ring.radiusZ, 'ring overlaps the slab on Z').toBeGreaterThan(DIORAMA_HALF.z + 30);
+      // Even after jitter (max 1.1x) and the widest hill, no hill can reach in.
+      const closestReach = ring.radiusX * 0.9 - ring.maxWidth;
+      expect(closestReach, 'a hill can reach the slab').toBeGreaterThan(DIORAMA_HALF.x);
+    }
+  });
+
+  it('grows outward, never inward', () => {
+    const radii = HILL_RINGS.map((ring) => ring.radiusX);
+    for (let index = 1; index < radii.length; index += 1) {
+      expect(radii[index]!).toBeGreaterThan(radii[index - 1]!);
+    }
+  });
+
+  it('stays low: no hill towers over the playfield', () => {
+    for (const ring of HILL_RINGS) {
+      expect(ring.maxHeight).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it('reads as rolling farmland, not mountains', () => {
+    for (const ring of HILL_RINGS) {
+      // `minWidth` is a half-extent, so the narrowest hill is `2 * minWidth`
+      // across. Anything squarer than 2:1 reads as a bump, not a rolling hill.
+      const narrowestAspect = (2 * ring.minWidth) / ring.maxHeight;
+      expect(narrowestAspect, 'hill is too steep to read as rolling').toBeGreaterThan(2);
+      // ...and anything flatter than 6:1 is a lily pad, which is what the
+      // first pass looked like.
+      const flattestAspect = (2 * ring.maxWidth) / ring.minHeight;
+      expect(flattestAspect, 'hill is so flat it reads as a disc').toBeLessThan(6);
+    }
+  });
+
+  it('gives the hills real ground to stand on, laid out flat and not edge-on', () => {
+    // Regression: the backdrop plane was rotated by -90 degrees TWICE. It ended
+    // up vertical, every vertex collapsed onto one line, and all 1280 surviving
+    // triangles had zero screen area - the ground silently never painted and the
+    // hills looked like pancakes hanging in the sky.
+    const scene = buildMapScene({
+      water: WATER,
+      roads: ROADS,
+      fields: FIELDS,
+      fences: FENCES,
+      circleFences: CIRCLE_FENCES,
+      trees: TREES,
+      buildings: BUILDINGS,
+      arenas: ARENAS,
+      bosses: BOSSES,
+      regions: REGIONS,
+      bridges: BRIDGES,
+      checkpoints: CHECKPOINTS,
+    });
+    const ground = scene.root.getObjectByName('hill-ground') as THREE.Mesh;
+    expect(ground, 'the hill ground mesh is missing').toBeTruthy();
+    ground.updateMatrixWorld(true);
+
+    const geometry = ground.geometry as THREE.BufferGeometry;
+    const position = geometry.getAttribute('position') as THREE.BufferAttribute;
+    const box = new THREE.Box3().setFromBufferAttribute(position);
+    // It must span the horizon in BOTH horizontal axes...
+    expect(box.max.x - box.min.x).toBeGreaterThan(HORIZON_RADIUS);
+    expect(box.max.z - box.min.z).toBeGreaterThan(HORIZON_RADIUS);
+    // ...and be flat: a vertical plane would be tall and thin instead.
+    expect(box.max.y - box.min.y).toBeLessThan(40);
+
+    // No degenerate triangles: every one must have non-zero screen area in plan.
+    const index = geometry.getIndex()!;
+    let degenerate = 0;
+    for (let triangle = 0; triangle < index.count / 3; triangle += 1) {
+      const ia = index.getX(triangle * 3);
+      const ib = index.getX(triangle * 3 + 1);
+      const ic = index.getX(triangle * 3 + 2);
+      const area =
+        (position.getX(ib) - position.getX(ia)) * (position.getZ(ic) - position.getZ(ia)) -
+        (position.getX(ic) - position.getX(ia)) * (position.getZ(ib) - position.getZ(ia));
+      if (Math.abs(area) < 1e-6) degenerate += 1;
+    }
+    expect(degenerate / (index.count / 3), 'most of the ground is degenerate').toBeLessThan(0.15);
+    scene.dispose();
+  });
+
+  it('pales with distance and stays darker than the ground it sits on', () => {
+    // Aerial perspective: each ring further out is lighter than the one before.
+    const order = [HILL_COLORS.near, HILL_COLORS.mid, HILL_COLORS.far];
+    const luminance = (hex: string) => {
+      const value = Number.parseInt(hex.slice(1), 16);
+      return 0.2126 * ((value >> 16) & 255) + 0.7152 * ((value >> 8) & 255) + 0.0722 * (value & 255);
+    };
+    for (let index = 1; index < order.length; index += 1) {
+      expect(luminance(order[index]!), 'far hills should be paler').toBeGreaterThan(
+        luminance(order[index - 1]!),
+      );
+    }
+    // Even the palest ring must stay clearly darker than HORIZON_GROUND_COLOR,
+    // or the hills dissolve into the plane they stand on - which is exactly
+    // how the backdrop read as bare ground with no hills at all.
+    for (const colour of order) {
+      expect(luminance(HORIZON_GROUND_COLOR) - luminance(colour), 'hill vanishes into ground').toBeGreaterThan(18);
     }
   });
 });
