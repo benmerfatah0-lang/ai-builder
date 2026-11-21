@@ -1,0 +1,38 @@
+/** Offline, app-authored low-poly assets; aliases are a bounded local vocabulary. */
+export const EXPANDED_ASSETS = [
+  {id:'flower', label:'Flowers', ar:'زهور', aliases:'flowers?|blossoms?|ازهار|زهور|زهرة|زهره|ورود|ورده|وردة', category:'nature', dimensions:[1.2,1.2,1.2], color:'#d66d82'},
+  {id:'mushroom', label:'Mushrooms', ar:'فطر', aliases:'mushrooms?|toadstools?|فطر|فطريات', category:'nature', dimensions:[1.3,1,1.3], color:'#b85c4b'},
+  {id:'fern', label:'Fern', ar:'سرخس', aliases:'ferns?|سرخس', category:'nature', dimensions:[2,1.2,2], color:'#477749'},
+  {id:'grass-tuft', label:'Grass tuft', ar:'حزمة عشب', aliases:'grass tufts?|grass clumps?|حزمه عشب|عشب', category:'nature', dimensions:[1.2,.9,1.2], color:'#76964b'},
+  {id:'bamboo', label:'Bamboo', ar:'خيزران', aliases:'bamboo|خيزران', category:'nature', dimensions:[1.7,4.5,1.5], color:'#789b55'},
+  {id:'reed', label:'Reeds', ar:'قصب', aliases:'reeds?|cattails?|قصب', category:'nature', dimensions:[1.4,2.2,1.4], color:'#9a8953'},
+  {id:'tree-stump', label:'Tree stump', ar:'جذع شجرة', aliases:'tree stumps?|stumps?|جذع شجره|جذع شجرة|جذوع', category:'nature', dimensions:[1.5,1.3,1.5], color:'#765339'},
+  {id:'fallen-log', label:'Fallen log', ar:'جذع ساقط', aliases:'fallen logs?|logs?|جذع ساقط|جذوع ساقطه', category:'nature', dimensions:[3,1.2,1.2], color:'#765339'},
+  {id:'dead-tree', label:'Dead tree', ar:'شجرة يابسة', aliases:'dead trees?|شجره يابسه|شجرة يابسة|شجره ميته|شجرة ميتة', category:'nature', dimensions:[3,4,3], color:'#685446'},
+  {id:'crystal', label:'Crystal cluster', ar:'بلورات', aliases:'crystal clusters?|crystals?|بلورات|بلوره|بلورة', category:'nature', dimensions:[2.3,2.4,2.3], color:'#61bec5'},
+  {id:'castle', label:'Castle', ar:'قلعة', aliases:'castles?|قلاع|قلعه|قلعة', category:'structures', dimensions:[12,9,10], color:'#99958b'},
+  {id:'stone-arch', label:'Stone arch', ar:'قوس حجري', aliases:'stone arches|stone arch|arches|arch|اقواس حجريه|قوس حجري|اقواس|قوس', category:'structures', dimensions:[5,4.5,1.2], color:'#a69e8f'},
+  {id:'well', label:'Well', ar:'بئر', aliases:'wells?|ابار|بئر|بير', category:'structures', dimensions:[3,3.5,3], color:'#9a9180'},
+  {id:'windmill', label:'Windmill', ar:'طاحونة هوائية', aliases:'windmills?|طواحين هوائيه|طاحونه هوائيه|طاحونة هوائية|طاحونه|طاحونة', category:'structures', dimensions:[5,8,5], color:'#ddd0b0'},
+  {id:'gazebo', label:'Gazebo', ar:'مظلة حديقة', aliases:'gazebos?|pavilions?|مظله حديقه|مظلة حديقة', category:'structures', dimensions:[5,4,5], color:'#947350'},
+  {id:'tent', label:'Tent', ar:'خيمة', aliases:'tents?|خيام|خيمه|خيمة', category:'structures', dimensions:[4,2.8,4], color:'#cfad78'},
+  {id:'market-stall', label:'Market stall', ar:'كشك سوق', aliases:'market stalls?|stalls?|اكشاك سوق|كشك سوق|كشك', category:'structures', dimensions:[4,3.5,3], color:'#b66b4f'},
+  {id:'fountain', label:'Fountain', ar:'نافورة', aliases:'fountains?|نوافير|نافوره|نافورة', category:'structures', dimensions:[4,3,4], color:'#aaa598'},
+  {id:'watchtower', label:'Watchtower', ar:'برج مراقبة', aliases:'watchtowers?|watch towers?|ابراج مراقبه|برج مراقبه|برج مراقبة', category:'structures', dimensions:[4,7,4], color:'#907356'},
+  {id:'shrine', label:'Shrine', ar:'ضريح', aliases:'shrines?|اضرحة|اضرحه|ضريح', category:'structures', dimensions:[4,4,4], color:'#c1b49a'},
+  {id:'lighthouse', label:'Lighthouse', ar:'منارة', aliases:'lighthouses?|منارات|مناره|منارة', category:'structures', dimensions:[3.5,8,3.5], color:'#e4e2d9'},
+  {id:'barrel', label:'Barrel', ar:'برميل', aliases:'barrels?|براميل|برميل', category:'props', dimensions:[1.3,1.6,1.3], color:'#8b613e'},
+  {id:'crate', label:'Crate', ar:'صندوق خشبي', aliases:'wooden crates?|crates?|صناديق خشبيه|صندوق خشبي', category:'props', dimensions:[1.5,1.5,1.5], color:'#aa7f50'},
+  {id:'bench', label:'Bench', ar:'مقعد', aliases:'benches|bench|مقاعد|مقعد', category:'props', dimensions:[2.5,1.4,1], color:'#966c44'},
+  {id:'table', label:'Table', ar:'طاولة', aliases:'tables?|طاولات|طاولة|طاوله', category:'props', dimensions:[2.5,1.2,1.5], color:'#a67d54'},
+  {id:'chair', label:'Chair', ar:'كرسي', aliases:'chairs?|كراسي|كرسي', category:'props', dimensions:[1,1.6,1], color:'#a67d54'},
+  {id:'campfire', label:'Campfire', ar:'نار مخيم', aliases:'campfires?|نار مخيم|موقد', category:'props', dimensions:[2,1.5,2], color:'#e88a3e'},
+  {id:'signpost', label:'Signpost', ar:'لوحة إرشاد', aliases:'signposts?|signs?|لوحه ارشاد|لوحة ارشاد|لوحة إرشاد|لافتات|لافتة|لافته', category:'props', dimensions:[2,2.8,.8], color:'#a88254'},
+  {id:'flag', label:'Flag', ar:'راية', aliases:'flags?|banners?|رايات|راية|رايه', category:'props', dimensions:[2.5,4,1], color:'#bd514b'},
+  {id:'wagon', label:'Wagon', ar:'عربة نقل', aliases:'wagons?|عربه نقل|عربة نقل', category:'props', dimensions:[4,2.4,2.4], color:'#936941'},
+  {id:'hay-bale', label:'Hay bale', ar:'كومة قش', aliases:'hay bales?|بالات قش|كومة قش|كومه قش', category:'props', dimensions:[1.8,1.3,1.3], color:'#ceb15b'},
+  {id:'column', label:'Stone column', ar:'عمود حجري', aliases:'stone columns?|columns?|اعمده حجريه|عمود حجري|اعمده|عمود', category:'props', dimensions:[1.4,4,1.4], color:'#b8b2a6'},
+] as const;
+
+export type ExpandedAssetId = (typeof EXPANDED_ASSETS)[number]['id'];
+export const EXPANDED_ASSET_IDS = EXPANDED_ASSETS.map((asset) => asset.id);

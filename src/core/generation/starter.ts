@@ -12,7 +12,9 @@ export const STARTER_SEED = 20261020;
  */
 export function createStarterWorld(): WorldPlan {
   const interpretation = interpretPromptLocally(STARTER_PROMPT, { seed: STARTER_SEED });
-  const plan = generateWorldPlan(interpretation.intent);
+  // Keep the example's broad landscape density rather than treating its
+  // unnumbered decorative nouns as explicit one-off assets.
+  const plan = generateWorldPlan({ ...interpretation.intent, assets: undefined });
   return {
     ...plan,
     name: 'Welcome Meadow',

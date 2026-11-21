@@ -1,0 +1,102 @@
+import { useEffect, useRef, useState } from 'react';
+import type { WorldPlan } from '../../../core/world-plan/schema';
+import { imageReferenceSchema, type ImageReference } from '../../ai/imageReferences';
+import { searchImageReferencePage, searchWikiArticlePage, readWikiArticle } from '../../ai/onlineInterpreter';
+import type { WikiArticle } from '../../ai/wikiReference';
+import { ImageSceneStudio } from './ImageSceneStudio';
+import { ReferenceThumbnail } from './ReferenceThumbnail';
+
+/** A conservative search phrase, editable before use. Never executed as code. */
+export function referenceSearchQuery(prompt:string):string {
+  return prompt.trim().replace(/^(?:(?:أ|إ|آ|ا)?(?:بني|بن|صنع|نشئ|عمل|ضف|ضيف)|اصنع|ابني|أنشئ|صمم|ضع|build|create|make|add)\s+(?:(?:لي|لنا|me)\s+)?/iu,'').trim().slice(0,400) || prompt.trim().slice(0,400);
+}
+
+export function ReferenceSceneWorkflow({prompt,basePlan,mode,canApply,onCancel,onApplied,onOpenStudio}:{prompt:string;basePlan:WorldPlan;mode:'create'|'edit';canApply:()=>boolean;onCancel:()=>void;onApplied:()=>void;onOpenStudio?:()=>void}) {
+  const [query,setQuery]=useState(()=>referenceSearchQuery(prompt));
+  const [images,setImages]=useState<ImageReference[]>([]), [next,setNext]=useState<number|null>(null);
+  const [searchBusy,setSearchBusy]=useState(false), [error,setError]=useState('');
+  const [chosen,setChosen]=useState<{file:File;reference?:ImageReference}|null>(null);
+  const [articles,setArticles]=useState<WikiArticle[]>([]), [article,setArticle]=useState<WikiArticle|null>(null);
+  const [autoBuilt,setAutoBuilt]=useState(false);
+  const [wikiBusy,setWikiBusy]=useState(false), [wikiReady,setWikiReady]=useState(false), [annotating,setAnnotating]=useState(false);
+  const controller=useRef<AbortController|null>(null), sequence=useRef(0), activeQuery=useRef(query);
+  const sectionRef=useRef<HTMLElement|null>(null), nextRef=useRef<HTMLButtonElement|null>(null);
+  const begin=()=>{controller.current?.abort();const current=new AbortController();controller.current=current;return {signal:current.signal,id:++sequence.current};};
+  const alive=(id:number)=>id===sequence.current && !controller.current?.signal.aborted;
+  useEffect(()=>{sectionRef.current?.focus({preventScroll:true});sectionRef.current?.scrollIntoView?.({behavior:'smooth',block:'start'});void search(0,query);return()=>{sequence.current++;controller.current?.abort();};},[]);
+  useEffect(()=>{if(chosen && !annotating){nextRef.current?.focus({preventScroll:true});nextRef.current?.scrollIntoView?.({behavior:'smooth',block:'center'});}},[chosen,annotating]);
+  const search=async(offset:number,term:string)=>{
+    const q=term.trim(); if(!q || q.length>400){setError('اكتب موضوع بحث لا يزيد على 400 حرف.');return;}
+    const {signal,id}=begin(); setSearchBusy(true);setError('');activeQuery.current=q;
+    try {const page=await searchImageReferencePage(q,offset,signal);if(!alive(id))return;setImages((old)=>offset?[...old,...page.results.filter(item=>!old.some(previous=>previous.url===item.url))]:page.results);setNext(page.next);}
+    catch(reason){if(alive(id))setError(reason instanceof Error?reason.message:'تعذّر البحث عن الصور.');}
+    finally{if(alive(id))setSearchBusy(false);}
+  };
+  const afterImage=async(file:File,reference?:ImageReference, id?:number, signal?:AbortSignal)=>{
+    const request=id===undefined ? begin() : {id,signal:signal!};
+    if(!alive(request.id))return;
+    setChosen({file,...(reference?{reference}:{})});setArticles([]);setArticle(null);setWikiBusy(true);setWikiReady(false);setError('');
+    try {
+      const page=await searchWikiArticlePage(activeQuery.current,0,request.signal);
+      if(!alive(request.id))return;
+      setArticles(page.results);
+      const exact=page.results.find(item=>item.title.trim().toLocaleLowerCase()===activeQuery.current.trim().toLocaleLowerCase());
+      if(exact){
+        try {const full=await readWikiArticle(exact.title,request.signal);if(alive(request.id))setArticle(full?.title===exact.title?full:exact);}
+        catch {if(alive(request.id)){setArticle(exact);setError('تعذّرت قراءة مقدمة المقالة؛ أعرض مقتطف البحث فقط.');}}
+      }
+    }
+    catch(reason){if(alive(request.id))setError(reason instanceof Error?reason.message:'تعذّر البحث في ويكيبيديا.');}
+    finally {if(alive(request.id)){setWikiBusy(false);setWikiReady(true);}}
+  };
+  const chooseRemote=async(image:ImageReference)=>{
+    const checked=imageReferenceSchema.safeParse(image);if(!checked.success){setError('بيانات الصورة غير صالحة.');return;}
+    const {id,signal}=begin();setSearchBusy(true);setError('');
+    try {
+      const response=await fetch(`/api/image-thumbnail?url=${encodeURIComponent(checked.data.thumbnail)}`,{signal});
+      if(!response.ok)throw new Error('تعذّر تحميل الصورة المختارة من خادم الهاتف.');
+      const blob=await response.blob();
+      if(!['image/jpeg','image/png','image/webp'].includes(blob.type)||!blob.size||blob.size>1_000_000) throw new Error('صيغة الصورة أو حجمها غير مدعوم.');
+      if(!alive(id))return;
+      setSearchBusy(false);
+      await afterImage(new File([blob],checked.data.title,{type:blob.type}),checked.data,id,signal);
+    } catch(reason){if(alive(id))setError(reason instanceof Error?reason.message:'تعذّر تحميل الصورة.');}
+    finally{if(alive(id))setSearchBusy(false);}
+  };
+  const chooseArticle=async(candidate:WikiArticle)=>{
+    const {id,signal}=begin();setWikiBusy(true);setError('');
+    try {const found=await readWikiArticle(candidate.title,signal);if(!alive(id))return;
+      if(!found || found.title!==candidate.title){setArticle(candidate);setError('تعذّرت قراءة المقدمة المطابقة؛ أعرض مقتطف البحث فقط.');}
+      else setArticle(found);
+    } catch(reason){if(!alive(id))return;setArticle(candidate);setError('تعذّرت قراءة المقدمة؛ أعرض مقتطف البحث فقط.');}
+    finally{if(alive(id))setWikiBusy(false);}
+  };
+  return <section ref={sectionRef} tabIndex={-1} className="wiki-library" dir="rtl" aria-label="إنشاء أو تعديل باستخدام صورة مرجعية">
+    {!chosen && <><strong className="workflow-title">{mode==='create'?'١. اختر صورة للعالم':'١. اختر صورة للإضافة'}</strong><p>اختر صورة من النتائج أو من هاتفك. ستُحلّل الصورة على الجهاز؛ البحث يحتاج الإنترنت.</p></>}
+    {chosen && !annotating && <strong className="workflow-title">٢. الصورة المختارة</strong>}
+    {!chosen && <>
+      <label className="field"><span>موضوع البحث عن الصور (يمكن تعديله)</span><input aria-label="موضوع البحث عن صور المشهد" value={query} maxLength={400} onChange={(event)=>setQuery(event.target.value)} /></label>
+      <button type="button" className="btn btn-small" disabled={searchBusy} onClick={()=>void search(0,query)}>البحث عن صور</button>
+      {searchBusy && <p role="status">أبحث عن صور أو أحمّل الصورة المختارة…</p>}
+      <label className="field"><span>أو اختر صورة من الجهاز</span><input aria-label="صورة مرجعية من الجهاز" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event)=>{const file=event.target.files?.[0];event.target.value='';if(file){if(!['image/jpeg','image/png','image/webp'].includes(file.type)||!file.size||file.size>12*1024*1024){setError('اختر JPEG أو PNG أو WebP بحجم لا يتجاوز 12 ميغابايت.');return;} activeQuery.current=query.trim() || referenceSearchQuery(prompt);void afterImage(file);}}}/></label>
+      <div className="wiki-list">{images.map((image,index)=><div key={image.url}><button type="button" className="image-ref-card" disabled={searchBusy} onClick={()=>void chooseRemote(image)}><ReferenceThumbnail image={image} alt={image.title} eager={index<4}/><span>اختر {image.title} · {image.author} · {image.license_name}</span></button><a href={image.url} target="_blank" rel="noopener noreferrer">المصدر ↗</a> · <a href={image.license_url} target="_blank" rel="noopener noreferrer">الترخيص ↗</a></div>)}</div>
+      {!searchBusy && !images.length && <p>لم تظهر صور مقبولة. جرّب كلمات أخرى أو اختر صورة من جهازك.</p>}
+      {next!==null && <button type="button" className="btn btn-small" disabled={searchBusy || query.trim()!==activeQuery.current} onClick={()=>void search(next,activeQuery.current)}>المزيد من صور المشهد</button>}
+    </>}
+    {chosen && !annotating && <>
+      <p>الصورة المختارة: {chosen.reference ? <><a href={chosen.reference.url} target="_blank" rel="noopener noreferrer">{chosen.reference.title}</a> · {chosen.reference.author} · <a href={chosen.reference.license_url} target="_blank" rel="noopener noreferrer">{chosen.reference.license_name}</a></> : chosen.file.name}</p>
+      {wikiBusy && <p role="status">أبحث عن مقالة ويكيبيديا… يمكنك المتابعة دون انتظار.</p>}
+      <button ref={nextRef} type="button" className="btn btn-primary workflow-next" onClick={()=>{if(wikiBusy){begin();setWikiBusy(false);}setAnnotating(true);}}>٢. متابعة لتحليل الصورة</button>
+      <details className="workflow-details"><summary>مقالة ويكيبيديا (اختياري)</summary>
+        <p>تُقرأ المقالة المطابقة تلقائياً إن وُجدت. يمكنك اختيار نتيجة أخرى أو المتابعة بدونها؛ المقالة لا تثبت محتوى الصورة.</p>
+        {wikiReady && articles.map((item)=><div key={item.url}><button type="button" className="btn btn-small" disabled={wikiBusy} onClick={()=>void chooseArticle(item)}>اقرأ {item.title}</button><p>{item.content}</p></div>)}
+        {wikiReady && !articles.length && <p>لم تظهر مقالات مناسبة.</p>}
+        {article && <div><p>المقالة المختارة: <a href={article.url} target="_blank" rel="noopener noreferrer">{article.title} ↗</a></p><p>{article.content}</p></div>}
+      </details>
+      <button type="button" className="btn btn-small" onClick={()=>{setChosen(null);setArticle(null);setArticles([]);setWikiReady(false);void search(0,query);}}>اختيار صورة أخرى</button>
+    </>}
+    {annotating && chosen && <ImageSceneStudio embedded initialDescription={prompt} articleText={article?.content??''} initialFile={chosen.file} reference={chosen.reference} mode={mode} basePlan={basePlan} canApply={canApply} onApplied={onApplied} onAutoBuilt={()=>setAutoBuilt(true)} onOpenStudio={onOpenStudio}/>}
+    {error && <p role="alert" className="online-error">{error}</p>}
+    <button type="button" className="btn btn-small" onClick={onCancel}>{autoBuilt?'إغلاق التقرير (تراجع بـ Undo لإلغاء البناء)':'إلغاء واختيار أمر آخر'}</button>
+  </section>;
+}

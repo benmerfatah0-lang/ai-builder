@@ -1,9 +1,13 @@
+import { EXPANDED_ASSETS } from './expandedDefinitions';
+import { footprintFromObject, PlacementLedger } from '../generation/placement';
+import { worldTransformOf } from '../world-plan/hierarchy';
 import type { Rng } from '../generation/rng';
 import { range } from '../generation/rng';
 import type {
   BuildingVariant,
   RockVariant,
   TreeVariant,
+  PrimitiveKind,
   WorldObject,
   WorldPlan,
 } from '../world-plan/schema';
@@ -14,13 +18,15 @@ import { createMeta, type MetaInput } from '../world-plan/objectMeta';
 import { createBridge, createFence, createField, createPath } from './structures';
 
 /** Purely presentational asset descriptors used by the editor's asset library. */
-export type AssetCategory = 'primitives' | 'nature' | 'structures' | 'lights';
+export type AssetCategory = 'primitives' | 'nature' | 'structures' | 'props' | 'lights';
 
 export interface AssetDefinition {
   id: string;
   label: string;
   category: AssetCategory;
   description: string;
+  arabicLabel?: string;
+  searchTerms?: string;
   /** Builds a new object placed with its base at `position`. */
   create(rng: Rng, position: [number, number, number]): WorldObject;
 }
@@ -73,6 +79,16 @@ function primitiveAsset(
       primitive,
       color,
       transform: { ...createTransform(position), scale },
+    }),
+  };
+}
+
+function miningAsset(id: PrimitiveKind, label: string, dimensions: [number, number, number], color: string, description: string): AssetDefinition {
+  return {
+    id, label, category: 'structures', description,
+    create: (_rng, position) => ({
+      ...baseObject(label, position, { category: id === 'mine-entrance' ? 'structure' : 'prop', geometry: `primitive.${id}`, dimensions }),
+      kind: 'primitive', primitive: id, color,
     }),
   };
 }
@@ -182,6 +198,19 @@ export function createLantern(position: [number, number, number], color = '#ffc4
 }
 
 export const ASSET_LIBRARY: AssetDefinition[] = [
+  ...EXPANDED_ASSETS.map((definition): AssetDefinition => ({
+    id: definition.id, label: definition.label, arabicLabel: definition.ar, searchTerms: definition.aliases,
+    category: definition.category, description: `Offline decorative ${definition.label.toLowerCase()}.`,
+    create: (_rng, position) => ({
+      ...baseObject(definition.label, position, { category: definition.category === 'nature' ? 'vegetation' : definition.category === 'props' ? 'prop' : 'structure', geometry: `primitive.${definition.id}`, dimensions: [...definition.dimensions] }),
+      kind: 'primitive', primitive: definition.id, color: definition.color,
+    }),
+  })),
+  miningAsset('mine-entrance', 'Mine entrance', [12, 6, 10], '#9b7555', 'A decorative mine entrance, not a navigable underground tunnel.'),
+  miningAsset('mine-cart', 'Mine cart', [3, 2, 2], '#6e4c32', 'Wooden mining cart with wheels and gold ore.'),
+  miningAsset('pickaxe', 'Pickaxe', [2, 2.5, 1], '#765638', 'A static pickaxe prop.'),
+  miningAsset('excavator', 'Excavator', [5.5, 4.5, 3], '#bd933a', 'A static low-poly excavator.'),
+  miningAsset('chest', 'Chest', [1.9, 1.6, 1.4], '#805631', 'A closed wooden treasure chest.'),
   primitiveAsset('box', 'Cube', 'box', '#b9b3a8', 'A six-sided block for buildings and props.'),
   primitiveAsset('sphere', 'Sphere', 'sphere', '#9aa7b5', 'A smooth sphere for orbs and markers.'),
   primitiveAsset('cylinder', 'Cylinder', 'cylinder', '#a39078', 'A cylinder for columns and platforms.'),
@@ -337,21 +366,41 @@ export const ASSET_LIBRARY: AssetDefinition[] = [
 ];
 
 
-/** Find a non-overlapping spot near the terrain centre for manually added objects. */
+/** Find a spot for the object's actual footprint, avoiding water and existing solids.
+ * A bounded fallback searches more of the map rather than overlapping at the origin. */
 export function placementForNewObject(
   plan: WorldPlan,
   sampler: TerrainSampler,
   rng: Rng,
-): [number, number, number] {
-  const center = plan.terrain.size * 0.12;
-  for (let attempt = 0; attempt < 24; attempt += 1) {
-    const x = range(rng, -center, center);
-    const z = range(rng, -center, center);
-    const occupied = plan.objects.some(
-      (object) =>
-        Math.hypot(object.transform.position[0] - x, object.transform.position[2] - z) < 2.2,
-    );
-    if (!occupied) return [x, sampler.heightAt(x, z), z];
+  object: WorldObject,
+): [number, number, number] | null {
+  const ledger = new PlacementLedger();
+  const half = plan.terrain.size / 2;
+  let occupiedCells = 0;
+  for (const existing of plan.objects) {
+    if (existing.kind === 'path' || existing.kind === 'river' || existing.meta.collision?.shape === 'none') continue;
+    const transform = worldTransformOf(plan, existing.id);
+    if (!transform) continue;
+    const bounds = footprintFromObject({ ...existing, transform });
+    if (!bounds) continue;
+    // Bound grid entries even for imported projects with very large transforms.
+    const clipped = { minX: Math.max(-half,bounds.minX), maxX: Math.min(half,bounds.maxX), minZ: Math.max(-half,bounds.minZ), maxZ: Math.min(half,bounds.maxZ) };
+    if (clipped.minX <= clipped.maxX && clipped.minZ <= clipped.maxZ) {
+      occupiedCells += (Math.ceil((clipped.maxX - clipped.minX) / 8) + 2) * (Math.ceil((clipped.maxZ - clipped.minZ) / 8) + 2);
+      if (occupiedCells > 100_000) return null;
+      ledger.add(clipped, existing.name);
+    }
   }
-  return [0, sampler.heightAt(0, 0), 0];
+  for (let attempt = 0; attempt < 240; attempt++) {
+    const radius = plan.terrain.size * (attempt < 40 ? .12 : .43);
+    const x = range(rng, -radius, radius), z = range(rng, -radius, radius), y = sampler.heightAt(x,z);
+    if (plan.terrain.waterLevel !== null && y < plan.terrain.waterLevel + .35) continue;
+    const candidate = { ...object, transform: { ...object.transform, position: [x,y,z] as [number,number,number] },
+      meta: { ...object.meta, collision: { shape: 'box' as const, blocking: true } } };
+    const box = footprintFromObject(candidate)!;
+    if (box.minX < -half + 1 || box.maxX > half - 1 || box.minZ < -half + 1 || box.maxZ > half - 1) continue;
+    if (object.meta.placement?.avoidOverlap !== false && !ledger.isFree(box,.5)) continue;
+    return [x,y,z];
+  }
+  return null;
 }

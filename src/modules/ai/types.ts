@@ -1,3 +1,8 @@
+import type { TerrainStyle } from '../../core/world-plan/schema';
+import type { HouseKnowledge } from './houseKnowledge';
+import type { ShapeModel } from './shapeLearner';
+import type { AssetRequest } from './assetRequests';
+
 export type BiomeId = 'meadow' | 'forest' | 'mountains' | 'desert' | 'island' | 'ruins';
 export type TimeOfDay = 'day' | 'sunset' | 'night';
 export type WorldScale = 'small' | 'medium' | 'large';
@@ -27,6 +32,8 @@ export interface FarmFeatures {
 }
 
 export interface WorldIntent {
+  /** Optional local shape model for explicit supported assets. */
+  shapeModel?: ShapeModel;
   /** Original prompt, preserved for provenance. */
   prompt: string;
   name: string;
@@ -36,6 +43,18 @@ export interface WorldIntent {
   scale: WorldScale;
   settlement: boolean;
   water: boolean;
+  /** Explicit terrain form, independent of the vegetation biome. */
+  landform?: TerrainStyle;
+  /** A named landscape, so explicit assets can retain their surroundings. */
+  landscape?: boolean;
+  /** Forest vegetation on mountainous terrain. */
+  mountainousForest?: boolean;
+  /** Decorative terrain-following river; not a simulated watercourse. */
+  river?: boolean;
+  /** A narrow request for a river through the center of a village. */
+  villageRiver?: boolean;
+  /** Explicit catalog assets and relative placements recognised in the prompt. */
+  assets?: AssetRequest[];
   /** Present when the prompt describes a structured farm scene. */
   features?: FarmFeatures;
   style?: WorldStyle;
@@ -57,6 +76,12 @@ export interface PromptInterpretation {
   providerLabel: string;
   /** True when interpretation runs fully in the browser with no network calls. */
   offline: boolean;
+  /** Web citations, returned only when the online provider supplies them. */
+  sources?: { title: string; url: string }[];
+  notes?: string[];
+  searched?: boolean;
+  houseLearning?: HouseKnowledge;
+  wikiLearning?: { status: string; documents: number; sources: { title: string; url: string }[]; used: boolean };
 }
 
 export interface InterpretOptions {

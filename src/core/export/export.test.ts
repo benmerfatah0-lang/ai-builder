@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { interpretPromptLocally } from '../../modules/ai/promptInterpreter';
 import { generateWorldPlan } from '../generation/generateWorld';
 import { buildWorldScene, disposeObject3D, findNodeObject } from '../scene/sceneBuilder';
@@ -67,6 +67,43 @@ describe('shared scene builder', () => {
 });
 
 describe('glTF export', () => {
+  it('embeds procedural maps when a canvas encoder is available', async () => {
+    // A tiny fake encoder exercises the browser exporter path without a GPU.
+    // The real browser canvas turns the full RGBA texture into a PNG.
+    class FakeImageData {
+      constructor(public data: Uint8ClampedArray, public width: number, public height: number) {}
+    }
+    class FakeCanvas {
+      width = 1;
+      height = 1;
+      getContext() { return { putImageData() {}, translate() {}, scale() {} }; }
+      async convertToBlob() {
+        return new Blob([Uint8Array.from(Buffer.from(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+          'base64',
+        ))], { type: 'image/png' });
+      }
+    }
+    vi.stubGlobal('ImageData', FakeImageData);
+    vi.stubGlobal('OffscreenCanvas', FakeCanvas);
+    try {
+      const result = await exportWorldToGlb(samplePlan());
+      const view = new DataView(result.buffer);
+      const jsonBytes = new Uint8Array(result.buffer, 20, view.getUint32(12, true));
+      const json = JSON.parse(new TextDecoder().decode(jsonBytes).trim()) as {
+        images?: { mimeType: string; bufferView?: number }[];
+        textures?: unknown[];
+        materials?: { pbrMetallicRoughness?: { baseColorTexture?: unknown } }[];
+      };
+      expect(json.images?.length).toBeGreaterThan(0);
+      expect(json.images?.every((image) => image.mimeType === 'image/png' && image.bufferView !== undefined)).toBe(true);
+      expect(json.textures?.length).toBeGreaterThan(0);
+      expect(json.materials?.some((material) => material.pbrMetallicRoughness?.baseColorTexture)).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }, 20000);
+
   it('produces a valid binary glTF 2.0 container', async () => {
     const plan = samplePlan();
     const result = await exportWorldToGlb(plan);

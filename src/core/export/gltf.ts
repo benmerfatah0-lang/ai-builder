@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { buildWorldScene, disposeObject3D } from '../scene/sceneBuilder';
 import type { WorldPlan } from '../world-plan/schema';
 import { WORLD_FILE_EXTENSION } from '../persistence/projectFile';
@@ -36,6 +37,18 @@ export async function exportWorldToGlb(
     maxPointLights: 0,
     terrainResolutionCap: options.terrainResolutionCap ?? 160,
   });
+
+  // Browser exports embed the generated maps as PNGs. In headless Node there is
+  // no canvas encoder, so preserve the existing geometry-only export fallback.
+  if (typeof document === 'undefined' && typeof OffscreenCanvas === 'undefined') {
+    root.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const entry of materials) {
+        if (entry instanceof THREE.MeshStandardMaterial) entry.map = null;
+      }
+    });
+  }
 
   try {
     // Loaded on demand: the exporter is only needed when a user exports.

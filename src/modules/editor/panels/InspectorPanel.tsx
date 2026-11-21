@@ -383,6 +383,15 @@ export function InspectorPanel({
         </div>
       </Section>
 
+      {!groupNode && node.meta.photoModel && node.meta.photoModel.mode !== 'full-image-slab' && <Section title="أسلوب مجسم الصورة" icon="sparkles" defaultOpen>
+        <label className="field" dir="rtl"><span className="field-label">شكل السطح</span>
+          <select aria-label="شكل سطح المجسم" value={node.meta.photoModel.meshStyle ?? 'blocky'} disabled={locked} onChange={(event) => {
+            const value = event.target.value;
+            if (value === 'smooth' || value === 'blocky') dispatch({ type:'updateObject', id, patch:{ photoMeshStyle:value } });
+          }}><option value="smooth">ناعم</option><option value="blocky">بكسلي</option></select>
+        </label>
+        <p dir="rtl">يمكن التراجع عن التغيير. العمق والخلف يظلان تقديراً.</p>
+      </Section>}
       {!groupNode && (
         <Section title="Generated" icon="sparkles" defaultOpen={false}>
           <div className="kv-row">
@@ -395,6 +404,7 @@ export function InspectorPanel({
               {node.meta.source === 'procedural' ? 'Procedural' : node.meta.source === 'library' ? 'Library' : 'Manual'} · {node.meta.status}
             </strong>
           </div>
+          {node.meta.photoModel && <p dir="rtl">{node.meta.photoModel.mode === 'full-image-slab' ? 'لوح مشتق من الصورة كاملة بما فيها الخلفية:' : node.meta.photoModel.mode === 'manual-silhouette' ? 'شكل محدد يدوياً من الصورة؛ العمق والخلف مفترضان:' : 'صورة مشتق منها شكل تقريبي، والعمق والخلف مفترضان:'} {'url' in node.meta.photoModel.source ? <><a href={node.meta.photoModel.source.url} target="_blank" rel="noopener noreferrer">{node.meta.photoModel.source.title}</a> · {node.meta.photoModel.source.author} · <a href={node.meta.photoModel.source.license_url} target="_blank" rel="noopener noreferrer">{node.meta.photoModel.source.license_name}</a></> : <>{node.meta.photoModel.source.title} · صورة من الجهاز؛ تحقّق من الحقوق قبل المشاركة.</>}</p>}
           <div className="kv-row">
             <span>Region</span>
             <strong>{node.meta.region ?? '—'}</strong>

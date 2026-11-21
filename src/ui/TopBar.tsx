@@ -111,12 +111,12 @@ export function TopBar({
 
   return (
     <header className="topbar">
-      <div className="brand" title="AI World Builder">
+      <div className="brand" title="WorldForge">
         <span className="brand-mark">
-          <Icon name="cube" size={18} />
+          <Icon name="sparkles" size={18} />
         </span>
         <span className="brand-text">
-          World<span>Builder</span>
+          World<span>Forge</span>
         </span>
       </div>
 

@@ -1,7 +1,15 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import App from './App';
+
+// Exercise the editor workflow deterministically; the HTTP provider has its
+// own tests with mocked API responses.
+vi.mock('../modules/ai/onlineInterpreter', async () => {
+  const { interpretPromptLocally } = await import('../modules/ai/promptInterpreter');
+  return { interpretOnline: async (prompt: string, options: Parameters<typeof interpretPromptLocally>[1]) =>
+    interpretPromptLocally(prompt, options), searchWikiArticles: async () => [], searchImageReferences: async () => [] };
+});
 
 afterEach(cleanup);
 
@@ -12,13 +20,14 @@ function worldNameValue(): string {
 async function bootDesktop() {
   render(<App />);
   await waitFor(() => expect(worldNameValue()).not.toBe('Loading…'), { timeout: 10000 });
+  fireEvent.click(screen.getByRole('button', { name: 'المحرر' }));
   await waitFor(() => expect(screen.getByText(/3D viewport unavailable/i)).toBeTruthy(), {
     timeout: 8000,
   });
 }
 
 function openTab(name: string) {
-  fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${name}$`) }));
+  fireEvent.click(screen.getByRole('tab', { name: new RegExp(`^${({World:'العالم',Scene:'العناصر',Assets:'أشكال',AI:'بناء وتعديل'} as Record<string,string>)[name] ?? name}$`) }));
 }
 
 describe('application runtime', () => {
@@ -38,11 +47,11 @@ describe('application runtime', () => {
 
     // AI panel generates a brand-new deterministic world.
     openTab('AI');
-    const prompt = screen.getByLabelText('Description') as HTMLTextAreaElement;
+    const prompt = screen.getByLabelText('وصف العالم') as HTMLTextAreaElement;
     fireEvent.change(prompt, {
       target: { value: 'A desert oasis village at sunset with 18 palm trees' },
     });
-    fireEvent.click(screen.getByRole('button', { name: /Generate world/i }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
 
     expect(await screen.findByText(/Desert settlement/i, {}, { timeout: 10000 })).toBeTruthy();
     await waitFor(() => expect(worldNameValue().toLowerCase()).toContain('desert oasis'));
@@ -207,14 +216,14 @@ describe('application runtime', () => {
 
     // ---- Prompt → plan → procedural farm ----------------------------------
     openTab('AI');
-    const prompt = screen.getByLabelText('Description') as HTMLTextAreaElement;
+    const prompt = screen.getByLabelText('وصف العالم') as HTMLTextAreaElement;
     fireEvent.change(prompt, {
       target: {
         value:
           'Create a large cartoon low-poly farm with a farmhouse, barn, wheat fields, a chicken coop, fences, trees, and connected dirt paths',
       },
     });
-    fireEvent.click(screen.getByRole('button', { name: /Generate world/i }));
+    if (!(screen.getByLabelText('استخدام البناء المحلي فقط') as HTMLInputElement).checked) fireEvent.click(screen.getByLabelText('استخدام البناء المحلي فقط')); fireEvent.click(screen.getByRole('button', { name: 'إنشاء العالم' }));
     expect(await screen.findByText(/Farmstead · day/i, {}, { timeout: 15000 })).toBeTruthy();
     expect(await screen.findByText(/\d+ objects · \d+ groups · plan v3/i)).toBeTruthy();
 
@@ -360,7 +369,8 @@ describe('application runtime', () => {
       { timeout: 10000 },
     );
     // The hierarchy was restored from IndexedDB, not regenerated.
-    fireEvent.click(screen.getByRole('tab', { name: /^Scene$/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'المحرر' }));
+    fireEvent.click(screen.getByRole('tab', { name: /^العناصر$/ }));
     const tree = await screen.findByRole('tree', { name: 'Scene hierarchy' });
     expect(within(tree).getAllByRole('treeitem').length).toBeGreaterThan(3);
   }, 30000);
@@ -374,10 +384,11 @@ describe('application runtime', () => {
     render(<App />);
     await waitFor(() => expect(worldNameValue()).not.toBe('Loading…'), { timeout: 10000 });
 
+    fireEvent.click(screen.getByRole('button', { name: 'المحرر' }));
     const dock = await screen.findByRole('navigation', { name: 'Editor panels' });
-    fireEvent.click(within(dock).getByRole('button', { name: /^Scene$/ }));
+    fireEvent.click(within(dock).getByRole('button', { name: /^العناصر$/ }));
 
-    const sheet = await screen.findByRole('dialog', { name: 'Scene' });
+    const sheet = await screen.findByRole('dialog', { name: 'العناصر' });
     expect(within(sheet).getByRole('tree', { name: 'Scene hierarchy' })).toBeTruthy();
 
     // The transform toolbar is reachable on mobile.
@@ -395,6 +406,6 @@ describe('application runtime', () => {
     expect(within(toolbar).getByRole('button', { name: 'Toggle Y axis' }).getAttribute('aria-pressed')).toBe('true');
 
     fireEvent.click(within(sheet).getByRole('button', { name: 'Close panel' }));
-    expect(screen.queryByRole('dialog', { name: 'Scene' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'العناصر' })).toBeNull();
   }, 30000);
 });

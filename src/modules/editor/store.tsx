@@ -1,13 +1,17 @@
+import { MAX_GENERATED_DATA } from '../../core/world-plan/generatedMesh';
 import {
   createContext,
   useContext,
   useMemo,
   useReducer,
+  useState,
+  type SetStateAction,
   type Dispatch,
   type ReactNode,
 } from 'react';
 import {
   MAX_WORLD_OBJECTS,
+  MAX_PHOTO_CELLS,
   isGroup,
   type MaterialSettings,
   type SceneNode,
@@ -37,6 +41,7 @@ import {
   ungroupNode,
 } from '../../core/world-plan/hierarchy';
 import { createId } from '../../core/utils/id';
+import type { ConstructionPreview } from './constructionPreview';
 
 const HISTORY_LIMIT = 80;
 
@@ -55,6 +60,8 @@ export interface ObjectPatch {
   /** Colour of the kind's secondary channel (roof, trunk, rails, soil). */
   secondaryColor?: string;
   material?: Partial<MaterialSettings>;
+  /** Rendering style for photo silhouettes, not for full-image slabs. */
+  photoMeshStyle?: 'smooth' | 'blocky';
 }
 
 export interface EditorState {
@@ -248,6 +255,9 @@ export function applyObjectPatch(object: WorldObject, patch: ObjectPatch): World
   if (patch.roofColor !== undefined && 'roofColor' in next) {
     next.roofColor = hexOr(patch.roofColor, next.roofColor ?? '#7a4d3c');
   }
+  if ((patch.photoMeshStyle === 'smooth' || patch.photoMeshStyle === 'blocky') && next.meta.photoModel && next.meta.photoModel.mode !== 'full-image-slab') {
+    next.meta = { ...next.meta, photoModel: { ...next.meta.photoModel, meshStyle: patch.photoMeshStyle } };
+  }
   if (patch.material !== undefined) {
     next.material = applyMaterialPatch(next.material, patch.material);
   }
@@ -258,19 +268,28 @@ export function applyObjectPatch(object: WorldObject, patch: ObjectPatch): World
   return next;
 }
 
-const TERRAIN_STYLES: TerrainStyle[] = ['flat', 'hills', 'mountains', 'dunes', 'islands'];
+const TERRAIN_STYLES: TerrainStyle[] = ['flat', 'hills', 'mountains', 'dunes', 'islands', 'valley', 'plateau', 'canyon', 'volcano', 'crater'];
 
 function updateTerrain(plan: WorldPlan, patch: Partial<Terrain>): WorldPlan {
   const current = plan.terrain;
   const candidate = patch;
+  const size = Math.round(finiteOr(candidate.size, current.size, 32, 512));
+  // A landscape recipe holds absolute coordinates, so it survives every edit
+  // except a resize, where its landforms would sit in the wrong place.
+  const landscape = current.landscape && Math.abs(size - current.size) <= 1 ? current.landscape : undefined;
   return {
     ...plan,
     terrain: {
+      // Spread first: rebuilding the terrain field by field is what silently
+      // dropped `lakeBasin` (and would drop `landscape`) on every edit.
+      ...current,
+      // Always written, so a resize really does clear the stale recipe.
+      landscape,
       style:
         candidate.style && TERRAIN_STYLES.includes(candidate.style)
           ? candidate.style
           : current.style,
-      size: Math.round(finiteOr(candidate.size, current.size, 32, 512)),
+      size,
       resolution: Math.round(finiteOr(candidate.resolution, current.resolution, 16, 256)),
       heightScale: finiteOr(candidate.heightScale, current.heightScale, 0, 200),
       // Only touch water when the patch mentions it.
@@ -360,6 +379,8 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
 
     case 'addObject': {
       if (state.plan.objects.length >= MAX_WORLD_OBJECTS) return state;
+      if (state.plan.objects.reduce((sum, obj) => sum + (obj.meta.photoModel?.cells.length ?? 0), 0) + (action.object.meta.photoModel?.cells.length ?? 0) > MAX_PHOTO_CELLS) return state;
+      if (state.plan.objects.reduce((sum, obj) => sum + (obj.meta.generatedMesh?.data.length ?? 0), 0) + (action.object.meta.generatedMesh?.data.length ?? 0) > MAX_GENERATED_DATA) return state;
       if (getNode(state.plan, action.object.id)) return state;
       const plan = { ...state.plan, objects: [...state.plan.objects, action.object] };
       return commit(state, plan, action.select === false ? state.selection : [action.object.id]);
@@ -370,7 +391,8 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
       if (!object) return state;
       const patch = { ...action.patch };
       // Locked objects keep their transform; other edits (revealing, renaming) pass.
-      if (patch.transform && isEffectivelyLocked(state.plan, action.id)) delete patch.transform;
+      if (isEffectivelyLocked(state.plan, action.id)) { delete patch.transform; delete patch.photoMeshStyle; }
+      if (!Object.keys(patch).length) return state;
       const updated = markEdited(applyObjectPatch(object, patch));
       if (updated === object) return state;
       return commit(state, {
@@ -494,7 +516,8 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
 
     case 'duplicateSelection': {
       const result = duplicateNodes(state.plan, state.selection);
-      if (result.newIds.length === 0) return state;
+      if (result.newIds.length === 0 || result.plan.objects.reduce((sum, obj) => sum + (obj.meta.photoModel?.cells.length ?? 0), 0) > MAX_PHOTO_CELLS) return state;
+      if (result.plan.objects.reduce((sum, obj) => sum + (obj.meta.generatedMesh?.data.length ?? 0), 0) > MAX_GENERATED_DATA) return state;
       return commit(state, result.plan, result.newIds);
     }
 
@@ -539,6 +562,8 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
 interface EditorContextValue {
   state: EditorState;
   dispatch: Dispatch<EditorAction>;
+  constructionPreview: ConstructionPreview | null;
+  setConstructionPreview: Dispatch<SetStateAction<ConstructionPreview | null>>;
 }
 
 const EditorContext = createContext<EditorContextValue | null>(null);
@@ -551,7 +576,8 @@ export function EditorProvider({
   initialPlan: WorldPlan;
 }) {
   const [state, dispatch] = useReducer(editorReducer, initialPlan, createInitialEditorState);
-  const value = useMemo(() => ({ state, dispatch }), [state]);
+  const [constructionPreview, setConstructionPreview] = useState<ConstructionPreview | null>(null);
+  const value = useMemo(() => ({ state, dispatch, constructionPreview, setConstructionPreview }), [state, constructionPreview]);
   return <EditorContext.Provider value={value}>{children}</EditorContext.Provider>;
 }
 

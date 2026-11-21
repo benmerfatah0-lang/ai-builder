@@ -83,6 +83,26 @@ describe('local prompt interpreter', () => {
     expect(intent.water).toBe(true);
   });
 
+  it('interprets Arabic descriptions while preserving the original prompt', () => {
+    const prompt = 'جزيرة استوائية فيها نخيل وبحر عند الغروب';
+    const intent = intentFor(prompt);
+    expect(intent.prompt).toBe(prompt);
+    expect(intent.biome).toBe('island');
+    expect(intent.water).toBe(true);
+    expect(intent.timeOfDay).toBe('sunset');
+  });
+
+  it('interprets Arabic farm features and negative cues', () => {
+    const farm = intentFor('مزرعة صغيرة فيها حظيرة وحقول قمح ونهر وجسر');
+    expect(farm.scale).toBe('small');
+    expect(farm.features?.barn).toBe(true);
+    expect(farm.features?.river).toBe(true);
+    expect(farm.features?.bridge).toBe(true);
+    const meadow = intentFor('مرج بدون أشجار وبدون ماء');
+    expect(meadow.counts.trees).toBe(0);
+    expect(meadow.water).toBe(false);
+  });
+
   it('matches whole words, not substrings', () => {
     const intent = intentFor('A pleasant season for a village');
     expect(intent.biome).toBe('meadow');
