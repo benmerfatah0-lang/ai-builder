@@ -16,6 +16,10 @@
 > على **أندرويد / Termux**: `npm run install:termux` ثم `npm run dev:termux` — التفاصيل في
 > [`docs/TERMUX.md`](docs/TERMUX.md).
 >
+> ⚠️ **روابط المعاينة الحيّة مؤقّتة**: كل جلسة تعمل في صندوق جديد، فالرابط القديم
+> يعطي `SANDBOX NOT FOUND`. الملف `map-3d.html` لا يعتمد على أي صندوق — نزّله
+> من المستودع وافتحه، وسيعمل دائماً.
+>
 > شرح الوصول خطوة بخطوة: [`docs/SEE-THE-MAP.md`](docs/SEE-THE-MAP.md).
 > التفاصيل الكاملة في [`docs/GAME-MAP.md`](docs/GAME-MAP.md).
 
