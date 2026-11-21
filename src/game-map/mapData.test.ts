@@ -151,9 +151,12 @@ describe('map data integrity', () => {
     }
   });
 
-  it('does not plant buildings on boss arenas', () => {
+  it('does not plant buildings on boss arenas, except the arena\'s own home', () => {
     for (const building of BUILDINGS) {
       for (const arena of ARENAS) {
+        // The hen palace *is* the palace arena's building: the queen holds court
+        // inside it, which is the whole design of that fight.
+        if (arena.home?.kind === 'palace' && building.kind === 'henPalace') continue;
         const distance = Math.hypot(
           building.position[0] - arena.position[0],
           building.position[1] - arena.position[1],

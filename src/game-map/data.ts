@@ -612,7 +612,7 @@ export const LANDMARKS: LandmarkDef[] = [
   // ── crops
   { id: 'grobak-arena', name: 'أرينا ساحة الدراس', kind: 'summit', emoji: '⚔️', position: [-26, 44], regionId: 'farm', note: 'أرينا البوس الرئيسي الأول (غُبار).', bossId: 'grobak' },
   { id: 'barn', name: 'الجرن — مخزن الحبوب', kind: 'building', emoji: '🏚️', position: [-46, 56], regionId: 'crops', note: 'مبنى كبير، بولاية قمح، مساحة قتال منخفضة.' },
-  { id: 'windmill-crops', name: 'طاحونة الزراعة', kind: 'shortcut', emoji: '🌬️', position: [-88, 84], regionId: 'crops', note: 'أعلى نقطة في المنطقة؛ مصعد يرتبط بطاحونة المزرعة.' },
+  { id: 'windmill-crops', name: 'طاحونة الزراعة', kind: 'shortcut', emoji: '🌬️', position: [-76, 76], regionId: 'crops', note: 'أعلى نقطة في المنطقة؛ مصعد يرتبط بطاحونة المزرعة.' },
   { id: 'worm-npc', name: 'الدودة بنبونة', kind: 'npc', emoji: '🪱', position: [-44, 62], regionId: 'crops', note: 'تلميح: القبو المخفي تحت البيدر.' },
   { id: 'straw-hat', name: 'قبعة القشّ', kind: 'item', emoji: '👒', position: [-52, 36], regionId: 'crops', note: 'قطعة مهمة: أعِدها لخيّال الفزّاعة مقابل مكافأة.' },
   { id: 'seed-cellar', name: 'قبو البذور', kind: 'secret', emoji: '🕳️', position: [-94, 20], regionId: 'crops', note: 'باب مخفي في كومة قشّ؛ درع خفيف وحبوب.' },
@@ -765,15 +765,15 @@ export const BUILDINGS: BuildingSpec[] = [
   { id: 'market-b', kind: 'market', position: [-10, 58], rotation: Math.PI },
   { id: 'well', kind: 'well', position: [0, 20], rotation: 0 },
   { id: 'windmill-farm', kind: 'windmill', position: [64, 90], rotation: 0 },
-  { id: 'windmill-crops', kind: 'windmill', position: [-88, 84], rotation: Math.PI / 2 },
+  { id: 'windmill-crops', kind: 'windmill', position: [-76, 76], rotation: Math.PI / 2 },
   { id: 'rooster-gate', kind: 'gatehouse', position: [6, -32], rotation: 0, scale: 1.1 },
   { id: 'duck-house', kind: 'duckHouse', position: [-64, -50], rotation: 0.4, scale: 0.9 },
   { id: 'hen-nursery-a', kind: 'nursery', position: [-34, -52], rotation: 0.3, scale: 0.7 },
   { id: 'hen-nursery-b', kind: 'nursery', position: [26, -54], rotation: -0.6, scale: 0.7 },
   { id: 'stable', kind: 'stable', position: [66, -52], rotation: -Math.PI / 2 },
-  { id: 'sheep-shelter', kind: 'sheepShelter', position: [64, -112], rotation: Math.PI, scale: 1.1 },
-  { id: 'hen-palace', kind: 'henPalace', position: [-46, -143], rotation: 0, scale: 1.15 },
-  { id: 'tower-check', kind: 'tower', position: [78, -118], rotation: 0, scale: 0.9 },
+  { id: 'sheep-shelter', kind: 'sheepShelter', position: [70, -104], rotation: Math.PI, scale: 1.1 },
+  { id: 'hen-palace', kind: 'henPalace', position: [-46, -128], rotation: 0, scale: 1.15 },
+  { id: 'tower-check', kind: 'tower', position: [64, -82], rotation: 0, scale: 0.9 },
 ];
 
 export const FIELDS: FieldSpec[] = [

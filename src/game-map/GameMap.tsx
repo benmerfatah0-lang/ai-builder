@@ -189,7 +189,9 @@ export function GameMap({ embedded = false }: GameMapProps) {
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color('#9fc4e0');
+    // Golden hour: the reference is a valley at sunset, and a neutral blue sky
+    // with white light made every green read as midday.
+    scene.background = new THREE.Color('#c9dbe8');
     scene.fog = new THREE.Fog(HORIZON_FOG.colour, HORIZON_FOG.near, HORIZON_FOG.far);
 
     const camera = new THREE.PerspectiveCamera(32, mount.clientWidth / mount.clientHeight, 0.6, HORIZON_FAR_PLANE);
@@ -208,10 +210,12 @@ export function GameMap({ embedded = false }: GameMapProps) {
     controlsRef.current = controls;
 
     // Lights: sunset key + sky fill + warm bounce.
-    const hemisphere = new THREE.HemisphereLight('#cfe4f2', '#6a7a4a', 1.15);
+    const hemisphere = new THREE.HemisphereLight('#dce9f4', '#7d7a45', 1.12);
     scene.add(hemisphere);
-    const sun = new THREE.DirectionalLight('#ffe6bd', 2.35);
-    sun.position.set(-150, 200, 120);
+    // Low, warm key from the south-west: long shadows across the fields are what
+    // sell the sunset, so the light has to come in almost sideways.
+    const sun = new THREE.DirectionalLight('#ffd39a', 2.75);
+    sun.position.set(-210, 132, 165);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.left = -190;
@@ -223,8 +227,8 @@ export function GameMap({ embedded = false }: GameMapProps) {
     sun.shadow.bias = -0.0006;
     sun.shadow.normalBias = 0.5;
     scene.add(sun);
-    const rim = new THREE.DirectionalLight('#ffc48f', 0.5);
-    rim.position.set(160, 80, -180);
+    const rim = new THREE.DirectionalLight('#ffb877', 0.75);
+    rim.position.set(170, 62, -190);
     scene.add(rim);
 
     const map = buildMapScene({
