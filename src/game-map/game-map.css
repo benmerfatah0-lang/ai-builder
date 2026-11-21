@@ -2693,6 +2693,30 @@ body:has(.map-app--exploring) {
   border: 1px solid rgba(240, 181, 82, 0.32);
   touch-action: none;
 }
+/* The other thumb's surface: turns the camera. Hidden wherever the stick is
+   hidden, i.e. on a mouse-driven desktop where a drag already does this. */
+.explore-look {
+  display: none;
+  position: absolute;
+  inset-block-end: calc(96px + env(safe-area-inset-bottom, 0px));
+  inset-inline-end: calc(24px + env(safe-area-inset-right, 0px));
+  width: 84px;
+  height: 84px;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px dashed rgba(240, 181, 82, 0.45);
+  background: radial-gradient(circle, rgba(240, 181, 82, 0.1), rgba(19, 15, 11, 0.55));
+  color: rgba(240, 181, 82, 0.9);
+  font-size: 26px;
+  line-height: 1;
+  touch-action: none;
+  user-select: none;
+}
+.explore-look.is-active {
+  border-style: solid;
+  background: radial-gradient(circle, rgba(240, 181, 82, 0.24), rgba(19, 15, 11, 0.7));
+}
+
 .explore-stick-knob {
   width: 48px;
   height: 48px;
@@ -2706,6 +2730,9 @@ body:has(.map-app--exploring) {
    covers them; the stick is harmless with a mouse anyway. */
 @media (any-pointer: coarse), (pointer: coarse), (hover: none) {
   .explore-stick {
+    display: grid;
+  }
+  .explore-look {
     display: grid;
   }
   .explore-hint {
@@ -2722,6 +2749,11 @@ body:has(.map-app--exploring) {
   .explore-stick-knob {
     width: 56px;
     height: 56px;
+  }
+  .explore-look {
+    width: 96px;
+    height: 96px;
+    inset-block-end: calc(108px + env(safe-area-inset-bottom, 0px));
   }
   .explore-btn {
     width: 52px;

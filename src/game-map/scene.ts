@@ -1007,40 +1007,147 @@ function buildArena(
   const [x, z] = arena.position;
   const y = heightAt(x, z);
   group.position.set(x, y, z);
+  group.rotation.y = arena.rotation ?? 0;
   group.name = `arena-${arena.id}`;
-  // A shallow earth plateau lifts each arena off the sloping ground.
-  const plateau = new THREE.Mesh(
-    new THREE.CylinderGeometry(arena.radius + 1.6, arena.radius + 2.6, 2.6, 40),
-    material(materials, '#9c7a50', { roughness: 1, flatShading: true }),
-  );
-  plateau.position.y = -1.28;
-  plateau.receiveShadow = true;
-  group.add(plateau);
 
-  const floorMaterial = material(materials, arena.style === 'palace' ? '#d9c48f' : '#c4a06c', { roughness: 1 });
-  const ringMaterial = material(materials, arena.style === 'palace' ? '#8d2f3f' : PALETTE.stoneDark);
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(arena.radius, 48), floorMaterial);
+  /*
+   * No universal earth plateau any more.
+   *
+   * The old builder stacked every boss on the same raised disc of packed earth
+   * with the same accent ring, so five different animals shared one arena and
+   * the map read as "here are five circles". Each style now gets the ground its
+   * animal actually lives on — a threshing floor, a farmhouse yard, a pond
+   * bank, a stone ring — and a home to fight out of.
+   */
+
+  const floorTone =
+    arena.floor === 'boards'
+      ? '#b98f5f'
+      : arena.floor === 'straw'
+        ? '#d8b96a'
+        : arena.floor === 'grass'
+          ? '#8fb268'
+          : arena.floor === 'water-edge'
+            ? '#9c8a63'
+            : '#c4a06c';
+
+  /** A subtle, low platform so an arena never floats on a slope. */
+  const apron = new THREE.Mesh(
+    new THREE.CylinderGeometry(arena.radius + 1.2, arena.radius + 2.2, 1.4, 40),
+    material(materials, floorTone, { roughness: 1, flatShading: true }),
+  );
+  apron.position.y = -0.72;
+  apron.receiveShadow = true;
+  group.add(apron);
+
+  // A pond arena is dug, not paved: the bank shows as a ring of mud around the
+  // water, and there is no dry disc for the duck to stand on.
+  const isWaterArena = arena.home?.kind === 'pond';
+  const floor = new THREE.Mesh(
+    new THREE.CircleGeometry(arena.radius, 56),
+    material(materials, floorTone, { roughness: 1 }),
+  );
   floor.rotation.x = -Math.PI / 2;
-  floor.position.y = 0.08;
+  floor.position.y = 0.06;
   floor.receiveShadow = true;
-  group.add(floor);
+  if (!isWaterArena) group.add(floor);
 
-  const ring = new THREE.Mesh(new THREE.RingGeometry(arena.radius - 0.7, arena.radius, 48), ringMaterial);
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.12;
-  group.add(ring);
-
-  // A soft marker ring in the arena's own accent colour.
-  const accent = new THREE.Mesh(
-    new THREE.RingGeometry(arena.radius + 0.15, arena.radius + 0.45, 48),
-    material(materials, PALETTE.accent, { roughness: 0.8 }),
+  // A faint painted mark instead of the boss ring: this is a *place*, not a UI
+  // shape, so it gets a swept path rather than a coloured hoop.
+  const painted = new THREE.Mesh(
+    new THREE.RingGeometry(arena.radius * 0.52, arena.radius * 0.58, 48),
+    material(materials, '#ede0c0', { roughness: 1 }),
   );
-  accent.rotation.x = -Math.PI / 2;
-  accent.position.y = 0.14;
-  group.add(accent);
+  painted.rotation.x = -Math.PI / 2;
+  painted.position.y = 0.09;
+  group.add(painted);
 
+  /* ------------------------------------------------------- the home ground */
+  const homeOffset = arena.home?.offset ?? [0, 0];
+  const homeX = homeOffset[0];
+  const homeZ = homeOffset[1];
+  const homeGroundY = heightAt(x + homeX, z + homeZ) - y;
+  if (arena.home?.kind === 'house') {
+    // A farmhouse the rooster actually lives in: open door, porch, and the
+    // fight spilling down the step.
+    buildBuildingByKind(
+      group,
+      materials,
+      {
+        id: `${arena.id}-house`,
+        kind: 'farmhouse',
+        position: [homeX, homeZ],
+        rotation: arena.home.rotation ?? 0,
+        scale: 1.0,
+      },
+      (hx, hz) => homeGroundY + (hx === homeX && hz === homeZ ? 0 : 0),
+      [],
+    );
+    // The open door: a black recess, so the boss reads as coming out of it.
+    addMesh(group, new THREE.BoxGeometry(1.5, 2.4, 0.5), material(materials, '#241a14'), [homeX, homeGroundY + 1.3, homeZ + 3.55]);
+  } else if (arena.home?.kind === 'pond') {
+    // The duck's own water. An ellipse, not a circle, so it reads as a pond in a
+    // meadow rather than a fountain.
+    const pond = new THREE.Mesh(
+      new THREE.CircleGeometry(arena.radius * 0.78, 44),
+      material(materials, '#4fb3dd', {
+        roughness: 0.14,
+        emissive: new THREE.Color('#2f7f9c'),
+        emissiveIntensity: 0.3,
+      }),
+    );
+    pond.rotation.x = -Math.PI / 2;
+    pond.scale.set(1, 0.72, 1);
+    // Above the bank ring, not buried in it: at 0.16 the water read as wet earth.
+    pond.position.set(homeX, 0.34, homeZ);
+    pond.name = 'arena-pond-water';
+    group.add(pond);
+    // Muddy rim.
+    const rim = new THREE.Mesh(
+      new THREE.RingGeometry(arena.radius * 0.78, arena.radius * 0.86, 44),
+      material(materials, '#8a7548', { roughness: 1 }),
+    );
+    rim.rotation.x = -Math.PI / 2;
+    rim.scale.set(1.06, 0.77, 1);
+    rim.position.set(homeX, 0.2, homeZ);
+    group.add(rim);
+    // Reeds and a nesting raft.
+    for (let index = 0; index < 26; index += 1) {
+      const angle = (index / 26) * Math.PI * 2;
+      const reedX = Math.cos(angle) * arena.radius * 0.84;
+      const reedZ = Math.sin(angle) * arena.radius * 0.62;
+      addMesh(
+        group,
+        new THREE.ConeGeometry(0.1, 1.6 + hash2(index, 4) * 0.8, 4),
+        material(materials, '#6f9440'),
+        [reedX, 0.8, reedZ],
+      );
+    }
+    addMesh(group, new THREE.CylinderGeometry(1.1, 1.1, 0.16, 9), material(materials, PALETTE.woodLight), [arena.radius * 0.3, 0.24, arena.radius * 0.2]);
+  } else if (arena.home?.kind === 'threshing') {
+    // The granary the turkey has claimed, with its open bay facing the yard.
+    buildBuildingByKind(
+      group,
+      materials,
+      {
+        id: `${arena.id}-granary`,
+        kind: 'threshingGranary',
+        position: [homeX, homeZ],
+        // The bay must face the floor, so the home's yaw is explicit rather than
+        // inherited from the arena.
+        rotation: arena.home.rotation ?? 0,
+        scale: 0.8,
+      },
+      () => homeGroundY,
+      [],
+    );
+  } else if (arena.home?.kind === 'palace') {
+    // No extra building: the hen palace already stands behind this arena.
+  }
+
+  /* ------------------------------------------------------------ furniture */
   if (arena.style === 'threshing') {
-    // Threshing machine arms around the rim.
+    // Threshing machine arms around the rim + straw.
     for (let index = 0; index < 4; index += 1) {
       const angle = (index / 4) * Math.PI * 2 + Math.PI / 4;
       const px = Math.cos(angle) * (arena.radius - 1.2);
@@ -1049,19 +1156,12 @@ function buildArena(
       arm.position.set(px, 0.1, pz);
       arm.rotation.y = -angle;
       addMesh(arm, new THREE.BoxGeometry(0.6, 1.9, 0.6), material(materials, PALETTE.woodDark), [0, 0.95, 0]);
-      const blade = addMesh(
-        arm,
-        new THREE.BoxGeometry(4.6, 0.16, 0.5),
-        material(materials, PALETTE.woodLight),
-        [0, 1.9, 0],
-      );
-      blade.userData.spin = index;
+      addMesh(arm, new THREE.BoxGeometry(4.6, 0.16, 0.5), material(materials, PALETTE.woodLight), [0, 1.9, 0]);
       group.add(arm);
     }
-    // Hay bales as arena furniture.
-    for (let index = 0; index < 6; index += 1) {
-      const angle = (index / 6) * Math.PI * 2 + 0.4;
-      const radius = arena.radius + 2.4;
+    for (let index = 0; index < 7; index += 1) {
+      const angle = (index / 7) * Math.PI * 2 + 0.4;
+      const radius = arena.radius + 2.2;
       const px = Math.cos(angle) * radius;
       const pz = Math.sin(angle) * radius;
       const bale = addMesh(
@@ -1073,25 +1173,52 @@ function buildArena(
       bale.rotation.z = Math.PI / 2;
       bale.rotation.y = angle;
     }
-  } else if (arena.style === 'yard') {
-    // Centre post + hay-bale fence ring.
-    addMesh(group, new THREE.CylinderGeometry(0.35, 0.45, 4.2, 8), material(materials, PALETTE.woodDark), [0, 2.1, 0]);
-    addMesh(group, new THREE.BoxGeometry(2.4, 0.3, 0.3), material(materials, PALETTE.woodLight), [0, 4.1, 0]);
-    for (let index = 0; index < 18; index += 1) {
-      const angle = (index / 18) * Math.PI * 2;
+  } else if (arena.style === 'farmhouse') {
+    // Yard fence, water trough, and the coop posts the rooster perches on.
+    const postMaterial = material(materials, PALETTE.woodDark);
+    for (let index = 0; index < 16; index += 1) {
+      const angle = (index / 16) * Math.PI * 2;
       const px = Math.cos(angle) * (arena.radius + 1.6);
       const pz = Math.sin(angle) * (arena.radius + 1.6);
-      const bale = addMesh(
-        group,
-        new THREE.CylinderGeometry(0.85, 0.85, 1.4, 9),
-        material(materials, PALETTE.hay),
-        [px, heightAt(x + px, z + pz) - y + 0.7, pz],
-      );
-      bale.rotation.z = Math.PI / 2;
-      bale.rotation.y = angle + Math.PI / 2;
+      addMesh(group, new THREE.BoxGeometry(0.18, 1.2, 0.18), postMaterial, [px, 0.6, pz]);
+      if (index % 2 === 0) {
+        const rail = addMesh(
+          group,
+          new THREE.BoxGeometry(0.1, 0.12, 3.2),
+          postMaterial,
+          [Math.cos(angle + 0.2) * (arena.radius + 1.6), 0.85, Math.sin(angle + 0.2) * (arena.radius + 1.6)],
+        );
+        rail.rotation.y = -angle;
+      }
     }
+    const trough = addMesh(group, new THREE.BoxGeometry(2.2, 0.55, 0.8), material(materials, PALETTE.woodLight), [-arena.radius * 0.6, 0.3, arena.radius * 0.5]);
+    trough.rotation.y = 0.4;
+    addMesh(group, new THREE.BoxGeometry(2.0, 0.08, 0.62), material(materials, '#4fb3dd'), [-arena.radius * 0.6, 0.56, arena.radius * 0.5]).rotation.y = 0.4;
+    // Centre post: the perch he commands the yard from.
+    addMesh(group, new THREE.CylinderGeometry(0.3, 0.4, 3.8, 8), postMaterial, [0, 1.9, 0]);
+    addMesh(group, new THREE.BoxGeometry(2.2, 0.26, 0.32), material(materials, PALETTE.woodLight), [0, 3.75, 0]);
+  } else if (arena.style === 'pond') {
+    // Duck boards over the bank, plus a lantern post.
+    for (let index = 0; index < 5; index += 1) {
+      const board = addMesh(
+        group,
+        new THREE.BoxGeometry(3.2, 0.14, 0.9),
+        material(materials, PALETTE.woodLight),
+        [-arena.radius * 0.55 + index * 0.2, 0.2, -arena.radius * 0.55 - index * 1.1],
+      );
+      board.rotation.y = 0.1;
+    }
+    const lantern = new THREE.Group();
+    lantern.position.set(arena.radius * 0.55, 0, arena.radius * 0.45);
+    addMesh(lantern, new THREE.CylinderGeometry(0.09, 0.11, 2.4, 6), material(materials, PALETTE.woodDark), [0, 1.2, 0]);
+    addMesh(
+      lantern,
+      new THREE.BoxGeometry(0.4, 0.48, 0.4),
+      material(materials, '#ffcf6b', { emissive: new THREE.Color('#ff9f3c'), emissiveIntensity: 1.2 }),
+      [0, 2.5, 0],
+    );
+    group.add(lantern);
   } else if (arena.style === 'ramring') {
-    // Stone ring with pillars.
     for (let index = 0; index < 10; index += 1) {
       const angle = (index / 10) * Math.PI * 2;
       addMesh(
@@ -1109,7 +1236,6 @@ function buildArena(
     wall.position.y = 0.35;
     group.add(wall);
   } else if (arena.style === 'bridge') {
-    // Bridge arena is visualised by the bridge geometry; add lanterns + reeds.
     for (const side of [-1, 1]) {
       const lantern = new THREE.Group();
       lantern.position.set(side * (arena.radius + 0.4), heightAt(x + side * (arena.radius + 0.4), z) - y, 8);
@@ -1150,10 +1276,27 @@ function buildArena(
         group.add(brazier);
       }
     }
-    const carpet = new THREE.Mesh(new THREE.PlaneGeometry(4.4, arena.radius * 1.7), material(materials, '#9c2f3f'));
+    // A runner from the throne to the ring edge: long enough to read as a path,
+    // short enough that its corners never break the circle.
+    const carpetLength = arena.radius * 1.32;
+    const carpet = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.6, carpetLength),
+      material(materials, '#9c2f3f'),
+    );
     carpet.rotation.x = -Math.PI / 2;
-    carpet.position.set(0, 0.1, 2);
+    // -Z is the palace side, so the runner starts near the throne and runs out.
+    carpet.position.set(0, 0.1, -arena.radius * 0.5 + carpetLength / 2 - 1);
+    carpet.name = 'palace-carpet';
     group.add(carpet);
+    for (const side of [-1, 1]) {
+      const border = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.3, carpetLength),
+        material(materials, PALETTE.hay),
+      );
+      border.rotation.x = -Math.PI / 2;
+      border.position.set(side * 1.95, 0.11, carpet.position.z);
+      group.add(border);
+    }
   }
   root.add(group);
   return group;
@@ -1244,6 +1387,8 @@ const BUILDING_KITS: Record<BuildingKind, BuildingKit> = {
   nursery: { wall: '#efd9a8', roof: '#b8613f', trim: PALETTE.woodDark, accent: PALETTE.hay, width: 3.4, depth: 2.6, wallHeight: 1.7, roofHeight: 1.1, roofStyle: 'gable' },
   henPalace: { wall: '#9d3b45', roof: '#3e2430', trim: '#f0cf8a', accent: '#e9c46a', width: 11, depth: 8, wallHeight: 4.6, roofHeight: 3.6, roofStyle: 'gable' },
   gatehouse: { wall: '#e3cfa8', roof: PALETTE.roofRed, trim: PALETTE.woodDark, accent: '#8c8272', width: 6.4, depth: 2.8, wallHeight: 2.8, roofHeight: 2.0, roofStyle: 'gable' },
+  dogHouse: { wall: '#c98a5c', roof: '#7c4a2c', trim: PALETTE.woodDark, accent: PALETTE.hay, width: 3.6, depth: 3.0, wallHeight: 1.9, roofHeight: 1.5, roofStyle: 'gable' },
+  threshingGranary: { wall: PALETTE.wallClay, roof: PALETTE.roofThatch, trim: PALETTE.woodDark, accent: PALETTE.hay, width: 8.5, depth: 6.5, wallHeight: 4.4, roofHeight: 3.2, roofStyle: 'gable' },
   scarecrowShed: { wall: PALETTE.wallClay, roof: PALETTE.roofThatch, trim: PALETTE.woodDark, accent: PALETTE.hay, width: 3, depth: 2.4, wallHeight: 1.8, roofHeight: 1.2, roofStyle: 'gable' },
 };
 
@@ -1292,7 +1437,8 @@ function buildBuildingByKind(
   }
 
   // Base + walls (open-sided for shelters).
-  const openSided = spec.kind === 'sheepShelter' || spec.kind === 'gatehouse';
+  const openSided =
+    spec.kind === 'sheepShelter' || spec.kind === 'gatehouse' || spec.kind === 'threshingGranary';
   addMesh(group, new THREE.BoxGeometry(w + 0.4, 0.24, d + 0.4), material(materials, PALETTE.stoneDark), [0, 0.12, 0]);
   if (spec.kind === 'gatehouse') {
     // Arch gate: two piers and a lintel, walk-through in the middle.
@@ -1307,6 +1453,22 @@ function buildBuildingByKind(
       );
     }
     addMesh(group, new THREE.BoxGeometry(w, 1.1, d), wallMaterial, [0, kit.wallHeight + 0.75, 0]);
+  } else if (spec.kind === 'threshingGranary') {
+    // A working granary: three solid walls, a wide open bay facing the yard, and
+    // a tie beam over the opening. Without this it was just a house with a sign.
+    addMesh(group, new THREE.BoxGeometry(w, kit.wallHeight, 0.4), wallMaterial, [0, kit.wallHeight / 2 + 0.2, -d / 2 + 0.2]);
+    for (const sx of [-1, 1]) {
+      addMesh(group, new THREE.BoxGeometry(0.4, kit.wallHeight, d), wallMaterial, [sx * (w / 2 - 0.2), kit.wallHeight / 2 + 0.2, 0]);
+      // The corner posts that carry the front of the roof.
+      const post = addMesh(
+        group,
+        new THREE.CylinderGeometry(0.24, 0.28, kit.wallHeight, 7),
+        trimMaterial,
+        [sx * (w / 2 - 0.34), kit.wallHeight / 2, d / 2],
+      );
+      post.castShadow = true;
+    }
+    addMesh(group, new THREE.BoxGeometry(w, 0.5, 0.4), trimMaterial, [0, kit.wallHeight - 0.1, d / 2]);
   } else if (spec.kind === 'sheepShelter') {
     // Three-sided fold: back wall + corner posts, open to the pasture.
     addMesh(group, new THREE.BoxGeometry(w, kit.wallHeight, 0.35), wallMaterial, [0, kit.wallHeight / 2 + 0.2, -d / 2 + 0.18]);
@@ -1316,11 +1478,6 @@ function buildBuildingByKind(
     }
   } else {
     addMesh(group, new THREE.BoxGeometry(w, kit.wallHeight, d), wallMaterial, [0, kit.wallHeight / 2 + 0.2, 0]);
-  }
-
-  if (openSided) {
-    if (spec.kind === 'gatehouse') {
-    }
   }
 
   // Roof.
@@ -1519,6 +1676,30 @@ function buildBuildingByKind(
         [w / 2 + 0.3 + index * 0.2, 0.7, -d / 2 + 0.4 + index * 0.3],
       );
     }
+  } else if (spec.kind === 'dogHouse') {
+    // A kennel: arched door, water bowl, and a bone on the roof ridge.
+    const arch = addMesh(group, new THREE.CylinderGeometry(0.62, 0.62, 0.14, 12, 1, false, 0, Math.PI), darkMaterial, [0, 1.0, d / 2 + 0.04]);
+    arch.rotation.z = Math.PI;
+    addMesh(group, new THREE.CylinderGeometry(0.5, 0.5, 0.12, 5), material(materials, '#c9d3d8'), [w * 0.72, 0.2, d / 2 + 0.7]);
+    const bone = addMesh(group, new THREE.CylinderGeometry(0.07, 0.07, 0.7, 5), material(materials, '#f2ecdd'), [0, kit.wallHeight + kit.roofHeight + 0.42, 0]);
+    bone.rotation.z = Math.PI / 2;
+    addMesh(group, new THREE.SphereGeometry(0.1, 6, 5), material(materials, '#f2ecdd'), [-0.38, kit.wallHeight + kit.roofHeight + 0.42, 0]);
+    addMesh(group, new THREE.SphereGeometry(0.1, 6, 5), material(materials, '#f2ecdd'), [0.38, kit.wallHeight + kit.roofHeight + 0.42, 0]);
+    // Name plate, because a boss lives here.
+    addMesh(group, new THREE.BoxGeometry(1.1, 0.42, 0.07), material(materials, PALETTE.accent), [0, 1.75, d / 2 + 0.1]);
+  } else if (spec.kind === 'threshingGranary') {
+    // Grain sacks and a millstone on the open bay floor.
+    for (let index = 0; index < 4; index += 1) {
+      const sack = addMesh(
+        group,
+        new THREE.SphereGeometry(0.5, 7, 6),
+        material(materials, PALETTE.hay),
+        [-1.2 + index * 0.85, 0.55, d / 2 - 1.6 + (index % 2) * 0.5],
+      );
+      sack.scale.set(0.85, 1.05, 0.8);
+    }
+    const stone = addMesh(group, new THREE.CylinderGeometry(1.05, 1.05, 0.28, 14), material(materials, PALETTE.stone), [w / 2 - 1.6, 0.16, -d / 2 + 1.4]);
+    stone.rotation.x = Math.PI / 2;
   }
 
   // A tiny lantern by the door of most buildings.
@@ -1716,20 +1897,24 @@ function buildCritters(
     { id: 'quackmire', make: () => makeDuck(3.2) },
     { id: 'bristleback', make: () => makeSheep(2.4) },
   ];
+  // Bosses stand *in* their home ground: the rooster on his yard post step, the
+  // duck floating on her pond, the ram in his stone ring.
   const bossPositions: Record<string, [number, number]> = {
     squawk: [2, -10],
-    quackmire: [10, -80],
+    quackmire: [12, -96],
     bristleback: [44, -98],
   };
   for (const boss of bossAnimals) {
     const position = bossPositions[boss.id]!;
     const group = boss.make();
-    group.position.set(position[0], heightAt(position[0], position[1]) + 0.2, position[1]);
+    // The duck floats: her base sits on the water plane, not on the bank.
+    const y = boss.id === 'quackmire' ? -0.1 : heightAt(position[0], position[1]);
+    group.position.set(position[0], y + 0.2, position[1]);
     group.rotation.y = Math.PI * 0.9;
     group.name = `boss-${boss.id}`;
     root.add(group);
     animated.push((elapsed) => {
-      group.position.y = heightAt(position[0], position[1]) + 0.2 + Math.sin(elapsed * 1.2 + position[0]) * 0.06;
+      group.position.y = y + 0.2 + Math.sin(elapsed * 1.2 + position[0]) * 0.06;
     });
   }
 
@@ -1772,36 +1957,76 @@ function buildCritters(
   });
 
   // The final boss: Cluckzilla on her hay throne.
+  //
+  // She sat at 0.2 above the yard with a 4.2-tall throne back right behind her, so
+  // from the approach the back wall swallowed the head and wings and she read as a
+  // white boulder. Scaled down, lifted onto the throne dais, and turned to face
+  // the yard she rules.
+  const queenScale = 0.72;
   const queen = new THREE.Group();
   const queenBody = addMesh(queen, new THREE.SphereGeometry(1.7, 12, 9), white, [0, 2.1, 0]);
   queenBody.scale.set(1.1, 1.15, 1.25);
   addMesh(queen, new THREE.SphereGeometry(1.0, 10, 8), white, [0, 3.9, 0.5]);
   addMesh(queen, new THREE.ConeGeometry(0.34, 0.8, 5), orange, [0, 3.8, 1.5]).rotation.x = Math.PI / 2;
-  addMesh(queen, new THREE.SphereGeometry(0.26, 7, 6), red, [0, 4.5, 0.35]);
+  // Wattle and the comb she was missing: a hen without a red comb is a snowman.
+  addMesh(queen, new THREE.SphereGeometry(0.26, 7, 6), red, [0, 3.5, 1.32]);
+  for (let index = 0; index < 3; index += 1) {
+    addMesh(
+      queen,
+      new THREE.SphereGeometry(0.3 - index * 0.05, 7, 6),
+      red,
+      [0, 4.72 + index * 0.16, 0.62 - index * 0.2],
+    ).scale.set(0.55, 1, 1.1);
+  }
   for (const side of [-1, 1]) {
     const wing = addMesh(queen, new THREE.SphereGeometry(0.75, 8, 6), cream, [side * 1.7, 2.2, 0]);
     wing.scale.set(0.5, 1.1, 1.4);
     wing.rotation.z = side * 0.3;
     addMesh(queen, new THREE.SphereGeometry(0.09, 6, 5), black, [side * 0.32, 4.15, 1.15]);
   }
+  // Tail feathers, fanned behind the throne.
+  for (let index = 0; index < 5; index += 1) {
+    const angle = (index / 4 - 0.5) * 0.9;
+    addMesh(
+      queen,
+      new THREE.ConeGeometry(0.16, 1.5, 4),
+      cream,
+      [Math.sin(angle) * 0.9, 2.6 + Math.cos(angle) * 0.4, -1.75],
+    ).rotation.set(-0.55, 0, -angle * 0.8);
+  }
   // Crown.
   const queenCrown = new THREE.Group();
-  queenCrown.position.set(0, 4.75, 0.45);
+  queenCrown.position.set(0, 4.95, 0.6);
   for (let index = 0; index < 5; index += 1) {
     const angle = (index / 5) * Math.PI * 2;
-    addMesh(queenCrown, new THREE.ConeGeometry(0.12, 0.5, 4), material(materials, '#ffd166'), [Math.cos(angle) * 0.34, 0.24, Math.sin(angle) * 0.34]);
+    addMesh(queenCrown, new THREE.ConeGeometry(0.14, 0.58, 4), material(materials, '#ffd166'), [Math.cos(angle) * 0.4, 0.3, Math.sin(angle) * 0.4]);
   }
-  addMesh(queenCrown, new THREE.TorusGeometry(0.36, 0.08, 5, 14), material(materials, '#ffd166'), [0, 0, 0]).rotation.x = Math.PI / 2;
+  addMesh(queenCrown, new THREE.TorusGeometry(0.42, 0.09, 5, 14), material(materials, '#ffd166'), [0, 0, 0]).rotation.x = Math.PI / 2;
   queen.add(queenCrown);
-  // Hay throne.
-  addMesh(queen, new THREE.BoxGeometry(4.2, 1.2, 2.4), material(materials, PALETTE.hay), [0, 0.6, -1.2]);
-  addMesh(queen, new THREE.BoxGeometry(4.2, 4.2, 0.8), material(materials, PALETTE.hayDark), [0, 2.6, -2.4]);
-  queen.position.set(-46, heightAt(-46, -132) + 0.2, -131);
+  queen.scale.setScalar(queenScale);
+
+  // The throne is her stage, so it is its own group: sized in world units, she
+  // sits on it, and the dais keeps her above the carpet.
+  const throne = new THREE.Group();
+  addMesh(throne, new THREE.BoxGeometry(5.4, 0.5, 4.2), material(materials, PALETTE.hayDark), [0, 0.25, -0.6]);
+  addMesh(throne, new THREE.BoxGeometry(4.6, 1.5, 3.0), material(materials, PALETTE.hay), [0, 1.15, -1.0]);
+  addMesh(throne, new THREE.BoxGeometry(4.6, 5.0, 0.7), material(materials, PALETTE.hayDark), [0, 3.0, -2.7]);
+  for (const side of [-1, 1]) {
+    addMesh(throne, new THREE.BoxGeometry(0.5, 4.4, 0.6), material(materials, PALETTE.woodDark), [side * 2.0, 3.0, -2.65]);
+  }
+  const queenY = heightAt(-46, -131) + 0.2;
+  throne.position.set(-46, queenY, -130);
+  throne.name = 'throne-cluckzilla';
+  root.add(throne);
+  // Seat centre is one unit behind the throne origin, so she stands exactly on it.
+  queen.position.set(-46, queenY + 1.42, -131);
+  // Facing the yard: the approach comes from +Z, and she should be looking at it.
+  queen.rotation.y = 0;
   queen.name = 'boss-cluckzilla';
   root.add(queen);
   animated.push((elapsed) => {
     queenCrown.rotation.y = elapsed * 0.5;
-    queen.position.y = heightAt(-46, -131) + 0.2 + Math.sin(elapsed * 0.9 + 2) * 0.05;
+    queen.position.y = queenY + 1.42 + Math.sin(elapsed * 0.9 + 2) * 0.05;
   });
 
   // Idle wander for critters: tiny bobbing, no pathfinding needed at map scale.
@@ -1878,81 +2103,178 @@ function buildBoundaryPosts(
 /* ==================================================== distant green hills */
 
 /**
- * Height of the horizon saucer under a point, relative to its own rest Y.
+ * How far the land keeps rolling past the diorama edge, before the saucer's
+ * outer falloff takes over. Exported because the height field and the ground
+ * mesh must agree exactly - the original bug was hills floating in the sky
+ * because the plane under them curved away faster than their base heights
+ * assumed.
+ */
+export const HORIZON_ROLL = 210;
+
+/**
+ * Height of the horizon land at a point, *relative* to `HORIZON_Y`.
  *
- * The ground and the hills both read from this single function: the bug it
- * prevents was hills floating in the sky because the ground curved away faster
- * than their fixed base heights assumed.
+ * This is the single source of truth the backdrop is built from: the hills, the
+ * ground plane they stand on and the treeline all sample this function, so no
+ * piece can drift away from the others. That is what makes the backdrop read as
+ * one continuous landscape instead of separate green pebbles on a green disc -
+ * the pebbles were the old design, and this replaces it.
+ *
+ * Shape: overlapping swells from `RIDGE_SWELLS`, plus a gentle outward lean
+ * before the fog-facing falloff. Completely flat over the playable slab.
  */
 export function horizonGroundOffset(x: number, z: number): number {
-  const radius = Math.min(1, Math.hypot(x, z) / HORIZON_RADIUS);
-  // Flat for the whole area the hills occupy; the falloff only starts past 80%
-  // of the radius. Curving under the hills was what made them look airborne.
-  const falloff = Math.max(0, radius - 0.8);
-  return -(falloff * falloff) * 22;
+  const distance = Math.hypot(x, z);
+  // Absolute world units, not a fraction of the disc: the disc's radius is
+  // derived from the hills and moving them must not silently flatten the land
+  // under them. That normalised threshold is exactly what erased the swells once
+  // the backdrop was pushed outward.
+  if (distance < HORIZON_INNER) return 0;
+  const ramp = Math.min(1, (distance - HORIZON_INNER) / 130);
+  let swell = 0;
+  for (const ridge of RIDGE_SWELLS) {
+    const dx = (x - ridge.x) / ridge.rx;
+    const dz = (z - ridge.z) / ridge.rz;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > 1) continue;
+    swell += ridge.height * Math.pow(1 - d2, 1.5);
+  }
+  const lean = Math.pow(Math.min(1, distance / HORIZON_RADIUS), 1.7) * 14;
+  const falloff = Math.max(0, distance / HORIZON_RADIUS - 0.88);
+  return ramp * (swell + lean) - falloff * falloff * HORIZON_RADIUS * 0.9;
 }
 
-/** Rest height of the horizon saucer mesh. */
+/**
+ * Where the rolling land starts, in world units from the map centre.
+ *
+ * Just beyond the diorama's own half-diagonal (≈198): the playfield must stay
+ * perfectly flat, and the swell has to have begun by the time the eye reaches the
+ * first ridge.
+ */
+export const HORIZON_INNER = 330;
+
+/** Rest height of the horizon land mesh. */
 export const HORIZON_Y = -3.2;
 
 /**
- * Hill colour per ring, near to far. Exported so the aerial-perspective test
- * can assert the real values instead of restating them, and so the backdrop
- * cannot drift back to hill-green-on-ground-green (which erased the hills).
+ * Aerial-perspective range for the backdrop, in world units from the eye.
+ *
+ * Co-located with the hills on purpose: the fog used to be tuned to a backdrop
+ * that sat 300 units out, so widening the horizon without touching it simply
+ * erased the hills into the haze. Anything mentioning `THREE.Fog` for this scene
+ * reads these numbers.
  */
+export const HORIZON_FOG = { near: 700, far: 2100, colour: '#dfe6dc' } as const;
+
+/** Far plane the orbit camera needs to reach the outermost ridge. */
+export const HORIZON_FAR_PLANE = 5600;
+
 /** Flat green of the horizon saucer the hills stand on. */
 export const HORIZON_GROUND_COLOR = '#a9c489';
 
+/**
+ * Hill tint per band, near to far. Exported so the aerial-perspective test can
+ * assert the real values instead of restating them, and so the backdrop cannot
+ * drift back to hill-green-on-ground-green (which erased the hills).
+ */
 export const HILL_COLORS = {
-  near: '#4f8238',
-  mid: '#669447',
-  far: '#83a862',
+  near: '#6d9a4b',
+  mid: '#82ab5d',
+  far: '#8bb268',
+  horizon: '#9fbf7d',
 } as const;
 
+/**
+ * Bands of ridges ringing the diorama, inner to outer.
+ *
+ * `minWidth`/`maxWidth` are HALF-extents. `stretch` is how much longer a ridge is
+ * along its own long axis: real rolling hills are *long*, and a circular
+ * footprint is exactly what made the old backdrop read as dropped pebbles.
+ *
+ * All four bands sit outside `CAMERA_ORBIT_LIMIT`, so the eye never gets closer
+ * to them than the map itself.
+ */
 export const HILL_RINGS = [
-  // `minWidth`/`maxWidth` are HALF-extents: a hill is drawn `2 * width` across.
-  // Treating them as full widths made every hill twice as wide as intended,
-  // which is what turned the backdrop into flat green lily pads.
-  { radiusX: 186, radiusZ: 214, count: 30, minHeight: 5.0, maxHeight: 7.4, minWidth: 9, maxWidth: 13, materialKey: 'near' as const, seed: 3 },
-  { radiusX: 252, radiusZ: 290, count: 34, minHeight: 6.4, maxHeight: 8.6, minWidth: 12, maxWidth: 17, materialKey: 'mid' as const, seed: 21 },
-  { radiusX: 330, radiusZ: 378, count: 38, minHeight: 7.6, maxHeight: 9.6, minWidth: 16, maxWidth: 22, materialKey: 'far' as const, seed: 47 },
+  // The bridge band: low, wide, and the only one whose silhouette is mostly
+  // hidden behind the map at the default camera. It exists to stop the eye
+  // reading a bare plane between the slab and the first real ridge.
+  { radiusX: 540, radiusZ: 594, count: 40, minHeight: 22, maxHeight: 30, minWidth: 34, maxWidth: 46, stretch: [1.4, 1.9], materialKey: 'near' as const, seed: 12 },
+  // Four bands, inner to outer. Every band's *inner* reach must clear the camera
+  // orbit: a ridge nearer than the eye swallows a third of the frame, which is
+  // exactly what happened when the first band sat at 430 with a 500-unit orbit.
+  // `stretch` hides the extra distance: a 2:1 ridge is twice as wide along its
+  // own axis for the same peak height, so the backdrop still reads as big hills.
+  { radiusX: 620, radiusZ: 682, count: 46, minHeight: 62, maxHeight: 84, minWidth: 78, maxWidth: 112, stretch: [1.4, 2.0], materialKey: 'near' as const, seed: 3 },
+  { radiusX: 780, radiusZ: 858, count: 42, minHeight: 76, maxHeight: 100, minWidth: 92, maxWidth: 132, stretch: [1.5, 2.2], materialKey: 'mid' as const, seed: 21 },
+  { radiusX: 970, radiusZ: 1067, count: 36, minHeight: 104, maxHeight: 134, minWidth: 110, maxWidth: 158, stretch: [1.6, 2.3], materialKey: 'far' as const, seed: 47 },
+  { radiusX: 1180, radiusZ: 1298, count: 30, minHeight: 136, maxHeight: 176, minWidth: 132, maxWidth: 186, stretch: [1.6, 2.4], materialKey: 'horizon' as const, seed: 68 },
 ] as const;
 
 /**
- * Radius of the horizon saucer, derived from the farthest hill's reach.
+ * Radius of the horizon land, derived from the farthest ridge's reach.
  *
  * Computed rather than hand-picked: a hard-coded number silently drifts out of
- * sync when a ring moves, and a hill beyond the disc renders against bare sky —
+ * sync when a band moves, and a ridge beyond the disc renders against bare sky -
  * the "floating green pancake" bug.
  */
 export const HORIZON_RADIUS = (() => {
   let reach = 0;
   for (const ring of HILL_RINGS) {
-    // Jitter peaks at 1.1x; `maxWidth` is a half-extent, so one hill reaches
-    // exactly that far past its centre.
-    reach = Math.max(reach, Math.hypot(ring.radiusX, ring.radiusZ) * 1.1 + ring.maxWidth);
+    reach = Math.max(reach, Math.hypot(ring.radiusX, ring.radiusZ) + ring.maxWidth * ring.stretch[1]);
   }
-  return Math.ceil(reach + 60);
+  return Math.ceil(reach + 220);
 })();
 
 /**
- * Ring layout for the horizon hills. Exported so tests can assert the actual
- * numbers instead of restating them: the backdrop must stay outside the slab
- * and must stay low and wide.
+ * The swells the horizon land is built from.
+ *
+ * Deliberately a list of overlapping humps rather than one smooth wave: the
+ * backdrop has to read as *rolling countryside*, and a single sine field gave
+ * the old version a billiard-table smoothness that made the hills look like
+ * separate domes dropped on a plate. Both the ground mesh and the hill domes
+ * sample this list, so a hill literally sits inside the swell it belongs to.
+ *
+ * Everything here lives *outside* the camera's orbit radius (see
+ * `CAMERA_ORBIT_LIMIT`). That is not cosmetic: a hill closer to the eye than the
+ * map fills a third of the frame and swallows the diorama, which is exactly what
+ * happened when the ring sat at 168-470 while the default camera stood at 490.
  */
+export const RIDGE_SWELLS = [
+  // The apron's gentle pasture rolling.
+  { x: -480, z: -150, rx: 260, rz: 210, height: 34 },
+  { x: -250, z: 430, rx: 250, rz: 205, height: 30 },
+  { x: 100, z: 600, rx: 275, rz: 195, height: 38 },
+  { x: 455, z: 360, rx: 265, rz: 215, height: 36 },
+  { x: 600, z: -145, rx: 265, rz: 225, height: 42 },
+  { x: 330, z: -555, rx: 260, rz: 205, height: 34 },
+  { x: -230, z: -610, rx: 265, rz: 205, height: 36 },
+  { x: -590, z: -435, rx: 245, rz: 205, height: 32 },
+  { x: -25, z: -780, rx: 300, rz: 185, height: 38 },
+  { x: -800, z: 45, rx: 245, rz: 265, height: 34 },
+  { x: 800, z: 45, rx: 245, rz: 265, height: 36 },
+  { x: -640, z: 500, rx: 230, rz: 205, height: 30 },
+  { x: 670, z: 580, rx: 235, rz: 205, height: 33 },
+] as const;
 
+/**
+ * Radius beyond which the camera can never go.
+ *
+ * The backdrop is authored against this number: anything inside it would end up
+ * between the eye and the map at some orbit angle.
+ */
+export const CAMERA_ORBIT_LIMIT = 466;
 
 /** World bounds of the diorama slab, mirrored for the hill spacing test. */
 export const DIORAMA_HALF = { x: 122, z: 156 } as const;
 
-
 /**
- * Small rolling green hills ringing the diorama.
+ * Big rolling green hills ringing the diorama.
  *
  * The map is a table-top model, so without a horizon the slab floats in empty
- * sky. These are low, wide and squashed — the silhouette of farmland beyond the
- * farm, not mountains — and they get paler with distance so the eye reads depth
- * instead of mistaking them for more playable map.
+ * sky. The backdrop is now deliberately *big*: 9-25 m swells with 30-64 m
+ * half-widths, overlapping so the silhouettes merge into ridges rather than
+ * sitting as separate beads. They lean paler with distance, so the eye still
+ * reads depth instead of mistaking them for more playable map.
  *
  * Decorative only: never picked, never collidable.
  */
@@ -1966,65 +2288,69 @@ function buildDistantHills(
   // clicking a far hill would select whichever region happened to be nearest.
   group.userData.decorative = true;
 
-  // Own materials (not the shared cache): these are tinted for atmosphere and
-  // must never bleed into a pickable surface's colour.
-  const nearMaterial = new THREE.MeshStandardMaterial({ color: HILL_COLORS.near, roughness: 1, flatShading: true });
-  const midMaterial = new THREE.MeshStandardMaterial({ color: HILL_COLORS.mid, roughness: 1, flatShading: true });
-  const farMaterial = new THREE.MeshStandardMaterial({ color: HILL_COLORS.far, roughness: 1, flatShading: true });
+  const materialsFor = {
+    near: new THREE.MeshStandardMaterial({ color: HILL_COLORS.near, roughness: 1, flatShading: true }),
+    mid: new THREE.MeshStandardMaterial({ color: HILL_COLORS.mid, roughness: 1, flatShading: true }),
+    far: new THREE.MeshStandardMaterial({ color: HILL_COLORS.far, roughness: 1, flatShading: true }),
+    horizon: new THREE.MeshStandardMaterial({ color: HILL_COLORS.horizon, roughness: 1, flatShading: true }),
+  } as const;
 
-  /* A ridge is a squashed hemisphere sliced at the base so it never shows a
-     floating underside: flat bottom, soft dome on top. */
-  const makeRidge = (
-    material: THREE.Material,
-    width: number,
-    height: number,
-    depth: number,
-  ) => {
-    const geometry = new THREE.SphereGeometry(1, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-    // Squash and pull the rim down slightly so it beds into the ground plane.
-    const position = geometry.attributes.position as THREE.BufferAttribute;
+  /*
+   * A ridge is a squashed hemisphere with its rim pushed *down past the ground*
+   * rather than sliced flat at the base.
+   *
+   * The old version ended the dome exactly at y=0, so every hill met the plane
+   * at a sharp circle: twenty green discs with visible edges. Dropping the rim
+   * below the surface (and letting the ground flow over it) hides the join, and
+   * neighbouring domes then overlap into a shared ridgeline.
+   */
+  const ridgeGeometry = new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2);
+  {
+    const position = ridgeGeometry.attributes.position as THREE.BufferAttribute;
     for (let index = 0; index < position.count; index += 1) {
-      position.setY(index, position.getY(index) * 0.92 - 0.04);
+      const y = position.getY(index);
+      const rim = 1 - Math.min(1, Math.max(0, y / 0.25));
+      // `rim` is 1 at the equator and 0 by a quarter of the way up, so only the
+      // skirt sinks; the visible dome keeps its silhouette.
+      position.setY(index, y - rim * 0.55);
     }
-    geometry.computeVertexNormals();
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.scale.set(width, height, depth);
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    return mesh;
-  };
+    ridgeGeometry.computeVertexNormals();
+  }
 
   const ridges: THREE.Mesh[] = [];
+  const dummy = new THREE.Object3D();
 
-  const rings = HILL_RINGS.map((ring) => ({
-    ...ring,
-    material:
-      ring.materialKey === 'near' ? nearMaterial : ring.materialKey === 'mid' ? midMaterial : farMaterial,
-  }));
-
-  for (const ring of rings) {
+  /*
+   * Each peak is planted *inside* one of the ground swells, not on an ellipse
+   * of its own. The swell already lifts the land there, so the dome only has to
+   * add the crest: the two silhouettes merge into one hill, and because the
+   * swells overlap, the hills run into each other as a ridge line instead of
+   * sitting apart like beads on a string.
+   */
+  let peakIndex = 0;
+  for (const ring of HILL_RINGS) {
+    const ridgeMaterial = materialsFor[ring.materialKey];
     for (let index = 0; index < ring.count; index += 1) {
-      const t = index / ring.count;
-      // Offset each ring so hills do not line up radially into visible spokes.
-      // The histogram-ish jitter here is what breaks the "beads on a wire" look:
-      // evenly spaced hills on a perfect ellipse read as a drawn arc, not a
-      // landscape. Clumping them irregularly is the whole difference.
-      const angleJitter = (hash2(index, ring.seed + 7) - 0.5) * 0.9;
-      const angle = t * Math.PI * 2 + hash2(ring.seed, index) * 0.3 + angleJitter / ring.count;
-      // Wide radial spread, biased outward, so hills form clusters and gaps.
-      const spread = hash2(index, ring.seed + 5) + hash2(index * 3, ring.seed + 8);
-      const jitter = 0.94 + (spread * 0.5) * 0.34;
-      const x = Math.cos(angle) * ring.radiusX * jitter;
-      const z = Math.sin(angle) * ring.radiusZ * jitter;
+      const swell = RIDGE_SWELLS[peakIndex % RIDGE_SWELLS.length]!;
+      peakIndex += 1;
+      // Scatter the peak within the swell's inner half, so it never overhangs.
+      const swirl = hash2(index, ring.seed + 7) * Math.PI * 2;
+      const reach = 0.15 + hash2(index, ring.seed + 5) * 0.45;
+      const x = swell.x + Math.cos(swirl) * swell.rx * reach;
+      const z = swell.z + Math.sin(swirl) * swell.rz * reach;
 
       const height = ring.minHeight + hash2(index, ring.seed + 1) * (ring.maxHeight - ring.minHeight);
       const width = ring.minWidth + hash2(index, ring.seed + 2) * (ring.maxWidth - ring.minWidth);
+      // Long, low and asymmetric: a ridge, not a pebble. The long axis is
+      // rotated per hill, so neighbouring ridges cross instead of stacking.
+      const stretch = ring.stretch[0] + hash2(index, ring.seed + 11) * (ring.stretch[1] - ring.stretch[0]);
 
-      const ridge = makeRidge(ring.material, width, height, width * (0.7 + hash2(index, 9) * 0.5));
-      // Bed each hill into the saucer: follow its curve, then sink a little so
-      // no rim shows. Clamping to `ring.y` here was the bug that floated them.
+      const ridge = new THREE.Mesh(ridgeGeometry, ridgeMaterial);
+      ridge.scale.set(width, height, width * stretch);
+      // Sit the dome's centre just under the swell's local surface: the skirt
+      // is buried, so there is no join to read as a seam.
       const groundY = HORIZON_Y + horizonGroundOffset(x, z);
-      ridge.position.set(x, groundY - height * 0.18, z);
+      ridge.position.set(x, groundY - height * 0.3, z);
       ridge.rotation.y = hash2(index, ring.seed + 4) * Math.PI;
       ridge.name = `hill-${ring.seed}-${index}`;
       group.add(ridge);
@@ -2032,17 +2358,18 @@ function buildDistantHills(
     }
   }
 
-  /* A soft, wide ground plane under the hills, close to the sky/fog colour so
-     the model sits on a horizon rather than on a hard disc. Deliberately thin
-     and low: it must never read as a second map. */
-  // A grid, not a CircleGeometry fan.
-  //
-  // CircleGeometry makes 96 long triangles that all touch the centre. Any
-  // renderer that culls whole triangles against the near plane (the offline
-  // painter does) discards *all* of them, so the ground vanishes and the hills
-  // appear to float. Subdividing into small tiles fixes that and also lets the
-  // falloff be smooth.
-  const TILES = 40;
+  /*
+   * The land the hills stand on.
+   *
+   * It uses the *same* `horizonGroundOffset` as the hills, so the swells and the
+   * ground undulate together instead of hills hovering over a flat plate.
+   *
+   * A grid, not a CircleGeometry fan: a fan's 96 long triangles all touch the
+   * centre, and any renderer that culls whole triangles against the near plane
+   * (the offline painter) discards every one of them - the ground vanishes and
+   * the hills appear to float. Small tiles also let the falloff be smooth.
+   */
+  const TILES = 130;
   const groundGeometry = new THREE.PlaneGeometry(
     HORIZON_RADIUS * 2,
     HORIZON_RADIUS * 2,
@@ -2051,26 +2378,107 @@ function buildDistantHills(
   );
   groundGeometry.rotateX(-Math.PI / 2);
   const groundPosition = groundGeometry.attributes.position as THREE.BufferAttribute;
+  const groundColors = new Float32Array(groundPosition.count * 3);
+  const baseColour = new THREE.Color(HORIZON_GROUND_COLOR);
+  const nearColour = new THREE.Color('#b2cd90');
+  const farColour = new THREE.Color('#bdd2a0');
+  const scratchColour = new THREE.Color();
   for (let index = 0; index < groundPosition.count; index += 1) {
     const x = groundPosition.getX(index);
     const z = groundPosition.getZ(index);
     const radius = Math.hypot(x, z);
     if (radius > HORIZON_RADIUS) {
       // Clip the square grid back to a disc by collapsing the outside ring down
-      // to a point; the far hills hide the seam.
+      // to a point; the far hills and the fog hide the seam.
       groundPosition.setX(index, (x / radius) * HORIZON_RADIUS);
       groundPosition.setZ(index, (z / radius) * HORIZON_RADIUS);
     }
     groundPosition.setY(index, horizonGroundOffset(x, z));
+    // Warmer, lighter green further out: aerial perspective on the land itself,
+    // so the backdrop has depth instead of one flat page of colour.
+    const fade = THREE.MathUtils.clamp((radius / HORIZON_RADIUS - 0.3) / 0.7, 0, 1);
+    scratchColour.copy(baseColour).lerp(nearColour, Math.min(1, fade * 2));
+    scratchColour.lerp(farColour, Math.max(0, fade - 0.5) * 1.6);
+    const i3 = index * 3;
+    groundColors[i3] = scratchColour.r;
+    groundColors[i3 + 1] = scratchColour.g;
+    groundColors[i3 + 2] = scratchColour.b;
   }
   groundGeometry.computeVertexNormals();
-  const groundMaterial = new THREE.MeshStandardMaterial({ color: HORIZON_GROUND_COLOR, roughness: 1 });
+  groundGeometry.setAttribute('color', new THREE.BufferAttribute(groundColors, 3));
+  const groundMaterial = new THREE.MeshStandardMaterial({
+    color: '#ffffff',
+    vertexColors: true,
+    roughness: 1,
+    flatShading: false,
+  });
   const ground = new THREE.Mesh(groundGeometry, groundMaterial);
   ground.position.set(0, HORIZON_Y, 0);
   ground.castShadow = false;
   ground.receiveShadow = false;
   ground.name = 'hill-ground';
   group.add(ground);
+
+  /*
+   * Scattered trees on the near swells, in three instanced draws.
+   *
+   * This is the main trick that makes the backdrop read as *land* and not as
+   * painted geometry: the treeline gives the eye a familiar scale reference, so
+   * a 20 m hill behind a 5 m pine is obviously a hill, and the rows recede.
+   */
+  const treeRng = mulberry32(20261117);
+  const trunkMaterial = new THREE.MeshStandardMaterial({ color: '#6b4b30', roughness: 1, flatShading: true });
+  const leafMaterial = new THREE.MeshStandardMaterial({ color: '#3f7043', roughness: 1, flatShading: true });
+  const pineMaterial = new THREE.MeshStandardMaterial({ color: '#39634a', roughness: 1, flatShading: true });
+  const MAX_TREES = 640;
+  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.28, 0.42, 3.0, 5), trunkMaterial, MAX_TREES);
+  const canopies = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.2, 0), leafMaterial, MAX_TREES);
+  const pines = new THREE.InstancedMesh(new THREE.ConeGeometry(2.0, 5.2, 6), pineMaterial, MAX_TREES);
+  let trunkCount = 0;
+  let canopyCount = 0;
+  let pineCount = 0;
+  for (let attempt = 0; attempt < 3400 && trunkCount < MAX_TREES; attempt += 1) {
+    const angle = treeRng() * Math.PI * 2;
+    // Square-root radial sampling: uniform over the ring's area, no clumping at
+    // the inner edge. The band starts where the hills do - a treeline on the
+    // slab's doorstep would read as part of the playable map.
+    const radius = Math.sqrt(treeRng()) * 0.5 + 0.5;
+    const x = Math.cos(angle) * radius * HORIZON_RADIUS;
+    const z = Math.sin(angle) * radius * HORIZON_RADIUS;
+    // Keep the trees off the slab's immediate horizon so nothing pokes into the
+    // playable silhouette.
+    if (Math.abs(x) < DIORAMA_HALF.x + 220 && Math.abs(z) < DIORAMA_HALF.z + 220) continue;
+    // Thin them out with distance: far trees would be sub-pixel noise.
+    const distance = radius;
+    if (treeRng() > 1.15 - distance * 0.35) continue;
+    const y = HORIZON_Y + horizonGroundOffset(x, z);
+    const scale = 0.85 + treeRng() * 0.75;
+    dummy.position.set(x, y + 1.5 * scale, z);
+    dummy.rotation.set(0, treeRng() * Math.PI, 0);
+    dummy.scale.setScalar(scale);
+    dummy.updateMatrix();
+    trunks.setMatrixAt(trunkCount++, dummy.matrix);
+    const isPine = treeRng() < 0.52;
+    if (isPine) {
+      dummy.position.set(x, y + 4.0 * scale, z);
+      dummy.updateMatrix();
+      pines.setMatrixAt(pineCount++, dummy.matrix);
+    } else {
+      dummy.position.set(x, y + 4.4 * scale, z);
+      dummy.updateMatrix();
+      canopies.setMatrixAt(canopyCount++, dummy.matrix);
+    }
+  }
+  trunks.count = trunkCount;
+  canopies.count = canopyCount;
+  pines.count = pineCount;
+  for (const mesh of [trunks, canopies, pines]) {
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.userData.decorative = true;
+    group.add(mesh);
+  }
 
   root.add(group);
 

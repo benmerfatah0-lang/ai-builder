@@ -17,7 +17,13 @@ import {
   WATER,
 } from './data';
 import type { RegionId } from './types';
-import { buildMapScene, type MapScene } from './scene';
+import {
+  buildMapScene,
+  CAMERA_ORBIT_LIMIT,
+  HORIZON_FAR_PLANE,
+  HORIZON_FOG,
+  type MapScene,
+} from './scene';
 import { buildOverlays, type OverlayHandle } from './overlays';
 import { MapHud } from './ui/MapHud';
 import { MapMinimap } from './ui/MapMinimap';
@@ -28,7 +34,13 @@ import { MapTopBar } from './ui/MapTopBar';
 import { PaperMapView } from './ui/PaperMapView';
 import { DesignSheet } from './ui/DesignSheet';
 import { ExploreHud } from './ui/ExploreHud';
-import { bindKeyboard, createExplorer, type ExploreHandle, type ExploreStatus } from './explore';
+import {
+  bindCameraKeys,
+  bindKeyboard,
+  createExplorer,
+  type ExploreHandle,
+  type ExploreStatus,
+} from './explore';
 import './game-map.css';
 
 /**
@@ -41,8 +53,8 @@ import './game-map.css';
 
 type ViewMode = 'diorama' | 'top' | 'flythrough';
 
-const CAMERA_HOME = new THREE.Vector3(196, 292, 340);
-const TARGET_HOME = new THREE.Vector3(-8, 0, 4);
+const CAMERA_HOME = new THREE.Vector3(238, 214, 416);
+const TARGET_HOME = new THREE.Vector3(-6, 22, 0);
 
 const VIEW_PRESETS: Record<string, { eye: THREE.Vector3; target: THREE.Vector3 }> = {
   overview: { eye: CAMERA_HOME, target: TARGET_HOME },
@@ -69,6 +81,8 @@ export function GameMap({ embedded = false }: GameMapProps) {
   const mapRef = useRef<MapScene | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
+  // The WebGL canvas, kept so explore mode can bind drag-to-look to it.
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // `?explore` (or `#explore`) boots straight into the walk mode, so a shared
   // link needs no second click.
@@ -171,13 +185,14 @@ export function GameMap({ embedded = false }: GameMapProps) {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     mount.appendChild(renderer.domElement);
     renderer.domElement.classList.add('map-canvas');
+    canvasRef.current = renderer.domElement;
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
     scene.background = new THREE.Color('#9fc4e0');
-    scene.fog = new THREE.Fog('#dfe6dc', 380, 760);
+    scene.fog = new THREE.Fog(HORIZON_FOG.colour, HORIZON_FOG.near, HORIZON_FOG.far);
 
-    const camera = new THREE.PerspectiveCamera(32, mount.clientWidth / mount.clientHeight, 0.6, 1400);
+    const camera = new THREE.PerspectiveCamera(32, mount.clientWidth / mount.clientHeight, 0.6, HORIZON_FAR_PLANE);
     camera.position.copy(CAMERA_HOME);
     cameraRef.current = camera;
 
@@ -187,7 +202,7 @@ export function GameMap({ embedded = false }: GameMapProps) {
     controls.dampingFactor = 0.075;
     controls.maxPolarAngle = Math.PI * 0.46;
     controls.minDistance = 26;
-    controls.maxDistance = 560;
+    controls.maxDistance = CAMERA_ORBIT_LIMIT;
     controls.zoomSpeed = 0.8;
     controls.rotateSpeed = 0.7;
     controlsRef.current = controls;
@@ -397,10 +412,14 @@ export function GameMap({ embedded = false }: GameMapProps) {
       heightAt: map.heightAt,
       scene,
       camera,
+      orbitElement: canvasRef.current,
       onFirstMove: () => setExploreHint(false),
     });
     explorerRef.current = explorer;
     const unbind = bindKeyboard(() => explorer.intent);
+    // Q/E swing the camera, R/F raise and lower it: the desktop path to the
+    // same orbit a finger drag performs on a phone.
+    const unbindCamera = bindCameraKeys(() => explorer);
     const keydown = (event: KeyboardEvent) => {
       if (event.code === 'KeyR' && !event.ctrlKey && !event.metaKey) {
         explorer.player.reset();
@@ -425,6 +444,7 @@ export function GameMap({ embedded = false }: GameMapProps) {
       window.clearInterval(timer);
       window.removeEventListener('keydown', keydown);
       unbind();
+      unbindCamera();
       explorer.dispose();
       explorerRef.current = null;
       if (controls) controls.enabled = true;
@@ -780,6 +800,9 @@ export function GameMap({ embedded = false }: GameMapProps) {
               onExit={stopExploring}
               onFullscreen={enterFullscreen}
               isFullscreen={isFullscreen}
+              // Same orbit the canvas drag performs; on a phone the stick owns
+              // the left thumb, so the right one gets its own surface.
+              onLook={(dx, dy) => explorerRef.current?.orbit(dx, dy)}
             />
           )}
 

@@ -45,7 +45,7 @@ interface Options {
 }
 
 const VIEWS: Record<string, { eye: [number, number, number]; target: [number, number, number]; fov?: number }> = {
-  overview: { eye: [196, 300, 340], target: [-8, 0, 4], fov: 31 },
+  overview: { eye: [238, 214, 416], target: [-6, 20, 0], fov: 34 },
   top: { eye: [0, 430, 16], target: [0, 0, 4], fov: 29 },
   start: { eye: [24, 30, 178], target: [0, 2, 118], fov: 52 },
   farm: { eye: [44, 42, 118], target: [14, 2, 34], fov: 48 },
@@ -350,9 +350,14 @@ for (const triangle of triangles) {
   const skyTerm = 0.36 + Math.max(0, normal.y) * 0.14;
   const fill = Math.max(0, normal.dot(fillDirection)) * 0.14;
   const exposure = skyTerm + 0.78 * diffuse + fill;
-  const r = triangle.colour.r * exposure * sunColour.r + triangle.emissive.r * 1.4;
-  const g = triangle.colour.g * exposure * sunColour.g + triangle.emissive.g * 1.4;
-  const bl = triangle.colour.b * exposure * sunColour.b + triangle.emissive.b * 1.4;
+  // Aerial perspective, matching `scene.fog` in GameMap.tsx. Without it the
+  // backdrop renders as saturated geometry all the way to the frame edge, and an
+  // offline still stops being an honest preview of what ships.
+  const viewDistance = -toView(triangle.a).length();
+  const fog = Math.min(1, Math.max(0, (viewDistance - 380) / (760 - 380)));
+  const r = (triangle.colour.r * exposure * sunColour.r + triangle.emissive.r * 1.4) * (1 - fog) + 0.874 * fog;
+  const g = (triangle.colour.g * exposure * sunColour.g + triangle.emissive.g * 1.4) * (1 - fog) + 0.902 * fog;
+  const bl = (triangle.colour.b * exposure * sunColour.b + triangle.emissive.b * 1.4) * (1 - fog) + 0.863 * fog;
 
   const area = (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
   if (Math.abs(area) < 1e-9) continue;

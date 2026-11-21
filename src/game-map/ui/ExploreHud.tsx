@@ -18,6 +18,11 @@ export interface ExploreHudProps {
   onReset: () => void;
   /** Re-enters fullscreen: some browsers deny the automatic request. */
   onFullscreen: () => void;
+  /**
+   * Camera drag, in CSS pixels, from the look pad on a touch device. The stick
+   * owns one thumb; this is the other one.
+   */
+  onLook?: (dx: number, dy: number) => void;
   /** True when the Fullscreen API has actually taken the screen. */
   isFullscreen: boolean;
   /** First-run hint: hides once the fox has moved. */
@@ -48,10 +53,12 @@ export function ExploreHud({
   onReset,
   onFullscreen,
   isFullscreen,
+  onLook,
   showHint,
   discovered,
 }: ExploreHudProps) {
   const padRef = useRef<HTMLDivElement | null>(null);
+  const lookRef = useRef<HTMLDivElement | null>(null);
   const [stickActive, setStickActive] = useState(false);
   const activeStop = stopIndex(status.regionName);
 
@@ -112,6 +119,48 @@ export function ExploreHud({
     };
   }, [onStick]);
 
+  /* ---------------------------------------------------------- look pad */
+  useEffect(() => {
+    const pad = lookRef.current;
+    if (!pad || !onLook) return;
+    let pointerId: number | null = null;
+    let lastX = 0;
+    let lastY = 0;
+    const start = (event: PointerEvent) => {
+      if (pointerId !== null) return;
+      event.preventDefault();
+      pointerId = event.pointerId;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      pad.setPointerCapture?.(event.pointerId);
+      pad.classList.add('is-active');
+    };
+    const move = (event: PointerEvent) => {
+      if (pointerId !== event.pointerId) return;
+      const dx = event.clientX - lastX;
+      const dy = event.clientY - lastY;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      if (dx === 0 && dy === 0) return;
+      onLook(dx, dy);
+    };
+    const end = (event: PointerEvent) => {
+      if (pointerId !== null && pointerId !== event.pointerId) return;
+      pointerId = null;
+      pad.classList.remove('is-active');
+    };
+    pad.addEventListener('pointerdown', start);
+    pad.addEventListener('pointermove', move);
+    pad.addEventListener('pointerup', end);
+    pad.addEventListener('pointercancel', end);
+    return () => {
+      pad.removeEventListener('pointerdown', start);
+      pad.removeEventListener('pointermove', move);
+      pad.removeEventListener('pointerup', end);
+      pad.removeEventListener('pointercancel', end);
+    };
+  }, [onLook]);
+
   return (
     <div className="explore-ui">
       {/* Top-left: where am I + progress along the spine. */}
@@ -160,7 +209,10 @@ export function ExploreHud({
             <kbd>Space</kbd>
             <span>للقفز</span>
           </div>
-          <p>على الجوّال: استخدم عصا التحكّم أسفل اليسار.</p>
+          <p>
+            على الجوّال: العصا أسفل اليسار للحركة، وقرص <span aria-hidden="true">⟲</span> أسفل
+            اليمين لتدوير الكاميرا — زعتر يمشي حيث تنظر.
+          </p>
         </div>
       )}
 
@@ -172,6 +224,16 @@ export function ExploreHud({
         aria-label="عصا التحكّم"
       >
         <span className="explore-stick-knob" />
+      </div>
+
+      {/* Bottom-right corner, above the buttons: the other thumb turns the view. */}
+      <div
+        ref={lookRef}
+        className="explore-look"
+        role="group"
+        aria-label="تدوير الكاميرا"
+      >
+        <span aria-hidden="true">⟲</span>
       </div>
 
       {/* Bottom-right: the only three buttons. */}

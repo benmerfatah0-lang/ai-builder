@@ -117,6 +117,26 @@ export function buildOverlays(options: OverlayOptions): OverlayHandle {
       emblem.renderOrder = 6;
       emblems.push(emblem);
       group.add(emblem);
+
+      // Tether: a faint beam from the arena floor up to the emblem, so the gem
+      // reads as pinned over this ring rather than floating at random.
+      const tetherHeight = emblem.position.y - heightAt(arena.position[0], arena.position[1]);
+      const tether = new THREE.Mesh(
+        track(disposables, new THREE.CylinderGeometry(0.09, 0.09, tetherHeight, 4, 1, true)),
+        track(
+          disposables,
+          new THREE.MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: 0.3,
+            depthWrite: false,
+            toneMapped: false,
+          }),
+        ),
+      );
+      tether.position.set(arena.position[0], heightAt(arena.position[0], arena.position[1]) + tetherHeight / 2, arena.position[1]);
+      tether.renderOrder = 3;
+      group.add(tether);
     }
   }
 

@@ -388,7 +388,7 @@ export const BOSSES: BossDef[] = [
     emoji: '🦆',
     tier: 'optional',
     regionId: 'pens',
-    position: [10, -80],
+    position: [12, -96],
     arenaId: 'bridge',
     level: 'بوس اختياري — مستوى ٤',
     difficulty: 3,
@@ -464,30 +464,47 @@ export const BOSS_ORDER = ['grobak', 'squawk', 'quackmire', 'bristleback', 'cluc
 export const ARENAS: ArenaDef[] = [
   {
     id: 'threshing',
-    name: 'ساحة الدراس',
+    name: 'بيدر غُبار',
     position: [-26, 44],
-    radius: 13,
+    radius: 14,
     style: 'threshing',
     regionId: 'farm',
-    note: 'أرينا مفتوحة على الحقول، أشرعة الدراس على المحيط تدور في المرحلة ٢.',
+    note:
+      'بيدر الدراس: أرض مدكوكة حول جرن الحبوب، وأشرعة الدراس تدور على المحيط في المرحلة ٢. البوس يستريح في ظلّ الجرن، فيبدأ القتال بخيار: تسرّق أم مواجهة?',
+    // The boss's home is the granary itself: the turkey stands in its shade and
+    // the fight spills out of the open bay.
+    // Local +Z is the arena's front. The granary sits at the back rim, its
+    // open bay looking across the floor at the player's approach.
+    home: { kind: 'threshing', offset: [0, -9], rotation: 0 },
+    floor: 'straw',
   },
   {
     id: 'yard',
-    name: 'حوش الديك',
+    name: 'دوارة صيّاح',
     position: [2, -10],
     radius: 12,
-    style: 'yard',
+    style: 'farmhouse',
     regionId: 'farm',
-    note: 'حوش مسيّج بالبالاتات وعمود خشبي مركزي يمنح البوس موقعًا مسرحيًا.',
+    note:
+      'بيت المزرعة وحوشه: صيّاح يعيش داخل البيت ويخرج من بابه عند الإزعاج. الباب مفتوح — أول من يدخل يجد عمودًا خشبيًا في الصالة، وسياج البالات هو الحاجز بين الداخل والخارج.',
+    // The rooster's house sits at the north edge; the fight is on the doorstep.
+    home: { kind: 'house', offset: [0, -13] },
+    floor: 'earth',
   },
   {
     id: 'bridge',
-    name: 'الجسر الطيني',
-    position: [10, -80],
-    radius: 13,
-    style: 'bridge',
+    name: 'بركة بطبوط',
+    // On the south bank, a few metres clear of the channel: at [10,-80] the heart
+    // of the arena was the river bed itself (-3.6 m), so the pond and every prop
+    // in it were underwater.
+    position: [12, -96],
+    radius: 14,
+    style: 'pond',
     regionId: 'pens',
-    note: 'أرينا خطّية على الجسر: ألواح تنقلب وماء يبتلع من يتراجع للخلف.',
+    note:
+      'بركة البط تحت الجسر: بطبوط تختبئ في الماء لا في الهواء. القتال على حافة البركة وألواح الجسر — إن تراجعت خطوة واحدة تغرق، وإن صعدت اللوح تخرج من مداها.',
+    home: { kind: 'pond', offset: [0, 0] },
+    floor: 'water-edge',
   },
   {
     id: 'ramring',
@@ -497,6 +514,7 @@ export const ARENAS: ArenaDef[] = [
     style: 'ramring',
     regionId: 'pens',
     note: 'حلقة حجرية بلا دروع؛ أعمدة المحيط هي السلاح الحقيقي ضد الاندفاع.',
+    floor: 'earth',
   },
   {
     id: 'palace',
@@ -506,6 +524,8 @@ export const ARENAS: ArenaDef[] = [
     style: 'palace',
     regionId: 'final',
     note: 'أرينا القصر: أرضية عشّ متحرّكة، فوانيس معلّقة، وعرش تبن على الحافة.',
+    home: { kind: 'palace', offset: [0, -17] },
+    floor: 'straw',
   },
 ];
 

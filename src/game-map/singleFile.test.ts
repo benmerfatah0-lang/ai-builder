@@ -59,12 +59,32 @@ describe('single-file map deliverable', () => {
 
   it('ships the real scene, not a placeholder', () => {
     const html = read();
-    // The backdrop work is only in the file if the hills palette is.
-    expect(html).toContain('#4f8238');
+    // The backdrop work is only in the file if the hills palette is. Read the
+    // palette from source rather than hard-coding a hex: the band colours were
+    // retuned twice while the hills grew, and the test kept failing over a colour
+    // that no longer meant anything.
+    const palette = readFileSync(new URL('./scene.ts', import.meta.url), 'utf8')
+      .match(/HILL_COLORS = \{([^}]*)\}/);
+    expect(palette, 'HILL_COLORS is gone from scene.ts').toBeTruthy();
+    const bands = [...palette![1]!.matchAll(/'#([0-9a-f]{6})'/g)].map((hit) => hit[1]);
+    expect(bands.length, 'no hill band colours found').toBeGreaterThan(2);
+    for (const band of bands) expect(html, `hill band #${band} is not in the file`).toContain(band);
     expect(html).toContain('hill-ground');
     expect(html).toContain('distant-hills');
     // And the app itself must actually be bundled.
     expect(html).toContain('createRoot');
+  });
+
+  it('asks for nothing over the network, so it opens on a phone with no signal', () => {
+    const html = read();
+    // The single file is the offline deliverable. A leftover <link> to a font host
+    // held the whole stylesheet hostage to a request that could never resolve.
+    const external = [...html.matchAll(/(?:src|href)\s*=\s*"(https?:\/\/[^"]+)"/g)].map(
+      (hit) => hit[1]!,
+    );
+    expect(external, 'the one-file build still fetches from the network').toEqual([]);
+    expect(html).not.toContain('fonts.googleapis.com');
+    expect(html).not.toContain('fonts.gstatic.com');
   });
 
   it('shows the map as pictures even when JavaScript never runs', () => {

@@ -25,6 +25,7 @@ import {
   DIORAMA_HALF,
   HILL_COLORS,
   HILL_RINGS,
+  CAMERA_ORBIT_LIMIT,
   HORIZON_GROUND_COLOR,
   HORIZON_RADIUS,
   terrainHeight,
@@ -198,10 +199,10 @@ describe('map data integrity', () => {
       const height = terrainHeight(point[0], point[1], WATER);
       expect(height, `river bed at ${point} is above water level`).toBeLessThan(-0.6);
     }
-    // Arena hearts stay walkable: gentle slopes, above the flood line. The
-    // bridge arena is deliberately built over the river, so it is exempt.
+    // Arena hearts stay walkable: gentle slopes, above the flood line. The pond
+    // arena is deliberately built on the water, so it is exempt.
     for (const arena of ARENAS) {
-      if (arena.style === 'bridge') continue;
+      if (arena.style === 'pond' || arena.style === 'bridge') continue;
       const height = terrainHeight(arena.position[0], arena.position[1], WATER);
       expect(height, `${arena.id} is underwater`).toBeGreaterThan(-0.4);
       expect(height, `${arena.id} is too steep`).toBeLessThan(4.2);
@@ -227,22 +228,37 @@ describe('distant hills backdrop', () => {
     }
   });
 
-  it('stays low: no hill towers over the playfield', () => {
+  it('keeps every hill inside the horizon disc it stands on', () => {
+    // A ridge whose long axis reaches past the land's edge renders against bare
+    // sky: the original "floating green pancake". The bound is derived from the
+    // same numbers the mesh uses, so moving a band cannot silently break it.
     for (const ring of HILL_RINGS) {
-      expect(ring.maxHeight).toBeLessThanOrEqual(10);
+      const reach = Math.hypot(ring.radiusX, ring.radiusZ) + ring.maxWidth * ring.stretch[1];
+      expect(reach, 'ridge overhangs the horizon land').toBeLessThan(HORIZON_RADIUS);
     }
   });
 
-  it('reads as rolling farmland, not mountains', () => {
+  it('sits entirely outside the camera orbit, so no hill can block the map', () => {
+    // This is the constraint that took three passes to get right: a ridge nearer
+    // than the orbit limit ends up between the eye and the diorama at some
+    // rotation and swallows a third of the frame.
     for (const ring of HILL_RINGS) {
-      // `minWidth` is a half-extent, so the narrowest hill is `2 * minWidth`
-      // across. Anything squarer than 2:1 reads as a bump, not a rolling hill.
-      const narrowestAspect = (2 * ring.minWidth) / ring.maxHeight;
+      const closestReach = Math.hypot(ring.radiusX, ring.radiusZ) - ring.maxWidth * ring.stretch[1];
+      expect(closestReach, 'a ridge can be nearer than the camera orbit').toBeGreaterThan(CAMERA_ORBIT_LIMIT - 10);
+    }
+  });
+
+  it('reads as rolling farmland, not mountains and not discs', () => {
+    for (const ring of HILL_RINGS) {
+      // `minWidth` is a half-extent, and `stretch` is the long axis, so the
+      // narrowest ridge is `2 * minWidth * stretch[0]` across. Anything squarer
+      // than 2:1 reads as a bump, not a rolling hill.
+      const narrowestAspect = (2 * ring.minWidth * ring.stretch[0]) / ring.maxHeight;
       expect(narrowestAspect, 'hill is too steep to read as rolling').toBeGreaterThan(2);
-      // ...and anything flatter than 6:1 is a lily pad, which is what the
-      // first pass looked like.
-      const flattestAspect = (2 * ring.maxWidth) / ring.minHeight;
-      expect(flattestAspect, 'hill is so flat it reads as a disc').toBeLessThan(6);
+      // ...and a ridge flatter than 8:1 is a lily pad, which is what the first
+      // pass looked like. Long ridges are allowed to be low: they read as ridges.
+      const flattestAspect = (2 * ring.maxWidth * ring.stretch[1]) / ring.minHeight;
+      expect(flattestAspect, 'hill is so flat it reads as a disc').toBeLessThan(8);
     }
   });
 
@@ -276,7 +292,10 @@ describe('distant hills backdrop', () => {
     expect(box.max.x - box.min.x).toBeGreaterThan(HORIZON_RADIUS);
     expect(box.max.z - box.min.z).toBeGreaterThan(HORIZON_RADIUS);
     // ...and be flat: a vertical plane would be tall and thin instead.
-    expect(box.max.y - box.min.y).toBeLessThan(40);
+    // The land now carries real relief (the swells the hills sit in), so the
+    // bound is a sanity ceiling against a degenerate vertical collapse, not a
+    // design constraint.
+    expect(box.max.y - box.min.y).toBeLessThan(HORIZON_RADIUS * 0.35);
 
     // No degenerate triangles: every one must have non-zero screen area in plan.
     const index = geometry.getIndex()!;
@@ -309,8 +328,16 @@ describe('distant hills backdrop', () => {
     // Even the palest ring must stay clearly darker than HORIZON_GROUND_COLOR,
     // or the hills dissolve into the plane they stand on - which is exactly
     // how the backdrop read as bare ground with no hills at all.
-    for (const colour of order) {
+    //
+    // The horizon band is the exception the design earned: it is 1200+ units out
+    // and sits inside the scene's own fog at that distance, so it must stay close
+    // to the haze or the land ends in a hard edge. It still has to be visible.
+    for (const colour of order.slice(0, 3)) {
       expect(luminance(HORIZON_GROUND_COLOR) - luminance(colour), 'hill vanishes into ground').toBeGreaterThan(18);
     }
+    expect(
+      luminance(HORIZON_GROUND_COLOR) - luminance(HILL_COLORS.horizon),
+      'the far horizon band is invisible',
+    ).toBeGreaterThan(4);
   });
 });

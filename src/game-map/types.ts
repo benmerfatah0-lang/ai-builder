@@ -48,7 +48,24 @@ export interface BossDef {
   designNote: string;
 }
 
-export type ArenaStyle = 'threshing' | 'windmill' | 'ramring' | 'bridge' | 'yard' | 'palace';
+/**
+ * How a boss's home ground is staged.
+ *
+ * Each value is a *place that belongs to that animal*, not a generic ring: the
+ * turkey fights in a threshing yard he has claimed, the duck on her pond, the
+ * dog at his kennel. The old design put every boss on the same circular earth
+ * plateau, which read as five copies of one arena.
+ */
+export type ArenaStyle =
+  | 'threshing'
+  | 'windmill'
+  | 'ramring'
+  | 'bridge'
+  | 'yard'
+  | 'palace'
+  | 'farmhouse'
+  | 'pond'
+  | 'kennel';
 
 export interface ArenaDef {
   id: string;
@@ -58,6 +75,21 @@ export interface ArenaDef {
   style: ArenaStyle;
   regionId: RegionId;
   note: string;
+  /** Yaw of the arena's own layout, so a building can face the approach. */
+  rotation?: number;
+  /**
+   * The home ground's landmark: the building or water body the boss actually
+   * lives in. Rendered by the arena builder, and clickable as part of the arena.
+   */
+  home?: {
+    kind: 'house' | 'pond' | 'kennel' | 'threshing' | 'palace';
+    /** Offset from `position`, in world units, along the arena's local +Z. */
+    offset: Vec2;
+    /** Yaw of the home itself, independent of the arena's own rotation. */
+    rotation?: number;
+  };
+  /** Ground the fight happens on, when it is not bare earth. */
+  floor?: 'earth' | 'boards' | 'straw' | 'grass' | 'water-edge';
 }
 
 export interface CheckpointDef {
@@ -118,6 +150,8 @@ export type BuildingKind =
   | 'duckHouse'
   | 'nursery'
   | 'henPalace'
+  | 'dogHouse'
+  | 'threshingGranary'
   | 'gatehouse'
   | 'scarecrowShed';
 

@@ -18,6 +18,7 @@ Nothing here fetches a sibling file, and nothing depends on the origin being
 `file://`, `content://` or `http://`.
 """
 import base64
+import re
 import json
 from pathlib import Path
 
@@ -130,6 +131,15 @@ def main() -> None:
         '<link rel="preconnect" href="https://fonts.googleapis.com" />\n    ', '')
     html = html.replace(
         '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />\n    ', '')
+    # The stylesheet itself too, not just the preconnects: leaving it meant every
+    # open of the file fired a request at fonts.googleapis.com. On a phone with no
+    # connection that stalls the first paint for the whole stylesheet timeout, and
+    # the "one file" was never actually one file.
+    html = re.sub(
+        r'\s*<link\s+href="https://fonts\.googleapis\.com/css2[^"]*"\s+rel="stylesheet"\s*/>',
+        '',
+        html,
+    )
 
     # The gallery is the very first thing in <body>, before #root, so it paints
     # during parse and cannot depend on any script having run.
