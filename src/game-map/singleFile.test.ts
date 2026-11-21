@@ -50,7 +50,9 @@ describe('single-file map deliverable', () => {
     const outsideBundle = html.slice(0, bundleStart) + html.slice(bundleEnd);
 
     expect(outsideBundle.match(/<script(?![^>]*src=)/g)?.length ?? 0, 'extra inline scripts').toBe(0);
-    expect(outsideBundle.match(/<style/g)?.length ?? 0, 'inline stylesheets').toBe(1);
+    // Two: the app's own CSS (kept after the gallery so the gallery is not
+    // hidden behind a full-viewport layout) and the gallery's CSS.
+    expect(outsideBundle.match(/<style/g)?.length ?? 0, 'inline stylesheets').toBe(2);
     // The bundle must not contain a bare closing tag, or it escapes its element.
     expect(html.match(/<\/script>/g)?.length ?? 0, 'script closers').toBe(1);
   });
@@ -63,6 +65,33 @@ describe('single-file map deliverable', () => {
     expect(html).toContain('distant-hills');
     // And the app itself must actually be bundled.
     expect(html).toContain('createRoot');
+  });
+
+  it('shows the map as pictures even when JavaScript never runs', () => {
+    // Android Chrome refuses to execute scripts for a document opened from
+    // content://media/external (what the Files app hands over when you tap a
+    // downloaded .html). The page then shows its title and a blank body, which
+    // looks exactly like a broken map. The gallery must therefore be plain
+    // markup that needs no script at all.
+    const html = read();
+
+    // Every picture is embedded, so none can fail to load beside the file.
+    const images = html.match(/<img\s[^>]*src="data:image\/jpeg;base64,/g) ?? [];
+    expect(images.length, 'the no-JS gallery is missing its renders').toBeGreaterThanOrEqual(7);
+
+    // The gallery must sit before the script, so it paints during parse.
+    const galleryAt = html.indexOf('class="nojs-gallery"');
+    // The bundle is the only script and it starts with an IIFE, so anchor on
+    // that instead of a bare `<script>`: base64 image data can contain the
+    // literal characters `<script>` and would produce a false match.
+    const scriptAt = html.indexOf('<script>\n(function(){');
+    expect(scriptAt, 'could not locate the inlined bundle').toBeGreaterThan(-1);
+    expect(galleryAt, 'gallery not found').toBeGreaterThan(-1);
+    expect(galleryAt, 'gallery must come before the bundle').toBeLessThan(scriptAt);
+
+    // And it must explain itself rather than looking like a downgrade.
+    expect(html).toContain('content://');
+    expect(html).toMatch(/<h1[^>]*>زعتر والحضيرة العظمى<\/h1>/);
   });
 
   it('does not block first paint on a network font', () => {
