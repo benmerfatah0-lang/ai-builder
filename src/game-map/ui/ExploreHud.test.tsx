@@ -29,6 +29,8 @@ const setup = (overrides: Partial<ExploreStatus> = {}, extra: Record<string, unk
     onJump: vi.fn(),
     onSprint: vi.fn(),
     onExit: vi.fn(),
+  onFullscreen: vi.fn(),
+  isFullscreen: false,
     onReset: vi.fn(),
   };
   const view = render(

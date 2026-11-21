@@ -16,6 +16,10 @@ export interface ExploreHudProps {
   onSprint: (active: boolean) => void;
   onExit: () => void;
   onReset: () => void;
+  /** Re-enters fullscreen: some browsers deny the automatic request. */
+  onFullscreen: () => void;
+  /** True when the Fullscreen API has actually taken the screen. */
+  isFullscreen: boolean;
   /** First-run hint: hides once the fox has moved. */
   showHint: boolean;
   discovered: string | null;
@@ -42,6 +46,8 @@ export function ExploreHud({
   onSprint,
   onExit,
   onReset,
+  onFullscreen,
+  isFullscreen,
   showHint,
   discovered,
 }: ExploreHudProps) {
@@ -73,7 +79,9 @@ export function ExploreHud({
     };
 
     const end = (event: PointerEvent) => {
-      if (pointerId !== event.pointerId) return;
+      // Always stop on pointerup, whatever the id: a lost id used to leave the
+      // fox walking forever because the release was filtered out.
+      if (pointerId !== null && pointerId !== event.pointerId) return;
       pointerId = null;
       setStickActive(false);
       if (knob) knob.style.transform = 'translate(0, 0)';
@@ -83,11 +91,13 @@ export function ExploreHud({
     const start = (event: PointerEvent) => {
       event.preventDefault();
       pointerId = event.pointerId;
-      const rect = pad.getBoundingClientRect();
-      originX = rect.left + rect.width / 2;
-      originY = rect.top + rect.height / 2;
+      // Anchor the stick where the thumb actually landed. Snapping the origin
+      // to the pad centre made the first frame jump: touching the edge sent the
+      // knob (and the fox) a full radius away instantly.
+      originX = event.clientX;
+      originY = event.clientY;
       setStickActive(true);
-      move(event);
+      onStick(0, 0);
     };
 
     pad.addEventListener('pointerdown', start);
@@ -187,6 +197,18 @@ export function ExploreHud({
         <button type="button" className="explore-btn" onClick={onReset} aria-label="عُد إلى البداية">
           ↺
         </button>
+        {/* Some browsers refuse the automatic request without a fresh gesture,
+            so the screen can still be restored by hand. Hidden once it worked. */}
+        {!isFullscreen && (
+          <button
+            type="button"
+            className="explore-btn explore-btn--wide"
+            onClick={onFullscreen}
+            aria-label="ملء الشاشة"
+          >
+            ⛶
+          </button>
+        )}
         <button type="button" className="explore-exit" onClick={onExit}>
           ✕ خروج من الاستكشاف
         </button>

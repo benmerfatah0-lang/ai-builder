@@ -2362,6 +2362,38 @@
 
 /* ============================================================ explore mode */
 
+/* Explore owns the screen.
+   ---------------------------------------------------------------
+   The Fullscreen API is the real mechanism (see GameMap.tsx), but it is
+   unavailable in some in-app browsers and can be denied. These rules make the
+   *layout* fullscreen regardless, so the result is identical either way: the
+   map and nothing else. */
+.map-app--exploring .map-topbar,
+.map-app--exploring .map-guide,
+.map-app--exploring .map-panel,
+.map-app--exploring .explore-enter {
+  display: none !important;
+}
+.map-app--exploring .map-stage {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  z-index: 20;
+}
+/* A stale desktop scrollbar is the classic "nearly fullscreen" bug. */
+html:has(.map-app--exploring),
+body:has(.map-app--exploring) {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+.map-app--exploring .explore-ui {
+  position: fixed;
+  inset: 0;
+}
+
+
+
 .explore-enter {
   position: absolute;
   z-index: 30;
@@ -2594,8 +2626,8 @@
 /* ---- actions */
 .explore-actions {
   position: absolute;
-  inset-block-end: 22px;
-  inset-inline-end: 22px;
+  inset-block-end: calc(22px + env(safe-area-inset-bottom, 0px));
+  inset-inline-end: calc(22px + env(safe-area-inset-right, 0px));
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -2619,6 +2651,12 @@
 }
 .explore-btn:active {
   transform: scale(0.92);
+}
+.explore-btn--wide {
+  width: auto;
+  min-width: 44px;
+  padding-inline: 10px;
+  border-radius: 22px;
 }
 .explore-btn--jump {
   width: 52px;
@@ -2644,8 +2682,8 @@
 /* ---- touch stick: touch devices only */
 .explore-stick {
   position: absolute;
-  inset-block-end: 24px;
-  inset-inline-start: 24px;
+  inset-block-end: calc(24px + env(safe-area-inset-bottom, 0px));
+  inset-inline-start: calc(24px + env(safe-area-inset-left, 0px));
   width: 118px;
   height: 118px;
   display: none;
@@ -2663,7 +2701,10 @@
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
   transition: transform 0.08s linear;
 }
-@media (pointer: coarse) {
+/* `pointer: coarse` alone hid the stick on devices that claim a fine pointer
+   but are still touch-first (tablets, ChromeOS, touchscreen laptops). `any-pointer`
+   covers them; the stick is harmless with a mouse anyway. */
+@media (any-pointer: coarse), (pointer: coarse), (hover: none) {
   .explore-stick {
     display: grid;
   }
@@ -2673,6 +2714,20 @@
 }
 
 @media (max-width: 720px) {
+  /* A 118px stick is small for a thumb and sits under the palm. */
+  .explore-stick {
+    width: 138px;
+    height: 138px;
+  }
+  .explore-stick-knob {
+    width: 56px;
+    height: 56px;
+  }
+  .explore-btn {
+    width: 52px;
+    height: 52px;
+    font-size: 19px;
+  }
   .explore-status {
     min-width: 0;
     inset-inline: 10px;

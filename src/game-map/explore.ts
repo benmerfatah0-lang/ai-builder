@@ -125,9 +125,12 @@ export function createExplorer(options: {
     // always walks away from the viewer no matter which way the fox turned.
     const forwardX = Math.sin(cameraFacing);
     const forwardZ = Math.cos(cameraFacing);
-    // Right-hand perpendicular of the camera forward.
-    const rightX = forwardZ;
-    const rightZ = -forwardX;
+    // Screen-right axis. `camera.lookAt` keeps world +X to the right of the
+    // view (it builds an up=[0,1,0] basis), so screen-right is `+forwardZ` on X
+    // and `-forwardX` on Z... with the sign that *matches* the screen. This was
+    // previously mirrored, so pressing D walked the fox left.
+    const rightX = -forwardZ;
+    const rightZ = forwardX;
     const dirX = forwardX * intent.forward + rightX * intent.strafe;
     const dirZ = forwardZ * intent.forward + rightZ * intent.strafe;
 
@@ -223,12 +226,23 @@ export function bindKeyboard(getIntent: () => MoveIntent): () => void {
     const magnitude = Math.hypot(forward, strafe);
     intent.forward = magnitude > 1 ? forward / magnitude : forward;
     intent.strafe = magnitude > 1 ? strafe / magnitude : strafe;
-    intent.sprint = keys.has('ShiftLeft') || keys.has('ShiftRight') || intent.sprint;
+    // Sprint must be *held*, not toggled. The old `|| intent.sprint` made one
+    // Shift press sprint forever, because nothing ever set the flag back.
+    intent.sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
     if (keys.has('Space')) intent.jump = true;
   };
   const onKeyDown = (event: KeyboardEvent) => {
     if (typing(event)) return;
-    if (MOVE_CODES.has(event.code)) event.preventDefault();
+    if (MOVE_CODES.has(event.code)) {
+      event.preventDefault();
+      // A focused <button> treats Space/Enter as "activate me", which swallows
+      // the jump and re-fires whichever HUD button was last clicked. Blurring
+      // it gives the movement keys the whole keyboard back.
+      const active = document.activeElement as HTMLElement | null;
+      if (active && active !== document.body && typeof active.blur === 'function') {
+        active.blur();
+      }
+    }
     keys.add(event.code);
     sync();
   };

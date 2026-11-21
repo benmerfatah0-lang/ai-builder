@@ -93,6 +93,9 @@ export function GameMap({ embedded = false }: GameMapProps) {
   const [selectedBoss, setSelectedBoss] = useState<string | null>(null);
   const [, setCameraTick] = useState(0);
   const [exploring, setExploring] = useState(startInExplore);
+  // Mirrors document.fullscreenElement: the API can be denied, and the user can
+  // leave fullscreen with Esc or a system gesture at any time.
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [exploreStatus, setExploreStatus] = useState<ExploreStatus>({
     x: 0,
     z: 148,
@@ -447,16 +450,56 @@ export function GameMap({ embedded = false }: GameMapProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [mode]);
 
+  useEffect(() => {
+    const sync = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    sync();
+    document.addEventListener('fullscreenchange', sync);
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, []);
+
+  /**
+   * Takes the whole screen when explore mode starts.
+   *
+   * Two separate mechanisms, because neither works everywhere:
+   *  - the Fullscreen API removes browser chrome on desktop and most Android
+   *    browsers. It requires a user gesture in some browsers, so it is only
+   *    attempted from the click/E handlers, and a rejection is ignored: being
+   *    denied fullscreen must never stop the exploration.
+   *  - a CSS class hides our own header, so even without the API the screen is
+   *    the map and nothing else.
+   */
+  const enterFullscreen = useCallback(() => {
+    const element = document.documentElement;
+    if (document.fullscreenElement) return;
+    const request = element.requestFullscreen?.bind(element);
+    if (!request) return;
+    // Safari on iPhone has no element fullscreen; the CSS fallback covers it.
+    request({ navigationUI: 'hide' } as never).catch(() => {
+      /* Denied or unsupported: the layout already fills the screen. */
+    });
+  }, []);
+
+  const exitFullscreen = useCallback(() => {
+    if (!document.fullscreenElement) return;
+    void document.exitFullscreen?.().catch(() => {
+      /* Nothing to restore. */
+    });
+  }, []);
+
   const startExploring = useCallback(() => {
     setMode('3d');
     setCollapsed(true);
     setExploreHint(true);
     setExploring(true);
-  }, []);
+    enterFullscreen();
+  }, [enterFullscreen]);
 
   const stopExploring = useCallback(() => {
     setExploring(false);
     setExploreHint(true);
+    // Nothing is more confusing than exiting the map and still being stuck in
+    // a chromeless window.
+    exitFullscreen();
     // Hand the camera back to the orbit rig at the fox's last position.
     const explorer = explorerRef.current;
     const controls = controlsRef.current;
@@ -553,7 +596,10 @@ export function GameMap({ embedded = false }: GameMapProps) {
   const hoveredBossId = hovered?.startsWith('boss:') ? hovered.slice(5) : null;
 
   return (
-    <div className={`map-app${embedded ? ' map-app--embedded' : ''}`} dir="rtl">
+    <div
+      className={`map-app${embedded ? ' map-app--embedded' : ''}${exploring ? ' map-app--exploring' : ''}`}
+      dir="rtl"
+    >
       {!embedded && (
         <MapTopBar
           onGoTo={goTo}
@@ -732,6 +778,8 @@ export function GameMap({ embedded = false }: GameMapProps) {
                 explorerRef.current?.snapCamera();
               }}
               onExit={stopExploring}
+              onFullscreen={enterFullscreen}
+              isFullscreen={isFullscreen}
             />
           )}
 

@@ -61,6 +61,50 @@ describe('explore lifecycle', () => {
     unbind();
   });
 
+  it('stops sprinting when Shift is released', async () => {
+    // The regression: `intent.sprint = shiftPressed || intent.sprint` latched
+    // sprint on at the first press and never cleared it, so releasing Shift left
+    // the fox running for the rest of the session. The old test only checked
+    // that pressing Shift sets the flag - never that releasing clears it.
+    const { bindKeyboard } = await import('./explore');
+    const intent = { forward: 0, strafe: 0, sprint: false, jump: false };
+    const unbind = bindKeyboard(() => intent);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ShiftLeft' }));
+    expect(intent.sprint).toBe(true);
+
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ShiftLeft' }));
+    expect(intent.sprint, 'sprint stayed latched after release').toBe(false);
+
+    // Either Shift must work, and releasing one must not cancel the other.
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ShiftRight' }));
+    expect(intent.sprint).toBe(true);
+    window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ShiftRight' }));
+    expect(intent.sprint).toBe(false);
+    unbind();
+  });
+
+  it('blurs a focused button so Space jumps instead of re-clicking it', async () => {
+    // A clicked HUD button keeps focus. Space then activates that button
+    // (Enter/Space semantics) instead of reaching the movement handler, so the
+    // second jump press re-ran "reset" or "run" instead of jumping.
+    const { bindKeyboard } = await import('./explore');
+    const intent = { forward: 0, strafe: 0, sprint: false, jump: false };
+    const unbind = bindKeyboard(() => intent);
+
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+    button.focus();
+    expect(document.activeElement).toBe(button);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true }));
+    expect(intent.jump, 'Space did not reach the intent').toBe(true);
+    expect(document.activeElement, 'the button kept focus and would swallow Space').not.toBe(button);
+
+    document.body.removeChild(button);
+    unbind();
+  });
+
   it('leaves typing alone in an input field', async () => {
     const { bindKeyboard } = await import('./explore');
     const intent = { forward: 0, strafe: 0, sprint: false, jump: false };
