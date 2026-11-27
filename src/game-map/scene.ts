@@ -14,22 +14,56 @@ import type {
   WorldWater,
 } from './types';
 import { mulberry32 } from '../core/generation/rng';
+import { scaleMapData } from './scaled';
+import {
+  ARENA,
+  DETAIL,
+  WORLD_SCALE,
+  arenaClearance,
+  buildingClearance,
+  circleRects,
+  distanceToPolyline,
+  fenceRects,
+  fieldRect,
+  isOpenGround,
+} from './layout';
+import type { Rect } from './layout';
 
-/** Clearance discs used by scatter so props never invade arenas/buildings. */
-const ARENA_CLEAR: [number, number, number][] = [
-  [-26, 44, 17],
-  [2, -10, 16],
-  [10, -80, 14],
-  [44, -98, 20],
-  [-46, -124, 19],
-];
+/**
+ * Clearance discs used by scatter so props never invade arenas/buildings.
+ *
+ * These used to be hand-written tables sitting next to the scatter loop. They
+ * were written for a layout two reorganisations ago, so the grass grew through
+ * the barn that had moved and the test asserting "nothing overlaps" was reading
+ * the same stale numbers and passed. They are derived from the specs now.
+ */
+const buildClear = (buildings: BuildingSpec[]) => buildingClearance(buildings);
+const buildArenaClear = (arenas: ArenaDef[]) => arenaClearance(arenas);
 
-const BUILDING_CLEAR: [number, number, number][] = [
-  [0, 124, 9], [40, 80, 13], [-52, 74, 12], [52, 44, 8], [-14, 64, 6], [68, 22, 8],
-  [14, 58, 6], [-10, 58, 6], [0, 20, 5], [64, 90, 9], [-88, 84, 9], [6, -32, 9],
-  [-64, -50, 7], [-34, -52, 8], [26, -54, 8], [66, -52, 9], [64, -112, 9],
-  [-46, -143, 14], [78, -118, 7],
-];
+/** Discs and boxes the scatter and the treelines must keep out of. */
+function clearanceFor(data: {
+  buildings: BuildingSpec[];
+  arenas: ArenaDef[];
+  fields: FieldSpec[];
+  fences: FenceRun[];
+  circleFences: CircleFence[];
+  roads: { points: Vec2[]; width: number }[];
+}) {
+  const buildings = buildClear(data.buildings);
+  const arenas = buildArenaClear(data.arenas);
+  const rects: Rect[] = [...data.fields.map(fieldRect), ...fenceRects(data.fences)];
+  const circles = circleRects(data.circleFences);
+  return {
+    arenas,
+    buildings,
+    rects,
+    circles,
+    roads: data.roads,
+    /** May a prop of radius `spread` stand here? */
+    open: (x: number, z: number, spread = 0) =>
+      isOpenGround(x, z, { arenas, buildings, rects, circles, roads: data.roads, spread }),
+  };
+}
 
 /**
  * Builds the 3D diorama of the game map. Everything is procedural low-poly
@@ -144,24 +178,43 @@ function fbm(x: number, z: number): number {
  * glance; the windmill knoll, the sheep hill and the palace mesa are the only
  * deliberate reliefs.
  */
-export function terrainHeight(x: number, z: number, water: WorldWater): number {
-  let height = (fbm(x * 0.021 + 3, z * 0.021 - 1) - 0.5) * 2.1;
+/**
+ * Terrain height in *world* units.
+ *
+ * `terrainHeight` is authored-space: it answers "how high is the ground at the
+ * barn", where the barn is at (42, 84). The scene works in world units (the barn
+ * is at (67, 134)), so it needs this wrapper: convert the point back down, ask
+ * the authored height field, and scale the answer up.
+ */
+export function worldHeightAt(x: number, z: number, water: WorldWater): number {
+  return terrainHeight(x / WORLD_SCALE, z / WORLD_SCALE, water) * WORLD_SCALE;
+}
+
+export function terrainHeight(
+  x: number,
+  z: number,
+  water: WorldWater,
+): number {
+  // Authored space. `worldHeightAt` is the one that scales.
+  const nx = x;
+  const nz = z;
+  let height = (fbm(nx * 0.021 + 3, nz * 0.021 - 1) - 0.5) * 2.1;
 
   // Forest rim north & south rises like a bowl.
-  height += Math.max(0, (z - 112) / 40) ** 1.6 * 5.5;
-  height += Math.max(0, (-z - 132) / 30) ** 1.6 * 4.5;
+  height += Math.max(0, (nz - 112) / 40) ** 1.6 * 5.5;
+  height += Math.max(0, (-nz - 132) / 30) ** 1.6 * 4.5;
   // West forest wall.
-  height += Math.max(0, (-x - 96) / 30) ** 1.7 * 4.0;
+  height += Math.max(0, (-nx - 96) / 30) ** 1.7 * 4.0;
 
   // Windmill knolls.
-  height += Math.exp(-(((x - 64) ** 2 + (z - 90) ** 2) / 420)) * 2.6;
-  height += Math.exp(-(((x + 88) ** 2 + (z - 84) ** 2) / 460)) * 3.0;
+  height += Math.exp(-(((nx - 64) ** 2 + (nz - 90) ** 2) / 420)) * 2.6;
+  height += Math.exp(-(((nx + 88) ** 2 + (nz - 84) ** 2) / 460)) * 3.0;
   // Sheep hill (pens east).
-  height += Math.exp(-(((x - 62) ** 2 + (z + 62) ** 2) / 900)) * 2.8;
+  height += Math.exp(-(((nx - 62) ** 2 + (nz + 62) ** 2) / 900)) * 2.8;
   // Palace mesa rises toward the finale.
-  height += Math.exp(-(((x + 46) ** 2 + (z + 126) ** 2) / 1100)) * 2.2;
+  height += Math.exp(-(((nx + 46) ** 2 + (nz + 126) ** 2) / 1100)) * 2.2;
   // Threshing yard is a flat pan.
-  const yardDist = Math.hypot(x + 26, z - 44);
+  const yardDist = Math.hypot(nx + 26, nz - 44);
   height *= 1 - Math.exp(-(yardDist ** 2) / 260) * 0.7;
 
   // Dry land never dips below the water line: only the carves below do.
@@ -348,7 +401,10 @@ function fenceGapsPolyline(points: Vec2[], start: number, end: number): Vec2[] {
  * "is this on the map?" goes through `islandRadiusAt`, so the terrain grid, the
  * cliff, the water carve and the scatter can never disagree.
  */
-export const ISLAND_RADIUS = { x: 124, z: 156 } as const;
+// The tree belt sits on this ellipse. It has to track `WORLD_SCALE` with the
+// rest of the layout: at the old radius the belt cut straight through the
+// enlarged playfield and the rim trees sprouted out of the grass.
+export const ISLAND_RADIUS = { x: 124 * WORLD_SCALE, z: 156 * WORLD_SCALE } as const;
 
 /** Coast wobble: [order, amplitude, phase]. Orders are whole turns per lap. */
 const ISLAND_HARMONICS: [number, number, number][] = [
@@ -427,6 +483,10 @@ export function buildMapScene(data: {
   bridges: { id: string; position: Vec2; rotation: number; length: number; width: number; style: 'plank' | 'stone' }[];
   checkpoints: { id: string; position: Vec2 }[];
 }): MapScene {
+  // Authored coordinates are farm-scale; the diorama is valley-scale. Scale once,
+  // at the boundary, so `data.ts` stays readable and every consumer below this
+  // line is already in world units.
+  data = scaleMapData(data);
   const root = new THREE.Group();
   root.name = 'game-map';
   const materials: Materials = { flat: new Map() };
@@ -434,7 +494,7 @@ export function buildMapScene(data: {
   const regionPickables = new Map<string, THREE.Object3D[]>();
   const animated: ((elapsed: number) => void)[] = [];
 
-  const heightAt = (x: number, z: number) => terrainHeight(x, z, data.water);
+  const heightAt = (x: number, z: number) => worldHeightAt(x, z, data.water);
 
   const track = <T extends THREE.BufferGeometry | THREE.Material | THREE.Texture>(item: T): T => {
     disposables.push(item);
@@ -665,7 +725,8 @@ export function buildMapScene(data: {
   /* -------------------------------------------------------------- trees */
   for (const zone of data.trees) buildTreeZone(root, materials, zone, heightAt);
   // Shoreline belt: the coast has to be wooded or the cliff lip reads as a cake.
-  buildRimForest(root, materials, heightAt);
+  const clear = clearanceFor(data);
+  buildRimForest(root, materials, heightAt, clear);
 
   /* ---------------------------------------------------------- buildings */
   for (const spec of data.buildings) buildBuildingByKind(root, materials, spec, heightAt, animated);
@@ -714,7 +775,7 @@ export function buildMapScene(data: {
   waterMaterial.customProgramCacheKey = () => 'game-map-water-v1';
 
   /* ------------------------------------------------------- ground scatter */
-  buildScatter(root, materials, heightAt);
+  buildScatter(root, materials, heightAt, clear, data.water.river);
 
   /* ------------------------------------------------------------ critters */
   buildCritters(root, materials, heightAt, animated, data.arenas);
@@ -1089,6 +1150,9 @@ function buildTreeZone(
 ) {
   const rng = seededRng(zone.seed * 977 + 13);
   const group = new THREE.Group();
+  // `zone.x/z/w/d` arrive already scaled; the geometry below is authored at the
+  // old size, so every tree is grown by the same factor.
+  const GROW = WORLD_SCALE;
   const leafMaterials = {
     oak: [material(materials, PALETTE.leafA), material(materials, PALETTE.leafB), material(materials, PALETTE.leafC)],
     pine: [material(materials, PALETTE.pine), material(materials, '#4d7f55')],
@@ -1111,7 +1175,7 @@ function buildTreeZone(
     const px = zone.x + (rng() - 0.5) * zone.w;
     const pz = zone.z + (rng() - 0.5) * zone.d;
     const py = heightAt(px, pz);
-    const scale = 0.8 + rng() * 0.7;
+    const scale = (0.8 + rng() * 0.7) * GROW;
     const roll = rng();
     const type = mix === 'mixed' ? (roll < 0.45 ? 'oak' : roll < 0.8 ? 'pine' : 'birch') : mix;
     dummy.position.set(px, py + 1.1 * scale, pz);
@@ -2441,11 +2505,14 @@ function buildBoundaryPosts(
 ) {
   const postMaterial = material(materials, PALETTE.woodDark);
   // Only the crown of the map gets carved posts: the southern rim is forest.
+  // The radius rides on the island ellipse - when it was a hard-coded 120 the
+  // posts ended up *inside* the enlarged valley and hung over the meadows as a
+  // drifting cloud of brown specks.
   const steps = 30;
   for (let index = 0; index <= steps; index += 1) {
     const t = index / steps;
     const angle = Math.PI + t * Math.PI;
-    const radius = 120 + Math.sin(angle * 3) * 3;
+    const radius = ISLAND_RADIUS.x * 0.97 + Math.sin(angle * 3) * 3;
     const x = Math.cos(angle) * radius;
     const z = Math.sin(angle) * radius * 1.28 + 3;
     const y = heightAt(x, z);
@@ -2763,18 +2830,24 @@ function buildDistantHills(
     // eye reads as forest.
     if (treeRng() > 1.5 - distance * 0.45) continue;
     const y = HORIZON_Y + horizonGroundOffset(x, z);
-    const scale = 0.85 + treeRng() * 0.75;
+    // The near swells sit further out now, so these trees grow with the
+    // diorama: at the old size they read as dark specks in the sky.
+    const scale = (0.85 + treeRng() * 0.75) * WORLD_SCALE;
     dummy.position.set(x, y + 1.5 * scale, z);
     dummy.rotation.set(0, treeRng() * Math.PI, 0);
     dummy.scale.setScalar(scale);
     dummy.updateMatrix();
     trunks.setMatrixAt(trunkCount++, dummy.matrix);
     const isPine = treeRng() < 0.52;
+    // One tree grows one crown. Writing both a pine and a broadleaf crown for
+    // the same trunk ran `canopyCount`/`pineCount` past MAX_TREES, and the
+    // overflow instances landed at the origin matrix - the drifting spray of
+    // dark specks that hung in the sky over the farm.
     if (isPine) {
       dummy.position.set(x, y + 4.0 * scale, z);
       dummy.updateMatrix();
       pines.setMatrixAt(pineCount++, dummy.matrix);
-    } else {
+    } else if (canopyCount < MAX_TREES) {
       dummy.position.set(x, y + 4.4 * scale, z);
       dummy.updateMatrix();
       canopies.setMatrixAt(canopyCount++, dummy.matrix);
@@ -2894,11 +2967,12 @@ function buildRimForest(
   root: THREE.Group,
   materials: Materials,
   heightAt: (x: number, z: number) => number,
+  clear: ReturnType<typeof clearanceFor>,
 ) {
   const rng = mulberry32(20260419);
   const group = new THREE.Group();
   group.name = 'rim-forest';
-  const count = 420;
+  const count = 760;
   const trunkMaterial = material(materials, PALETTE.trunk);
   const leafA = material(materials, PALETTE.leafA);
   const leafB = material(materials, PALETTE.leafB);
@@ -2923,10 +2997,9 @@ function buildRimForest(
     const x = Math.cos(angle) * ISLAND_RADIUS.x * spread;
     const z = Math.sin(angle) * ISLAND_RADIUS.z * spread;
     if (Math.abs(x) < 9 && z > -150) continue;
-    if (ARENA_CLEAR.some(([ax, az, ar]) => Math.hypot(x - ax, z - az) < ar + 5)) continue;
-    if (BUILDING_CLEAR.some(([bx, bz, br]) => Math.hypot(x - bx, z - bz) < br + 3)) continue;
+    if (!clear.open(x, z, 4)) continue;
     const y = heightAt(x, z);
-    const scale = 0.85 + rng() * 0.9;
+    const scale = (0.85 + rng() * 0.9) * WORLD_SCALE;
     const isPine = rng() < 0.42;
     dummy.position.set(x, y + 1.2 * scale, z);
     dummy.rotation.set(0, rng() * Math.PI, 0);
@@ -2979,99 +3052,471 @@ function buildScatter(
   root: THREE.Group,
   materials: Materials,
   heightAt: (x: number, z: number) => number,
+  clear: ReturnType<typeof clearanceFor>,
+  river: Vec2[],
 ) {
-  const tuftMaterial = material(materials, '#7fb152', { flatShading: true, roughness: 1 });
-  const tuftGeometry = new THREE.ConeGeometry(0.16, 0.55, 3);
-  const tufts = new THREE.InstancedMesh(tuftGeometry, tuftMaterial, 700);
-  const rockMaterial = material(materials, '#a49a88', { flatShading: true, roughness: 1 });
-  const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.42, 0), rockMaterial, 90);
-  const bushMaterial = material(materials, '#4e8642', { flatShading: true });
-  const bushes = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.75, 0), bushMaterial, 120);
-  const hayMaterial = material(materials, PALETTE.hay, { roughness: 1 });
-  const dummy = new THREE.Object3D();
+  /* The scatter is what stops the valley reading as an empty green table. It is
+   * deliberately several systems rather than one "random props" loop: grass wants
+   * to be everywhere, flowers want to cluster, boulders want to hug the rim, and
+   * clutter wants to hug the buildings. Every one of them asks `clear.open`
+   * first, so no tuft grows through a barn door. */
+
   const rng = mulberry32(20261116);
+  const dummy = new THREE.Object3D();
+  const scatterRect = {
+    minX: ARENA.minX - 26,
+    maxX: ARENA.maxX + 26,
+    minZ: ARENA.minZ - 26,
+    maxZ: ARENA.maxZ + 26,
+  };
+  const inScatter = (x: number, z: number) =>
+    x > scatterRect.minX && x < scatterRect.maxX && z > scatterRect.minZ && z < scatterRect.maxZ;
 
-  const nearArena = (x: number, z: number) =>
-    ARENA_CLEAR.some((arena) => Math.hypot(x - arena[0], z - arena[1]) < arena[2]);
-  const nearBuilding = (x: number, z: number) =>
-    BUILDING_CLEAR.some((spot) => Math.hypot(x - spot[0], z - spot[1]) < spot[2]);
-
-  let bushCount = 0;
-  let rockCount = 0;
-  let tuftCount = 0;
-  for (let attempt = 0; attempt < 2600; attempt += 1) {
-    const x = (rng() - 0.5) * 224;
-    const z = (rng() - 0.5) * 268 + 3;
-    if (nearArena(x, z) || nearBuilding(x, z)) continue;
-    // Keep the main avenue readable.
-    if (Math.abs(x) < 5 && z > -150 && z < 150) continue;
-    const y = heightAt(x, z);
-    const roll = rng();
-    if (roll < 0.72 && tuftCount < 700) {
-      dummy.position.set(x, y + 0.22, z);
-      dummy.rotation.set((rng() - 0.5) * 0.2, rng() * Math.PI, (rng() - 0.5) * 0.2);
-      dummy.scale.setScalar(0.7 + rng() * 0.8);
-      dummy.updateMatrix();
-      tufts.setMatrixAt(tuftCount++, dummy.matrix);
-    } else if (roll < 0.86 && rockCount < 90) {
-      dummy.position.set(x, y + 0.14, z);
-      dummy.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
-      dummy.scale.set(0.6 + rng() * 0.9, 0.5 + rng() * 0.5, 0.6 + rng() * 0.9);
-      dummy.updateMatrix();
-      rocks.setMatrixAt(rockCount++, dummy.matrix);
-    } else if (bushCount < 120) {
-      dummy.position.set(x, y + 0.4, z);
-      dummy.rotation.y = rng() * Math.PI;
-      dummy.scale.set(0.7 + rng() * 0.9, 0.6 + rng() * 0.6, 0.7 + rng() * 0.9);
-      dummy.updateMatrix();
-      bushes.setMatrixAt(bushCount++, dummy.matrix);
+  /** Rejection-sample `count` points that pass `accept`. */
+  const sample = (
+    count: number,
+    attempts: number,
+    accept: (x: number, z: number) => boolean,
+    minX = scatterRect.minX,
+    maxX = scatterRect.maxX,
+    minZ = scatterRect.minZ,
+    maxZ = scatterRect.maxZ,
+  ): [number, number][] => {
+    const points: [number, number][] = [];
+    const centreX = (scatterRect.minX + scatterRect.maxX) / 2;
+    const centreZ = (scatterRect.minZ + scatterRect.maxZ) / 2;
+    const halfX = (scatterRect.maxX - scatterRect.minX) / 2;
+    const halfZ = (scatterRect.maxZ - scatterRect.minZ) / 2;
+    for (let attempt = 0; attempt < attempts && points.length < count; attempt += 1) {
+      const x = minX + rng() * (maxX - minX);
+      const z = minZ + rng() * (maxZ - minZ);
+      if (!inScatter(x, z)) continue;
+      // Thin out toward the rim instead of stopping dead on the rectangle. A hard
+      // edge showed up from the air as a straight line of grass with the meadow
+      // beyond it bare.
+      const radial = Math.hypot((x - centreX) / halfX, (z - centreZ) / halfZ);
+      if (rng() < THREE.MathUtils.smoothstep(radial, 0.72, 1)) continue;
+      if (accept(x, z)) points.push([x, z]);
     }
-  }
-  tufts.count = tuftCount;
-  rocks.count = rockCount;
-  bushes.count = bushCount;
-  for (const mesh of [tufts, rocks, bushes]) {
+    return points;
+  };
+
+  const place = (
+    geometry: THREE.BufferGeometry,
+    mat: THREE.Material,
+    points: [number, number][],
+    options: {
+      lift?: number;
+      scale?: [number, number];
+      squash?: number;
+      tilt?: number;
+      castShadow?: boolean;
+      spin?: number;
+    } = {},
+  ) => {
+    if (points.length === 0) return;
+    const mesh = new THREE.InstancedMesh(geometry, mat, points.length);
+    const lift = options.lift ?? 0;
+    const [minScale, maxScale] = options.scale ?? [0.85, 1.15];
+    const squash = options.squash ?? 1;
+    const tilt = options.tilt ?? 0;
+    points.forEach(([x, z], index) => {
+      const y = heightAt(x, z);
+      const scale = minScale + rng() * (maxScale - minScale);
+      dummy.position.set(x, y + lift * scale, z);
+      dummy.rotation.set(
+        (rng() - 0.5) * tilt,
+        options.spin ?? rng() * Math.PI * 2,
+        (rng() - 0.5) * tilt,
+      );
+      dummy.scale.set(scale, scale * squash, scale);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(index, dummy.matrix);
+    });
     mesh.instanceMatrix.needsUpdate = true;
-    mesh.castShadow = mesh !== tufts;
+    mesh.castShadow = options.castShadow ?? false;
     mesh.receiveShadow = true;
     root.add(mesh);
+  };
+
+  /* --------------------------------------------------------------- grass */
+  // Two tuft sizes so the ground reads as a lawn with long grass in it rather
+  // than a field of identical spikes.
+  const shortGrass = sample(
+    Math.round(2400 * DETAIL),
+    26000,
+    (x, z) => clear.open(x, z, 0.35),
+  );
+  place(
+    new THREE.ConeGeometry(0.15, 0.5, 3),
+    material(materials, '#7fb152', { flatShading: true, roughness: 1 }),
+    shortGrass,
+    { lift: 0.2, scale: [0.7, 1.5], tilt: 0.25 },
+  );
+
+  const tallGrass = sample(
+    Math.round(750 * DETAIL),
+    14000,
+    (x, z) => clear.open(x, z, 0.6),
+  );
+  place(
+    new THREE.ConeGeometry(0.13, 1.0, 3),
+    material(materials, '#8dbf57', { flatShading: true, roughness: 1 }),
+    tallGrass,
+    { lift: 0.42, scale: [0.75, 1.45], tilt: 0.35 },
+  );
+
+  /* -------------------------------------------------------------- flowers */
+  // Six little meadow patches: colour where the reference has colour, none in
+  // the middle of the crop rows.
+  const flowerSpots: [number, number, number][] = [
+    [-118, 96, 22], [104, 128, 20], [-96, 166, 24], [96, -40, 22],
+    [-120, -78, 20], [118, -160, 22], [-40, 172, 18], [60, 156, 18],
+  ];
+  const flowerColours = ['#f2d14b', '#f0f0f0', '#d96ea5', '#b98ff0'];
+  flowerColours.forEach((colour, index) => {
+    const spots = sample(
+      160,
+      4000,
+      (x, z) => clear.open(x, z, 0.2) && Math.hypot(x - flowerSpots[index]![0], z - flowerSpots[index]![1]) < flowerSpots[index]![2],
+      flowerSpots[index]![0] - flowerSpots[index]![2],
+      flowerSpots[index]![0] + flowerSpots[index]![2],
+      flowerSpots[index]![1] - flowerSpots[index]![2],
+      flowerSpots[index]![1] + flowerSpots[index]![2],
+    );
+    place(
+      new THREE.SphereGeometry(0.13, 6, 4),
+      material(materials, colour, { roughness: 0.9 }),
+      spots,
+      { lift: 0.36, scale: [0.7, 1.3], spin: 0 },
+    );
+  });
+
+  /* --------------------------------------------------------- rocks, bushes */
+  const rocks = sample(
+    Math.round(170 * DETAIL),
+    9000,
+    (x, z) => clear.open(x, z, 1.6),
+  );
+  place(
+    new THREE.DodecahedronGeometry(0.45, 0),
+    material(materials, '#a49a88', { flatShading: true, roughness: 1 }),
+    rocks,
+    { lift: 0.16, scale: [0.6, 1.7], squash: 0.7, tilt: 0.9, castShadow: true },
+  );
+
+  const bushes = sample(
+    Math.round(300 * DETAIL),
+    9000,
+    (x, z) => clear.open(x, z, 1.3),
+  );
+  place(
+    new THREE.IcosahedronGeometry(0.8, 0),
+    material(materials, '#4e8642', { flatShading: true }),
+    bushes,
+    { lift: 0.42, scale: [0.6, 1.4], squash: 0.75, spin: rng() * 6, castShadow: true },
+  );
+
+  /* -------------------------------------------------------------- stumps */
+  const stumps = sample(26, 2600, (x, z) => clear.open(x, z, 1.4));
+  for (const [x, z] of stumps) {
+    const y = heightAt(x, z);
+    const scale = 0.7 + rng() * 0.6;
+    addMesh(
+      root,
+      new THREE.CylinderGeometry(0.42 * scale, 0.5 * scale, 0.55 * scale, 7),
+      material(materials, '#7d5a3c', { roughness: 1 }),
+      [x, y + 0.26 * scale, z],
+    );
   }
 
-  // Hay bales at barns and threshing yards (landmarks, not scatter).
-  const haySpots: [number, number][] = [
-    [-44, 62], [-40, 66], [-36, 62], [52, 38], [56, 42], [70, -108], [74, -104],
-    [-92, 78], [-88, 74], [24, -44], [30, -48],
+  /* --------------------------------------------------- hay bales and reeds */
+  const hayMaterial = material(materials, PALETTE.hay, { roughness: 1 });
+  const hayBand = material(materials, PALETTE.hayDark);
+  // Bales cluster where a farmer would stack them: by the barn, the threshing
+  // floor, the paddock edges and the field corners.
+  const hayStacks: [number, number][] = [
+    [-70, 74], [-66, 78], [-74, 70], [-62, 82],
+    [-34, -50], [-30, -54], [-38, -46],
+    [62, -110], [66, -114], [58, -114],
+    [-110, 44], [-106, 40], [104, 40], [100, 44],
+    [40, 54], [44, 58],
   ];
-  for (const [x, z] of haySpots) {
+  for (const [x, z] of hayStacks) {
+    const y = heightAt(x, z) + 0.8;
     const bale = addMesh(
       root,
       new THREE.CylinderGeometry(0.85, 0.85, 1.5, 10),
       hayMaterial,
-      [x, heightAt(x, z) + 0.8, z],
+      [x, y, z],
     );
     bale.rotation.z = Math.PI / 2;
-    bale.rotation.y = hash2(x, z) * Math.PI;
-    addMesh(root, new THREE.TorusGeometry(0.86, 0.05, 4, 12), material(materials, PALETTE.hayDark), [x, heightAt(x, z) + 0.8, z]).rotation.y = Math.PI / 2;
+    bale.rotation.y = rng() * Math.PI;
+    bale.castShadow = true;
+    addMesh(root, new THREE.TorusGeometry(0.86, 0.05, 4, 12), hayBand, [x, y, z]).rotation.y = Math.PI / 2;
   }
 
-  // Sunflower clusters along the crops roads, for colour.
-  const sunflowers: [number, number][] = [
-    [-34, 36], [-36, 38], [-32, 40], [-88, 30], [-84, 28], [-92, 32], [-60, 20], [-56, 22],
-  ];
+  // Reeds wherever the water meets its bank.
+  const reeds = sample(
+    520,
+    16000,
+    (x, z) => clear.open(x, z, 0.2) && riverProximity(x, z, river) > 0.4 && riverProximity(x, z, river) < 1,
+  );
+  place(
+    new THREE.ConeGeometry(0.07, 1.15, 3),
+    material(materials, '#6f9a4a', { flatShading: true }),
+    reeds,
+    { lift: 0.5, scale: [0.7, 1.4], tilt: 0.3 },
+  );
+
+  /* ------------------------------------------------------- road-side posts */
+  // Little white-topped markers every few metres along the avenue, the way a
+  // farm lane is marked. They are the cheapest possible detail and they tie the
+  // four bands together.
+  const avenue = clear.roads.find((road) => Math.abs(road.width - 4.6) < 0.01);
+  if (avenue) {
+    const posts = roadSidePosts(avenue.points, 7);
+    for (const [x, z] of posts) {
+      if (!clear.open(x, z, 0.1)) continue;
+      const y = heightAt(x, z);
+      addMesh(root, new THREE.CylinderGeometry(0.1, 0.12, 0.9, 4), material(materials, '#9a8a6e'), [x, y + 0.45, z]);
+      addMesh(root, new THREE.CylinderGeometry(0.11, 0.11, 0.12, 4), material(materials, '#f2e9d6'), [x, y + 0.93, z]);
+    }
+  }
+
+  /* --------------------------------------------------- yard dressing */
+  // Every farmyard is a little cluttered: a gravel apron in front of each door,
+  // a few crates and barrels stacked against a wall, a woodpile, a cart. This is
+  // what makes the buildings read as *lived in* rather than as models placed on
+  // a lawn, and it is the detail the bird's-eye view was missing.
+  // Yard props are read from the flying camera, so they are drawn deliberately
+  // oversized: a 0.6 m crate is a speck from 380 units up, a 2 m crate is a crate.
+  const YARD = WORLD_SCALE * 1.9;
+  const yardMaterial = material(materials, '#b09a74', { roughness: 1 });
+  const crateMaterial = material(materials, '#a87a4a', { roughness: 0.95 });
+  const barrelMaterial = material(materials, '#8a5f38', { roughness: 0.9 });
+  const logMaterial = material(materials, '#7d5a3c', { roughness: 1 });
+  const cartMaterial = material(materials, '#9c6b3f', { roughness: 0.95 });
+  const wheelMaterial = material(materials, '#5f4028', { roughness: 1 });
+
+  for (const spot of clear.buildings) {
+    const [bx, bz, br] = spot;
+    // Gravel apron: a flat disc of packed earth where people walk.
+    // The clearance disc is the diagonal of the footprint plus a scatter skirt;
+    // a courtyard should hug the walls, so it is a fraction of it.
+    const apronRadius = br * 0.42 + 1.4;
+    const apron = addMesh(
+      root,
+      new THREE.CircleGeometry(apronRadius, 18),
+      yardMaterial,
+      [bx, heightAt(bx, bz) + 0.03, bz],
+    );
+    apron.rotation.x = -Math.PI / 2;
+    apron.receiveShadow = true;
+
+    // Crates and barrels against the wall, on a ring just outside the footprint.
+    const props = 3 + Math.floor(rng() * 3);
+    for (let index = 0; index < props; index += 1) {
+      const angle = rng() * Math.PI * 2;
+      const distance = br * 0.9 + rng() * 1.6;
+      const px = bx + Math.cos(angle) * distance;
+      const pz = bz + Math.sin(angle) * distance;
+      if (!clear.open(px, pz, 0.1)) continue;
+      const py = heightAt(px, pz);
+      if (rng() < 0.5) {
+        const size = (0.55 + rng() * 0.5) * YARD;
+        const crate = addMesh(
+          root,
+          new THREE.BoxGeometry(size, size, size),
+          crateMaterial,
+          [px, py + size / 2, pz],
+        );
+        crate.rotation.y = rng() * Math.PI;
+        crate.castShadow = true;
+      } else {
+        const barrel = addMesh(
+          root,
+          new THREE.CylinderGeometry(0.34 * YARD, 0.4 * YARD, 0.9 * YARD, 8),
+          barrelMaterial,
+          [px, py + 0.45 * YARD, pz],
+        );
+        barrel.castShadow = true;
+        addMesh(root, new THREE.TorusGeometry(0.38, 0.04, 4, 10), wheelMaterial, [px, py + 0.62, pz]).rotation.x = Math.PI / 2;
+      }
+    }
+
+    // A woodpile on one side of the barns and the big sheds only.
+    if (br > 6 && rng() < 0.55) {
+      const angle = rng() * Math.PI * 2;
+      const distance = br + 1.4;
+      const px = bx + Math.cos(angle) * distance;
+      const pz = bz + Math.sin(angle) * distance;
+      if (clear.open(px, pz, 0.4)) {
+        for (let row = 0; row < 2; row += 1) {
+          for (let column = 0; column < 4; column += 1) {
+            const lx = px + (column - 1.5) * 0.42 * WORLD_SCALE;
+            const lz = pz + row * 0.42 * WORLD_SCALE;
+            const log = addMesh(
+              root,
+              new THREE.CylinderGeometry(0.18 * WORLD_SCALE, 0.18 * WORLD_SCALE, 1.1 * WORLD_SCALE, 6),
+              logMaterial,
+              [lx, heightAt(lx, lz) + (0.18 + row * 0.34) * WORLD_SCALE, lz],
+            );
+            log.rotation.z = Math.PI / 2;
+            log.rotation.y = angle;
+            log.castShadow = true;
+          }
+        }
+      }
+    }
+  }
+
+  /* --------------------------------------------------- landmarks in the yard */
+  // Big readable props that survive the bird's-eye camera. Each is a group, not
+  // a scatter: from 380 units up a farm needs silhouettes, not pebbles.
+  const strawStack = material(materials, PALETTE.hay, { roughness: 1 });
+  const stoneBlock = material(materials, '#9a9183', { roughness: 1 });
+
+  // Hay ricks: the big conical stacks a real farm keeps through winter.
+  const ricks: [number, number][] = [[-96, 66], [-88, 72], [88, 26], [96, 20], [-108, -44], [104, -108]];
+  for (const [rx, rz] of ricks) {
+    const x = rx * WORLD_SCALE;
+    const z = rz * WORLD_SCALE;
+    if (!clear.open(x, z, 2.5)) continue;
+    const y = heightAt(x, z);
+    const rick = addMesh(
+      root,
+      new THREE.CylinderGeometry(1.1, 2.4, 4.4, 9),
+      strawStack,
+      [x, y + 2.2, z],
+    );
+    rick.castShadow = true;
+    const cap = addMesh(
+      root,
+      new THREE.ConeGeometry(1.35, 1.5, 9),
+      material(materials, PALETTE.hayDark),
+      [x, y + 5.05, z],
+    );
+    cap.castShadow = true;
+    // A pole up the middle, the way ricks are thatched.
+    addMesh(root, new THREE.CylinderGeometry(0.09, 0.09, 6.4, 4), logMaterial, [x, y + 3.2, z]);
+  }
+
+  // Stone wells in the two outer bands.
+  const fieldWells: [number, number][] = [[-120, 120], [122, -40]];
+  for (const [wx, wz] of fieldWells) {
+    const x = wx * WORLD_SCALE;
+    const z = wz * WORLD_SCALE;
+    if (!clear.open(x, z, 2)) continue;
+    const y = heightAt(x, z);
+    addMesh(root, new THREE.CylinderGeometry(1.5, 1.6, 0.9, 10), stoneBlock, [x, y + 0.45, z]).castShadow = true;
+    for (const side of [-1, 1]) {
+      addMesh(root, new THREE.CylinderGeometry(0.12, 0.12, 2.4, 5), logMaterial, [x + side * 1.1, y + 1.7, z]);
+    }
+    const roof = addMesh(root, new THREE.ConeGeometry(2.0, 1.1, 4), material(materials, PALETTE.roofRed), [x, y + 3.2, z]);
+    roof.rotation.y = Math.PI / 4;
+    roof.castShadow = true;
+  }
+
+  // Orchard rows: five trees on a grid, north-west of the house.
+  for (let row = 0; row < 3; row += 1) {
+    for (let column = 0; column < 5; column += 1) {
+      const x = (-132 + column * 7) * WORLD_SCALE * 0.62;
+      const z = (112 + row * 8) * WORLD_SCALE * 0.55;
+      if (!clear.open(x, z, 2)) continue;
+      const y = heightAt(x, z);
+      const trunk = addMesh(root, new THREE.CylinderGeometry(0.3, 0.42, 3.2, 6), logMaterial, [x, y + 1.6, z]);
+      trunk.castShadow = true;
+      const crown = addMesh(
+        root,
+        new THREE.IcosahedronGeometry(2.2, 0),
+        material(materials, PALETTE.leafB),
+        [x, y + 4.2, z],
+      );
+      crown.scale.set(1.1, 0.85, 1.1);
+      crown.castShadow = true;
+    }
+  }
+
+  /* ----------------------------------------------------------- hay cart */
+  // One cart on the avenue, where the four bands meet: a silhouette the eye can
+  // navigate by, and a bit of story.
+  for (const [cx, cz] of [[-10, 92], [20, -34]] as [number, number][]) {
+    const x = cx * WORLD_SCALE;
+    const z = cz * WORLD_SCALE;
+    if (!clear.open(x, z, 2.5)) continue;
+    const y = heightAt(x, z);
+    const bed = addMesh(root, new THREE.BoxGeometry(3.2, 0.3, 1.6), cartMaterial, [x, y + 0.75, z]);
+    bed.rotation.y = 0.5;
+    bed.castShadow = true;
+    for (const side of [-1, 1]) {
+      const wheel = addMesh(
+        root,
+        new THREE.CylinderGeometry(0.62, 0.62, 0.16, 12),
+        wheelMaterial,
+        [x + Math.cos(0.5) * 1.1, y + 0.62, z + Math.sin(0.5) * 1.1 * side],
+      );
+      wheel.rotation.z = Math.PI / 2;
+      wheel.rotation.y = 0.5;
+      wheel.castShadow = true;
+    }
+    // A load of hay on top.
+    addMesh(root, new THREE.BoxGeometry(2.6, 0.9, 1.3), hayMaterial, [x, y + 1.3, z]).rotation.y = 0.5;
+  }
+
+  /* ---------------------------------------------------- sunflower clusters */
+  // Along the crop lanes, where the reference puts its sunflowers.
+  const sunflowers = sample(
+    70,
+    4000,
+    (x, z) => clear.open(x, z, 1.1) && Math.abs(z - 20) < 7 && Math.abs(x) > 16 && Math.abs(x) < 130,
+  );
   for (const [x, z] of sunflowers) {
+    const y = heightAt(x, z);
+    const scale = 0.8 + rng() * 0.5;
     const stem = addMesh(
       root,
-      new THREE.CylinderGeometry(0.05, 0.06, 1.6, 4),
+      new THREE.CylinderGeometry(0.05, 0.06, 1.7 * scale, 4),
       material(materials, '#6f8b3f'),
-      [x, heightAt(x, z) + 0.8, z],
+      [x, y + 0.85 * scale, z],
     );
     stem.castShadow = false;
     const head = addMesh(
       root,
-      new THREE.CylinderGeometry(0.34, 0.34, 0.08, 8),
+      new THREE.CylinderGeometry(0.34 * scale, 0.34 * scale, 0.08, 8),
       material(materials, PALETTE.sunflower),
-      [x, heightAt(x, z) + 1.6, z],
+      [x, y + 1.7 * scale, z],
     );
     head.rotation.x = Math.PI / 2;
+    head.rotation.z = rng() * 0.4;
   }
+}
+
+/** How close a point is to the river, 0 (away) .. 1 (mid-channel). */
+function riverProximity(x: number, z: number, river: Vec2[]): number {
+  const distance = distanceToPolyline(x, z, river);
+  return distance < 14 ? 1 - distance / 14 : 0;
+}
+
+/** Points marching down both sides of a polyline, `spacing` apart. */
+function roadSidePosts(points: Vec2[], spacing: number): [number, number][] {
+  const posts: [number, number][] = [];
+  for (let index = 1; index < points.length; index += 1) {
+    const a = points[index - 1]!;
+    const b = points[index]!;
+    const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (length < 0.001) continue;
+    const nx = -(b[1] - a[1]) / length;
+    const nz = (b[0] - a[0]) / length;
+    const steps = Math.max(1, Math.round(length / spacing));
+    for (let step = 0; step < steps; step += 1) {
+      const t = step / steps;
+      const x = a[0] + (b[0] - a[0]) * t;
+      const z = a[1] + (b[1] - a[1]) * t;
+      for (const side of [-1, 1]) {
+        posts.push([x + nx * 3.4 * side, z + nz * 3.4 * side]);
+      }
+    }
+  }
+  return posts;
 }

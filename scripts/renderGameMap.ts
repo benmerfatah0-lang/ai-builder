@@ -28,6 +28,7 @@ import {
   WATER,
   WORLD,
 } from '../src/game-map/data';
+import { WORLD_SCALE } from '../src/game-map/layout';
 import { buildMapScene } from '../src/game-map/scene';
 import { createFoxPlayer } from '../src/game-map/player';
 import { buildOverlays } from '../src/game-map/overlays';
@@ -44,18 +45,29 @@ interface Options {
   beaconRegion: string | null;
 }
 
+/**
+ * Camera presets, in *world* units.
+ *
+ * The map is authored at farm scale and multiplied by `WORLD_SCALE` before it
+ * reaches the renderer, so every camera here is the authored framing times that
+ * same factor. Keep them in step: at the old numbers the overview framed a farm
+ * that had since grown, and the diorama sat in the middle of a lot of grass.
+ */
+const S = WORLD_SCALE;
+const at = (x: number, y: number, z: number): [number, number, number] => [x * S, y * S, z * S];
+
 const VIEWS: Record<string, { eye: [number, number, number]; target: [number, number, number]; fov?: number }> = {
-  overview: { eye: [165, 135, 375], target: [0, 22, -70], fov: 50 },
-  top: { eye: [0, 430, 16], target: [0, 0, 4], fov: 29 },
-  start: { eye: [24, 30, 178], target: [0, 2, 118], fov: 52 },
-  farm: { eye: [44, 42, 118], target: [14, 2, 34], fov: 48 },
-  crops: { eye: [-10, 42, 92], target: [-62, 2, 50], fov: 48 },
-  pens: { eye: [24, 54, -22], target: [-6, 2, -96], fov: 50 },
-  finale: { eye: [-14, 30, -84], target: [-46, 2, -134], fov: 50 },
-  south: { eye: [-92, 62, -178], target: [-20, 0, -80], fov: 46 },
+  overview: { eye: at(105, 96, 250), target: at(0, 10, -46), fov: 50 },
+  top: { eye: at(0, 430, 16), target: at(0, 0, 4), fov: 29 },
+  start: { eye: at(24, 30, 178), target: at(0, 2, 118), fov: 52 },
+  farm: { eye: at(44, 42, 118), target: at(14, 2, 34), fov: 48 },
+  crops: { eye: at(-10, 42, 92), target: at(-62, 2, 50), fov: 48 },
+  pens: { eye: at(24, 54, -22), target: at(-6, 2, -96), fov: 50 },
+  finale: { eye: at(-14, 30, -84), target: at(-46, 2, -134), fov: 50 },
+  south: { eye: at(-92, 62, -178), target: at(-20, 0, -80), fov: 46 },
   // Character close-ups: the fox at spawn and mid-route, for art review.
-  fox: { eye: [8, 9.5, 138], target: [2, 3.4, 128], fov: 33 },
-  foxbridge: { eye: [11, 8.5, -48], target: [6, 0.6, -58], fov: 34 },
+  fox: { eye: at(8, 9.5, 138), target: at(2, 3.4, 128), fov: 33 },
+  foxbridge: { eye: at(11, 8.5, -48), target: at(6, 0.6, -58), fov: 34 },
 };
 
 function parseArgs(argv: string[]): Options {

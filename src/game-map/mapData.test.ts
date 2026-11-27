@@ -19,6 +19,7 @@ import {
   WATER,
   WORLD,
 } from './data';
+import { WORLD_SCALE, arenaClearance, buildingClearance } from './layout';
 import * as THREE from 'three';
 import {
   buildMapScene,
@@ -194,6 +195,55 @@ describe('map data integrity', () => {
         const overlapZ = Math.abs(first.z - second.z) < (first.d + second.d) / 2;
         expect(overlapX && overlapZ, `${a}/${b} fields overlap`).toBe(false);
       }
+    }
+  });
+
+  it('keeps the scatter clear of every building and arena', () => {
+    // The scatter used to carry its own hand-written clearance tables, and they
+    // were two reorganisations out of date: grass grew through the barn and the
+    // test that was supposed to catch it read the same stale numbers. Both now
+    // read `layout.ts`, and this asserts that what it produces actually covers
+    // the things on the ground.
+    const buildings = buildingClearance(BUILDINGS);
+    const arenas = arenaClearance(ARENAS);
+    expect(buildings).toHaveLength(BUILDINGS.length);
+    expect(arenas).toHaveLength(ARENAS.length);
+
+    for (const [index, building] of BUILDINGS.entries()) {
+      const [x, z, radius] = buildings[index]!;
+      // The scaled centre must track the authored one.
+      expect(x).toBeCloseTo(building.position[0] * WORLD_SCALE, 6);
+      expect(z).toBeCloseTo(building.position[1] * WORLD_SCALE, 6);
+      // A door is at least this far from the edge of its own clearance bubble,
+      // otherwise the yard props would be flattened against the walls.
+      expect(radius).toBeGreaterThan(2);
+      // Nothing else may claim the same spot.
+      for (const [otherIndex, other] of buildings.entries()) {
+        if (otherIndex === index) continue;
+        const gap = Math.hypot(x - other[0], z - other[1]);
+        expect(gap, `${building.id} clearance overlaps building ${BUILDINGS[otherIndex]!.id}`).toBeGreaterThan(0);
+      }
+    }
+
+    for (const arena of ARENAS) {
+      const [x, , radius] = arenas[ARENAS.indexOf(arena)]!;
+      expect(radius).toBeGreaterThan(arena.radius);
+      expect(x).toBeCloseTo(arena.position[0] * WORLD_SCALE, 6);
+    }
+  });
+
+  it('fills every band instead of leaving one lawn with a shed on it', () => {
+    // The map was enlarged to give the zones room to breathe. Room to breathe is
+    // not the same as empty: this asserts each band carries real content, so a
+    // future edit cannot quietly hollow one out again.
+    for (const region of REGIONS) {
+      const inRegion = (x: number, z: number) => insidePolygon([x, z], region.polygon);
+      const buildings = BUILDINGS.filter((building) => inRegion(building.position[0], building.position[1]));
+      const fields = FIELDS.filter((field) => inRegion(field.x, field.z));
+      const props = buildings.length + fields.length;
+      expect(props, `${region.id} has almost nothing in it`).toBeGreaterThanOrEqual(
+        region.id === 'farm' ? 8 : 3,
+      );
     }
   });
 

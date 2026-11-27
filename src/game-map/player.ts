@@ -300,8 +300,13 @@ export function createFoxPlayer(options: FoxPlayerOptions): FoxPlayer {
           state.airborne = false;
         }
       } else {
-        // Follow the ground smoothly so slopes do not jitter the camera.
-        group.position.y += (groundY - group.position.y) * Math.min(1, 16 * clampedDt);
+        // Follow the ground smoothly so gentle slopes do not jitter the camera —
+        // but never let the smoothing drop the fox into a bank. At sprint speed
+        // across a steep rim the 16/s ease fell a hand's width behind the ground
+        // and the fox walked *through* the slope for a few frames. When the gap is
+        // bigger than a boot, snap; below that, ease.
+        const gap = groundY - group.position.y;
+        group.position.y += gap > 0.35 || gap < -0.35 ? gap : gap * Math.min(1, 16 * clampedDt);
       }
 
       group.position.x = state.x;

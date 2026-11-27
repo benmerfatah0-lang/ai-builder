@@ -35,7 +35,7 @@ export const MAP_TITLE = 'زعتر والحضيرة العظمى';
 export const MAP_SUBTITLE = 'خريطة العالم — أسلوب Souls-like كرتوني كوميدي';
 export const MAP_VERSION = '1.0';
 
-export const WORLD = { minX: -118, maxX: 118, minZ: -150, maxZ: 156 };
+export const WORLD = { minX: -148, maxX: 148, minZ: -186, maxZ: 184 };
 
 export const REGION_ORDER: RegionId[] = ['start', 'farm', 'crops', 'pens', 'final'];
 
@@ -48,13 +48,13 @@ export const REGIONS: RegionDef[] = [
     emoji: '🌲',
     color: '#3f8f5e',
     deep: '#1d3d2a',
-    center: [0, 140],
-    radius: 30,
+    center: [0, 164],
+    radius: 44,
     polygon: [
-      [-104, 126],
-      [104, 126],
-      [104, 156],
-      [-104, 156]
+      [-136, 140],
+      [136, 140],
+      [136, 182],
+      [-136, 182]
     ],
     tagline: 'حيث يبدأ الجوع… وقبلها التعليم.',
     summary:
@@ -86,13 +86,13 @@ export const REGIONS: RegionDef[] = [
     emoji: '🏠',
     color: '#e07a3f',
     deep: '#5c2f18',
-    center: [0, 82],
-    radius: 64,
+    center: [0, 90],
+    radius: 92,
     polygon: [
-      [-104, 100],
-      [104, 100],
-      [104, 40],
-      [-104, 40]
+      [-140, 140],
+      [140, 140],
+      [140, 40],
+      [-140, 40]
     ],
     tagline: 'البيت والحوش والسوق… وأول بوس.',
     summary:
@@ -139,13 +139,13 @@ export const REGIONS: RegionDef[] = [
     deep: '#4f3a10',
     // Two blocks, west and east of the main road: the reference splits its
     // cropland either side of the avenue, and the east flank was empty pasture.
-    center: [0, 6],
-    radius: 64,
+    center: [0, 2],
+    radius: 92,
     polygon: [
-      [-104, 40],
-      [104, 40],
-      [104, -30],
-      [-104, -30]
+      [-140, 40],
+      [140, 40],
+      [140, -36],
+      [-140, -36]
     ],
     tagline: 'حقول ذهبية… وحصّاد لا يعرف المزاح.',
     summary:
@@ -183,13 +183,13 @@ export const REGIONS: RegionDef[] = [
     emoji: '👑',
     color: '#a3324a',
     deep: '#360a18',
-    center: [-46, -124],
-    radius: 24,
+    center: [-50, -150],
+    radius: 32,
     polygon: [
-      [-78, -104],
-      [-12, -104],
-      [-12, -144],
-      [-78, -144],
+      [-100, -126],
+      [-6, -126],
+      [-6, -176],
+      [-100, -176]
     ],
     tagline: 'حيث تُحسم المعركة… وحيث تُقدَّم البيضة.',
     summary:
@@ -221,13 +221,13 @@ export const REGIONS: RegionDef[] = [
     emoji: '🐑',
     color: '#b9566f',
     deep: '#4a1c2a',
-    center: [0, -90],
-    radius: 62,
+    center: [0, -112],
+    radius: 92,
     polygon: [
-      [-104, -30],
-      [104, -30],
-      [104, -152],
-      [-104, -152]
+      [-140, -36],
+      [140, -36],
+      [140, -184],
+      [-140, -184]
     ],
     tagline: 'أكبر منطقة… وأكثر مكان لا يريد الدجاج أن تدخله.',
     summary:
@@ -592,10 +592,10 @@ export const CHECKPOINT_BY_ID: Record<string, CheckpointDef> = Object.fromEntrie
 export const LANDMARKS: LandmarkDef[] = [
   // ── start
   { id: 'start-point', name: 'بداية الثعلب زعتر', kind: 'item', emoji: '🦊', position: [0, 148], regionId: 'start', note: 'نقطة ظهور اللاعب؛ تعليم الحركة.' },
-  { id: 'snail-npc', name: 'الحلزونة أمّ سليم', kind: 'npc', emoji: '🐌', position: [-16, 136], regionId: 'start', note: 'تعطي نصائح وتحفظ التقدّم وتشرح عصير الشمندر.' },
-  { id: 'crow-merchant', name: 'الغراب سعد التاجر', kind: 'npc', emoji: '🐦‍⬛', position: [16, 132], regionId: 'start', note: 'تاجر بذور: يبيع ترقيات وحبوبًا سوداء.' },
+  { id: 'snail-npc', name: 'الحلزونة أمّ سليم', kind: 'npc', emoji: '🐌', position: [0, 152], regionId: 'start', note: 'تعطي نصائح وتحفظ التقدّم وتشرح عصير الشمندر.' },
+  { id: 'crow-merchant', name: 'الغراب سعد التاجر', kind: 'npc', emoji: '🐦‍⬛', position: [16, 150], regionId: 'start', note: 'تاجر بذور: يبيع ترقيات وحبوبًا سوداء.' },
   { id: 'chicken-grave', name: 'قبر الدجاجة المجهولة', kind: 'secret', emoji: '🪦', position: [-24, 144], regionId: 'start', note: 'سرّ صغير: يمنح تعويذة «احترام الدجاج» (+١ دفاع).' },
-  { id: 'start-smell', name: 'درب الرائحة', kind: 'hazard', emoji: '🌀', position: [0, 128], regionId: 'start', note: 'ريح المزرعة تجذب الثعلب؛ مؤشّر اتجاه لطيف بدل سهم.' },
+  { id: 'start-smell', name: 'درب الرائحة', kind: 'hazard', emoji: '🌀', position: [0, 144], regionId: 'start', note: 'ريح المزرعة تجذب الثعلب؛ مؤشّر اتجاه لطيف بدل سهم.' },
   { id: 'gate-farm', name: 'بوابة المزرعة', kind: 'gate', emoji: '🚪', position: [0, 96], regionId: 'farm', note: 'انتقال إلى المزرعة، نقطة حفظ تحتها.' },
 
   // ── farm
@@ -642,8 +642,8 @@ export const LANDMARKS: LandmarkDef[] = [
 
   // ── palace
   { id: 'palace-gate', name: 'بوابة القفل', kind: 'gate', emoji: '🔒', position: [-44, -106], regionId: 'pens', note: 'قفل على شكل دجاجة يُفتح بـ«ريشة صياح».' },
-  { id: 'palace-throne', name: 'عرش التبن', kind: 'summit', emoji: '👑', position: [-46, -130], regionId: 'pens', note: 'غرفة العرش؛ البوس النهائي كلوكزيلا.', bossId: 'cluckzilla' },
-  { id: 'golden-egg', name: 'البيضة الذهبية', kind: 'secret', emoji: '🥚', position: [-62, -136], regionId: 'pens', note: 'غنيمة النهاية خلف العرش.' },
+  { id: 'palace-throne', name: 'عرش التبن', kind: 'summit', emoji: '👑', position: [-50, -150], regionId: 'pens', note: 'غرفة العرش؛ البوس النهائي كلوكزيلا.', bossId: 'cluckzilla' },
+  { id: 'golden-egg', name: 'البيضة الذهبية', kind: 'secret', emoji: '🥚', position: [-62, -140], regionId: 'pens', note: 'غنيمة النهاية خلف العرش.' },
   { id: 'court-hens', name: 'دجاجات البلاط', kind: 'npc', emoji: '🐔', position: [-30, -122], regionId: 'pens', note: 'دجاجات واقفة في صفوف مرتّبة تتفرّج؛ لا تهاجم.' },
   { id: 'palace-brazier', name: 'فوانيس السقف', kind: 'hazard', emoji: '🏮', position: [-54, -116], regionId: 'pens', note: 'تتساقط وتُشعل القشّ في المرحلة ٢.' },
 ];
@@ -782,7 +782,32 @@ export const BUILDINGS: BuildingSpec[] = [
   { id: 'sheep-shelter', kind: 'sheepShelter', position: [78, -110], rotation: Math.PI, scale: 1.45 },
   { id: 'tower-check', kind: 'tower', position: [70, -42], rotation: 0, scale: 1.5 },
   { id: 'hen-palace', kind: 'henPalace', position: [-62, -114], rotation: 0, scale: 1.75 },
-];
+  // Secondary buildings: farms are cluttered places. These fill the bands with
+  // things to walk around instead of one lonely shed per zone.
+  { id: 'kennel', kind: 'dogHouse', position: [34, 62], rotation: 0.4, scale: 1.6 },
+  { id: 'scarecrow-shed-a', kind: 'scarecrowShed', position: [-104, 10], rotation: 0.9, scale: 1.4 },
+  { id: 'scarecrow-shed-b', kind: 'scarecrowShed', position: [108, 6], rotation: -0.8, scale: 1.4 },
+  { id: 'granary-north', kind: 'threshingGranary', position: [-30, 112], rotation: 0.2, scale: 1.5 },
+  { id: 'well-paddock', kind: 'well', position: [6, -60], rotation: 0, scale: 1.2 },
+  { id: 'silo-pens', kind: 'silo', position: [-96, -64], rotation: 0, scale: 1.3 },
+  { id: 'tower-palace', kind: 'tower', position: [-14, -150], rotation: 0, scale: 1.3 },
+  { id: 'shed-paddock', kind: 'shed', position: [56, -140], rotation: 0.5, scale: 1.3 },
+  { id: 'silo-gate', kind: 'silo', position: [-52, 150], rotation: 0, scale: 1.2 },
+  { id: 'barn-paddock', kind: 'barn', position: [-116, -130], rotation: 0.35, scale: 1.5 },
+  { id: 'stable-crops', kind: 'stable', position: [116, -26], rotation: -0.4, scale: 1.4 },
+  { id: 'market-crops', kind: 'market', position: [16, 40], rotation: 0, scale: 1.2 },
+  { id: 'nursery-palace', kind: 'nursery', position: [-84, -150], rotation: 0.3, scale: 1.2 },
+  { id: 'silo-east', kind: 'silo', position: [112, -150], rotation: 0, scale: 1.3 },
+  { id: 'well-south', kind: 'well', position: [-118, -168], rotation: 0, scale: 1.3 },
+  { id: 'shed-west', kind: 'shed', position: [-124, -96], rotation: 0.7, scale: 1.3 },
+  { id: 'nursery-east', kind: 'nursery', position: [96, -176], rotation: -0.5, scale: 1.25 },
+  { id: 'stable-south', kind: 'stable', position: [14, -172], rotation: 0.15, scale: 1.35 },
+  { id: 'duck-south', kind: 'duckHouse', position: [-40, -176], rotation: 0.4, scale: 1.2 },
+  { id: 'gate-lodge', kind: 'gatehouse', position: [-56, 172], rotation: 0, scale: 1.3 },
+  { id: 'gate-well', kind: 'well', position: [56, 172], rotation: 0, scale: 1.2 },
+  { id: 'orchard-shed', kind: 'shed', position: [-100, 168], rotation: 0.9, scale: 1.2 },
+  { id: 'mill-east', kind: 'windmill', position: [126, 96], rotation: 0.3, scale: 1.4 },
+];;
 
 export const FIELDS: FieldSpec[] = [
   // Two blocks, flanking the road through the field band (z -30..40) so the
@@ -801,7 +826,17 @@ export const FIELDS: FieldSpec[] = [
   { kind: 'vegetable', x: 84, z: 4, w: 18, d: 14 },
   { kind: 'maize', x: 46, z: -16, w: 22, d: 12 },
   { kind: 'vine', x: 76, z: -18, w: 18, d: 12 },
-];
+  // Outlying strips: the crop band is 80 units deep and only had fields down the
+  // middle of it, so the west and east thirds read as empty pasture.
+  { kind: 'clover', x: -122, z: 30, w: 16, d: 18 },
+  { kind: 'vegetable', x: -122, z: 6, w: 16, d: 18 },
+  { kind: 'pumpkin', x: -122, z: -18, w: 16, d: 14 },
+  { kind: 'wheat', x: 116, z: 30, w: 18, d: 18 },
+  { kind: 'sunflower', x: 116, z: 6, w: 18, d: 18 },
+  { kind: 'clover', x: 116, z: -18, w: 18, d: 14 },
+  { kind: 'maize', x: 100, z: -34, w: 22, d: 12 },
+  { kind: 'vine', x: -100, z: -34, w: 22, d: 12 },
+];;
 
 export const FENCES: FenceRun[] = [
   // One fence per field, drawn just outside its rows, plus a rail around each
@@ -831,7 +866,18 @@ export const FENCES: FenceRun[] = [
   { id: 'palace-gate-wall', points: [[-76, -104], [-16, -104]], style: 'stone', gaps: [{ start: 26, end: 36 }] },
   // South rim.
   { id: 'south-line', points: [[-104, -150], [86, -150]], style: 'bramble' },
-];;
+  // Outlying paddocks: the animal band is twice as deep as the others and its
+  // southern half was one open meadow. Split it into grazing parcels - that is
+  // both what a farm looks like and what stops the band reading as a lawn.
+  { id: 'grazing-west', points: [[-136, -104], [-84, -104], [-84, -146], [-136, -146]], style: 'rail', gaps: [{ start: 12, end: 22 }] },
+  { id: 'grazing-east', points: [[62, -128], [126, -128], [126, -170], [62, -170]], style: 'rail', gaps: [{ start: 20, end: 30 }] },
+  { id: 'grazing-south', points: [[-44, -156], [40, -156], [40, -184], [-44, -184]], style: 'rail', gaps: [{ start: 26, end: 36 }] },
+  { id: 'goose-run', points: [[-130, -46], [-90, -46], [-90, -78], [-130, -78]], style: 'bramble', gaps: [{ start: 10, end: 20 }] },
+  { id: 'hay-paddock', points: [[92, -60], [134, -60], [134, -96], [92, -96]], style: 'rail', gaps: [{ start: 18, end: 28 }] },
+  // Gate band: a fenced approach so the entrance is a place, not a road end.
+  { id: 'approach-w', points: [[-96, 152], [-16, 152], [-16, 178], [-96, 178]], style: 'rail', gaps: [{ start: 30, end: 40 }] },
+  { id: 'approach-e', points: [[16, 152], [96, 152], [96, 178], [16, 178]], style: 'rail', gaps: [{ start: 30, end: 40 }] },
+];;;
 
 export const CIRCLE_FENCES: CircleFence[] = [
   { id: 'ram-ring', center: [50, -96], radius: 18, style: 'stone', gapStart: 0.42, gapEnd: 0.5 },
