@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
+import { createExplorer } from './explore';
 
 /**
  * The camera-relative control frame must agree with the picture on screen.
@@ -59,5 +60,96 @@ describe('explore control frame', () => {
       expect(Math.hypot(rightX, rightZ)).toBeCloseTo(1, 6);
       expect(forwardX * rightX + forwardZ * rightZ).toBeCloseTo(0, 6);
     }
+  });
+});
+
+/**
+ * The movement verbs themselves.
+ *
+ * A control scheme is not "excellent" because the keys are bound; it is excellent
+ * if walk, run, jump, slide and camera-follow do measurably different things. Each
+ * of these assertions is a thing a player would notice immediately if it broke.
+ */
+describe('explore movement verbs', () => {
+  const build = () => {
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, 1.6, 0.6, 9000);
+    const explorer = createExplorer({ heightAt: () => 0, scene, camera, orbitElement: null });
+    return explorer;
+  };
+  const step = (explorer: ReturnType<typeof build>, frames: number) => {
+    const dt = 1 / 60;
+    for (let index = 0; index < frames; index += 1) explorer.update(dt, index * dt);
+  };
+
+  it('runs clearly faster than it walks', () => {
+    const explorer = build();
+    explorer.intent.forward = 1;
+    step(explorer, 90);
+    const walk = explorer.player.state.speed;
+    explorer.intent.sprint = true;
+    step(explorer, 90);
+    const run = explorer.player.state.speed;
+    expect(walk).toBeGreaterThan(5);
+    expect(run, 'Shift does not make the fox run').toBeGreaterThan(walk * 1.7);
+  });
+
+  it('leaves the ground on a jump and comes back down', () => {
+    const explorer = build();
+    explorer.intent.jump = true;
+    explorer.update(1 / 60, 0);
+    expect(explorer.player.state.airborne, 'jump never left the ground').toBe(true);
+    let peak = explorer.player.group.position.y;
+    for (let index = 0; index < 120; index += 1) {
+      explorer.update(1 / 60, index / 60);
+      peak = Math.max(peak, explorer.player.group.position.y);
+    }
+    expect(peak, 'the jump is too shallow to clear anything').toBeGreaterThan(1.5);
+    expect(explorer.player.state.airborne, 'the fox never landed').toBe(false);
+  });
+
+  it('slides only while moving, and keeps its momentum', () => {
+    const explorer = build();
+    explorer.intent.forward = 1;
+    explorer.intent.sprint = true;
+    step(explorer, 120);
+    const before = explorer.player.state.speed;
+    explorer.intent.slide = true;
+    step(explorer, 20);
+    expect(explorer.sliding(), 'slide never engaged at full speed').toBe(true);
+    // Steerage drops, but the fox must not stop dead: that is a brake, not a slide.
+    expect(explorer.player.state.speed, 'the slide killed all momentum').toBeGreaterThan(before * 0.75);
+    explorer.intent.slide = false;
+    step(explorer, 10);
+    expect(explorer.sliding()).toBe(false);
+  });
+
+  it('does not slide while standing still', () => {
+    const explorer = build();
+    explorer.intent.slide = true;
+    step(explorer, 10);
+    expect(explorer.sliding(), 'the fox can slide on the spot').toBe(false);
+  });
+
+  it('auto-follows the fox after the view is dragged away', () => {
+    const explorer = build();
+    explorer.intent.forward = 1;
+    step(explorer, 30);
+    explorer.setAutoFollow(true);
+    explorer.orbit(600, 0);
+    const before = explorer.yaw();
+    step(explorer, 180);
+    expect(explorer.autoFollow()).toBe(true);
+    expect(Math.abs(explorer.yaw() - before), 'the camera never came back behind the fox').toBeGreaterThan(0.2);
+  });
+
+  it('leaves the camera alone when auto-follow is off', () => {
+    const explorer = build();
+    explorer.intent.forward = 1;
+    step(explorer, 30);
+    explorer.orbit(400, 0);
+    const before = explorer.yaw();
+    step(explorer, 120);
+    expect(explorer.yaw(), 'the camera drifted although auto-follow is off').toBeCloseTo(before, 5);
   });
 });

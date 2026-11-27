@@ -14,6 +14,14 @@ export interface ExploreHudProps {
   onStick: (forward: number, strafe: number) => void;
   onJump: () => void;
   onSprint: (active: boolean) => void;
+  /** Held: slides, carrying momentum instead of braking. */
+  onSlide?: (active: boolean) => void;
+  /** Toggles the camera's auto-follow behaviour. */
+  onAutoFollow?: (active: boolean) => void;
+  autoFollow?: boolean;
+  sliding?: boolean;
+  /** Snaps the boom behind the fox and re-arms auto-follow. */
+  onRecentre?: () => void;
   onExit: () => void;
   onReset: () => void;
   /** Re-enters fullscreen: some browsers deny the automatic request. */
@@ -49,6 +57,11 @@ export function ExploreHud({
   onStick,
   onJump,
   onSprint,
+  onSlide,
+  onAutoFollow,
+  autoFollow = false,
+  sliding = false,
+  onRecentre,
   onExit,
   onReset,
   onFullscreen,
@@ -199,19 +212,19 @@ export function ExploreHud({
       {showHint && (
         <div className="explore-hint">
           <div className="explore-hint-keys">
-            <kbd>W</kbd>
-            <kbd>A</kbd>
-            <kbd>S</kbd>
-            <kbd>D</kbd>
-            <span>للحركة</span>
-            <kbd>Shift</kbd>
-            <span>للجري</span>
-            <kbd>Space</kbd>
-            <span>للقفز</span>
+            <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+            <span>حركة</span>
+            <kbd>Shift</kbd><span>جري</span>
+            <kbd>Space</kbd><span>قفز</span>
+            <kbd>Ctrl</kbd><span>انزلاق</span>
+            <kbd>Q</kbd><kbd>E</kbd><span>تدوير</span>
+            <kbd>V</kbd><span>تتبّع</span>
+            <kbd>R</kbd><span>رجوع</span>
           </div>
           <p>
             على الجوّال: العصا أسفل اليسار للحركة، وقرص <span aria-hidden="true">⟲</span> أسفل
-            اليمين لتدوير الكاميرا — زعتر يمشي حيث تنظر.
+            اليمين لتدوير الكاميرا — زعتر يمشي حيث تنظر. زر <span aria-hidden="true">🎯</span>{' '}
+            يجعل الكاميرا تتبعه وحدها.
           </p>
         </div>
       )}
@@ -236,15 +249,31 @@ export function ExploreHud({
         <span aria-hidden="true">⟲</span>
       </div>
 
-      {/* Bottom-right: the only three buttons. */}
+      {/* Bottom-right: movement verbs, then view verbs. */}
       <div className="explore-actions">
         <button
           type="button"
           className="explore-btn explore-btn--jump"
           onClick={onJump}
           aria-label="قفز"
+          title="قفز · Space"
         >
           ⤒
+        </button>
+        <button
+          type="button"
+          className={`explore-btn explore-btn--run${sliding ? ' is-active' : ''}`}
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+            onSlide?.(true);
+          }}
+          onPointerUp={() => onSlide?.(false)}
+          onPointerCancel={() => onSlide?.(false)}
+          onPointerLeave={() => onSlide?.(false)}
+          aria-label="انزلق"
+          title="انزلق · Ctrl أو C"
+        >
+          ⤓
         </button>
         <button
           type="button"
@@ -253,10 +282,23 @@ export function ExploreHud({
           onPointerUp={() => onSprint(false)}
           onPointerLeave={() => onSprint(false)}
           aria-label="جري"
+          title="جري · Shift"
         >
           🏃
         </button>
-        <button type="button" className="explore-btn" onClick={onReset} aria-label="عُد إلى البداية">
+        <button
+          type="button"
+          className={`explore-btn${autoFollow ? ' is-active' : ''}`}
+          onClick={() => {
+            onAutoFollow?.(!autoFollow);
+            onRecentre?.();
+          }}
+          aria-label={autoFollow ? 'الكاميرا تتبع زعتر · إيقاف' : 'ثبّت الكاميرا خلف زعتر'}
+          title="تثبيت الكاميرا خلف زعتر · V"
+        >
+          🎯
+        </button>
+        <button type="button" className="explore-btn" onClick={onReset} aria-label="عُد إلى البداية" title="عُد إلى البداية · R">
           ↺
         </button>
         {/* Some browsers refuse the automatic request without a fresh gesture,

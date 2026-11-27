@@ -2676,9 +2676,14 @@ body:has(.map-app--exploring) {
   position: absolute;
   inset-block-end: calc(22px + env(safe-area-inset-bottom, 0px));
   inset-inline-end: calc(22px + env(safe-area-inset-right, 0px));
+  /* A wrapped row, not a single line: with jump, slide, sprint, follow and reset
+     the row was wider than a phone and pushed the exit chip off-screen. */
   display: flex;
+  flex-wrap: wrap-reverse;
+  justify-content: flex-end;
   align-items: flex-end;
   gap: 8px;
+  max-width: min(232px, 46vw);
 }
 .explore-btn {
   width: 44px;
@@ -2706,6 +2711,15 @@ body:has(.map-app--exploring) {
   padding-inline: 10px;
   border-radius: 22px;
 }
+/* Lit while the action it triggers is actually happening: a control that gives no
+   feedback is the difference between "the button is broken" and "the fox is sliding". */
+.explore-btn.is-active {
+  background: rgba(240, 181, 82, 0.9);
+  color: #201709;
+  border-color: rgba(255, 240, 200, 0.9);
+  transform: scale(0.94);
+}
+
 .explore-btn--jump {
   width: 52px;
   height: 52px;

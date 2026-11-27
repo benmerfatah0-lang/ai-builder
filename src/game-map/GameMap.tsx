@@ -806,6 +806,19 @@ export function GameMap({ embedded = false }: GameMapProps) {
                 const explorer = explorerRef.current;
                 if (explorer) explorer.intent.sprint = active;
               }}
+              onSlide={(active) => {
+                const explorer = explorerRef.current;
+                if (explorer) explorer.intent.slide = active;
+              }}
+              onAutoFollow={(active) => explorerRef.current?.setAutoFollow(active)}
+              autoFollow={explorerRef.current?.autoFollow() ?? false}
+              sliding={exploreStatus.sliding}
+              onRecentre={() => {
+                const explorer = explorerRef.current;
+                if (!explorer) return;
+                explorer.setAutoFollow(true);
+                explorer.snapCamera();
+              }}
               onReset={() => {
                 explorerRef.current?.player.reset();
                 explorerRef.current?.snapCamera();

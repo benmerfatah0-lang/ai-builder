@@ -24,6 +24,8 @@ export interface MoveIntent {
   strafe: number;
   sprint: boolean;
   jump: boolean;
+  /** Held: drops the fox's profile and lets it slide, cancelling speed slowly. */
+  slide?: boolean;
 }
 
 export interface ExploreStatus {
@@ -37,6 +39,10 @@ export interface ExploreStatus {
   wading: boolean;
   /** Camera azimuth in radians, so the HUD can show a compass-ish direction. */
   yaw?: number;
+  /** True while the fox is sliding. */
+  sliding?: boolean;
+  /** True while the boom is following the fox automatically. */
+  autoFollow?: boolean;
 }
 
 export interface ExploreHandle {
@@ -62,6 +68,14 @@ export interface ExploreHandle {
   yaw: () => number;
   /** Camera elevation in radians above the horizon. */
   pitch: () => number;
+  /**
+   * Recentres the boom behind the fox *and* keeps it there on its own, the way a
+   * chase camera does. Any manual drag releases it again.
+   */
+  setAutoFollow: (on: boolean) => void;
+  autoFollow: () => boolean;
+  /** Current slide state, so the HUD can light its button. */
+  sliding: () => boolean;
   dispose: () => void;
 }
 
@@ -117,8 +131,20 @@ export function createExplorer(options: {
   });
   scene.add(player.group);
 
-  const intent: MoveIntent = { forward: 0, strafe: 0, sprint: false, jump: false };
+  const intent: MoveIntent = { forward: 0, strafe: 0, sprint: false, jump: false, slide: false };
   let moved = false;
+  /** Held slide: steerage drops to a fraction, so the fox carries its momentum
+   * instead of stopping dead — which is what separates a slide from a brake. */
+  let sliding = false;
+  /**
+   * Auto-follow: the boom drifts in behind the fox by itself.
+   *
+   * Off by default. A player who has turned the camera wants it to *stay* turned,
+   * and a rig that keeps creeping back behind the fox fights the thumb; but for
+   * someone walking a route with one hand it is the comfortable default, so both
+   * are one button apart.
+   */
+  let autoFollow = false;
 
   /* --------------------------------------------------------------- camera */
   const target = new THREE.Vector3(SPAWN[0], heightAt(SPAWN[0], SPAWN[1]) + EYE_HEIGHT, SPAWN[1]);
@@ -175,10 +201,31 @@ export function createExplorer(options: {
     const dirX = forwardX * intent.forward + rightX * intent.strafe;
     const dirZ = forwardZ * intent.forward + rightZ * intent.strafe;
 
-    player.step(clampedDt, { dirX, dirZ, sprint: intent.sprint, jump: intent.jump }, elapsed);
+    // Slide: while held the fox keeps its momentum but loses steerage, which is
+    // what a slide is. Releasing restores normal control immediately.
+    sliding = Boolean(intent.slide) && player.state.speed > 6 && !player.state.airborne;
+
+    player.step(
+      clampedDt,
+      {
+        dirX: dirX * (sliding ? 0.28 : 1),
+        dirZ: dirZ * (sliding ? 0.28 : 1),
+        sprint: intent.sprint,
+        jump: intent.jump && !sliding,
+      },
+      elapsed,
+    );
     // `jump` is an edge-triggered request: consume it so holding Space does not
     // keep the fox airborne forever.
     intent.jump = false;
+
+    // Auto-follow eases the boom back behind the fox without ever snapping: a
+    // hard snap on every heading change is the classic third-person nausea bug.
+    if (autoFollow && !sliding && player.state.speed > 1) {
+      const behind = wrapAngle(player.state.heading);
+      const delta = wrapAngle(behind - yaw);
+      yaw = wrapAngle(yaw + delta * Math.min(1, 2.4 * clampedDt));
+    }
 
     if (!moved && (Math.abs(intent.forward) > 0.01 || Math.abs(intent.strafe) > 0.01)) {
       moved = true;
@@ -253,6 +300,11 @@ export function createExplorer(options: {
     yaw: () => yaw,
     pitch: () => pitch,
     hasMoved: () => moved,
+    setAutoFollow: (on: boolean) => {
+      autoFollow = on;
+    },
+    autoFollow: () => autoFollow,
+    sliding: () => sliding,
 
     status: () => {
       const { x, z, speed, sprinting } = player.state;
@@ -266,6 +318,8 @@ export function createExplorer(options: {
         progress: THREE.MathUtils.clamp((WORLD.maxZ - z) / (WORLD.maxZ - WORLD.minZ), 0, 1),
         wading: heightAt(x, z) < -0.55,
         yaw,
+        sliding,
+        autoFollow,
       };
     },
 
@@ -303,6 +357,9 @@ export function bindKeyboard(getIntent: () => MoveIntent): () => void {
     'KeyW', 'KeyA', 'KeyS', 'KeyD',
     'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
     'Space', 'ShiftLeft', 'ShiftRight',
+    // Slide keys: Ctrl or C. Both are muscle memory for a third-person game, and
+    // neither is used by anything else on this page.
+    'ControlLeft', 'ControlRight', 'KeyC',
   ]);
   const typing = (event: KeyboardEvent): boolean => {
     const target = event.target as HTMLElement | null;
@@ -318,6 +375,7 @@ export function bindKeyboard(getIntent: () => MoveIntent): () => void {
     // Sprint must be *held*, not toggled. The old `|| intent.sprint` made one
     // Shift press sprint forever, because nothing ever set the flag back.
     intent.sprint = keys.has('ShiftLeft') || keys.has('ShiftRight');
+    intent.slide = keys.has('ControlLeft') || keys.has('ControlRight') || keys.has('KeyC');
     if (keys.has('Space')) intent.jump = true;
   };
   const onKeyDown = (event: KeyboardEvent) => {
@@ -354,18 +412,33 @@ export function bindKeyboard(getIntent: () => MoveIntent): () => void {
 }
 
 /**
- * Keyboard camera control, so a desktop reviewer with a trackpad can still turn
- * the view without dragging: Q/E swing left and right, R/F raise and lower.
- * The same rebindable intent-free path as `orbit`, just fed by keys.
+ * Keyboard camera control, so a player without a mouse can still turn the view.
+ *
+ * Q/E swing left and right, R/F raise and lower, and the keys are *held*, not
+ * tapped, so the view keeps moving for as long as the key is down. `V` hands the
+ * camera back to auto-follow, which is the one thing a keyboard player cannot do
+ * by dragging.
  */
-export function bindCameraKeys(getExplorer: () => { orbit: (dx: number, dy: number) => void }): () => void {
+export function bindCameraKeys(
+  getExplorer: () => {
+    orbit: (dx: number, dy: number) => void;
+    setAutoFollow: (on: boolean) => void;
+    autoFollow: () => boolean;
+  },
+): () => void {
   const held = new Set<string>();
-  const CODES = new Set(['KeyQ', 'KeyE', 'KeyR', 'KeyF']);
+  const CODES = new Set(['KeyQ', 'KeyE', 'KeyR', 'KeyF', 'KeyV']);
   const onKeyDown = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement | null;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
     if (!CODES.has(event.code)) return;
     event.preventDefault();
+    // `V` is a toggle, not a hold: it flips auto-follow and does not need a tick.
+    if (event.code === 'KeyV') {
+      const explorer = getExplorer();
+      explorer.setAutoFollow(!explorer.autoFollow());
+      return;
+    }
     held.add(event.code);
   };
   const onKeyUp = (event: KeyboardEvent) => held.delete(event.code);
