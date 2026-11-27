@@ -163,7 +163,15 @@ export interface BuildingSpec {
   scale?: number;
 }
 
-export type FieldKind = 'wheat' | 'vegetable' | 'clover' | 'sunflower' | 'pumpkin';
+/**
+ * Crop kinds.
+ *
+ * `maize` and `vine` are here because the reference map is built around them: a
+ * golden cornfield and a trellised vineyard are two thirds of its fields, and the
+ * old five kinds could not express either. Corn reuses the tall-row builder, vine
+ * gets its own trellis posts.
+ */
+export type FieldKind = 'wheat' | 'vegetable' | 'clover' | 'sunflower' | 'pumpkin' | 'maize' | 'vine';
 
 export interface FieldSpec {
   kind: FieldKind;

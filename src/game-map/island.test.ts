@@ -15,22 +15,26 @@ import {
   WATER,
 } from './data';
 import {
+  CAMERA_ORBIT_LIMIT,
+  HILL_RINGS,
+  HORIZON_FAR_PLANE,
   HORIZON_FOG,
-  HORIZON_Y,
-  ISLAND_EDGE_Y,
-  ISLAND_RADIUS,
+  HORIZON_RADIUS,
   buildMapScene,
+  horizonGroundOffset,
   islandExtent,
-  islandLandFactor,
-  islandRadiusAt,
 } from './scene';
 
 /**
- * The island shell.
+ * The world shell.
  *
- * The reference is a floating island with a cliff, not a table-top slab, so the
- * coast, the rock and the drop are part of the design and have to stay put. Each
- * of these numbers was a real bug at some point in this pass.
+ * This file used to test a floating island: a coast, a cliff under it, mist, and
+ * waterfalls pouring off the flanks. That design was replaced wholesale when the
+ * reference changed to a continuous sunny valley - there is no island any more,
+ * so those assertions were testing for the presence of things that must not
+ * exist. What survives is the part that is still true and still easy to regress:
+ * the playable map is finite, it is walled by hills it can never reach, and the
+ * ground runs unbroken to the horizon instead of ending in a slab edge.
  */
 
 const scene = buildMapScene({
@@ -48,20 +52,10 @@ const scene = buildMapScene({
   checkpoints: CHECKPOINTS,
 });
 
-describe('floating island', () => {
-  it('has an irregular coast, not an ellipse', () => {
-    const radii = Array.from({ length: 32 }, (_, index) => islandRadiusAt((index / 32) * Math.PI * 2));
-    const min = Math.min(...radii);
-    const max = Math.max(...radii);
-    // Enough wobble to read as a coastline, little enough to stay an island.
-    expect(max - min, 'the coast is a plain ellipse').toBeGreaterThan(0.12);
-    expect(min).toBeGreaterThan(0.82);
-    expect(max).toBeLessThan(1.2);
-  });
-
-  it('keeps the whole playable map inland', () => {
-    // Everything the fox can reach must be on the island, or the player walks off
-    // the map. This is the check that caught the slab-shaped terrain.
+describe('the valley shell', () => {
+  it('keeps every landmark well inside the playfield', () => {
+    // Whatever the coast used to be, a landmark the fox can reach must not be out
+    // in the pasture, or the player walks off the map being built for them.
     const spots: [number, number][] = [
       ...ARENAS.map((arena) => arena.position),
       ...BOSSES.map((boss) => boss.position),
@@ -69,52 +63,82 @@ describe('floating island', () => {
       ...CHECKPOINTS.map((checkpoint) => checkpoint.position),
     ];
     for (const [x, z] of spots) {
-      expect(islandExtent(x, z), `(${x}, ${z}) is off the island`).toBeLessThan(0.93);
+      expect(islandExtent(x, z), `(${x}, ${z}) is outside the playfield`).toBeLessThan(1);
     }
   });
 
-  it('slopes the ground down to the shore instead of ending in a cut', () => {
-    // A flat lip with a cliff pasted under it is what made the first attempt read
-    // as a green blanket on a green plane.
-    const inland = islandLandFactor(0, 0);
-    const shore = islandLandFactor(0, ISLAND_RADIUS.z * 0.985);
-    expect(inland).toBeCloseTo(1, 2);
-    expect(shore, 'the rim never falls away').toBeLessThan(0.35);
+  it('has no island shell left', () => {
+    // The reference is one continuous valley. A cliff, a mist sheet or a waterfall
+    // hanging off the map would silently re-introduce the floating island.
+    for (const name of ['island-cliff', 'island-mist', 'island-waterfalls']) {
+      expect(scene.root.getObjectByName(name), `${name} is still in the scene`).toBeUndefined();
+    }
   });
 
-  it('builds a cliff that hangs below the shoreline', () => {
-    const cliff = scene.root.getObjectByName('island-cliff');
-    expect(cliff, 'no cliff under the island').toBeTruthy();
-    const box = new THREE.Box3().setFromObject(cliff!);
-    // The rock has to be well under the water line, or the island is a decal.
-    expect(box.min.y, 'the cliff does not hang').toBeLessThan(ISLAND_EDGE_Y - 20);
-    expect(box.max.y).toBeGreaterThan(ISLAND_EDGE_Y - 3);
-    // ...and it has to be as wide as the island, not a pedestal in the middle.
-    expect(box.max.x - box.min.x).toBeGreaterThan(ISLAND_RADIUS.x * 1.6);
+  it('runs one ground mesh from the playfield to the horizon', () => {
+    // The slab and the backdrop used to be two separate planes, and from a
+    // bird's-eye camera the join read as the edge of the world.
+    const terrain = scene.root.getObjectByName('terrain') as THREE.Mesh;
+    const ground = scene.root.getObjectByName('hill-ground') as THREE.Mesh;
+    expect(terrain, 'no playfield ground').toBeTruthy();
+    expect(ground, 'no horizon ground').toBeTruthy();
+    ground.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromBufferAttribute(
+      ground.geometry.getAttribute('position') as THREE.BufferAttribute,
+    );
+    // It has to cover the playfield and reach past every hill that stands on it.
+    expect(box.max.x - box.min.x, 'the ground stops inside the playfield').toBeGreaterThan(
+      HORIZON_RADIUS * 1.5,
+    );
+    expect(box.max.z - box.min.z).toBeGreaterThan(HORIZON_RADIUS * 1.5);
+    // ...and stay a landscape, not a wall.
+    //
+    // Measured by sampling the ground's own height function, not by the bounding
+    // box of a project: `hill-ground` shares the terrain geometry, which by then
+    // also carries the horizon swells, and a box over that would include the
+    // mountain bases bolted onto the same mesh.
+    let lowest = Infinity;
+    let highest = -Infinity;
+    for (let radius = 0; radius <= HORIZON_RADIUS; radius += 50) {
+      for (let step = 0; step < 16; step += 1) {
+        const angle = (step / 16) * Math.PI * 2;
+        const height = horizonGroundOffset(Math.cos(angle) * radius, Math.sin(angle) * radius);
+        lowest = Math.min(lowest, height);
+        highest = Math.max(highest, height);
+      }
+    }
+    expect(highest - lowest, 'the pasture is folded into a wall').toBeLessThan(60);
   });
 
-  it('hangs the shadow of the island over the backdrop, not into it', () => {
-    // The backdrop hills stand on a plane, and the island has to float clear above
-    // it. When the plane was raised back up, the cliff vanished inside the grass.
-    expect(HORIZON_Y, 'the backdrop has climbed to the island').toBeLessThan(-10);
-    expect(HORIZON_Y, 'the island no longer floats clear').toBeGreaterThan(-40);
+  it('stands every hill outside the camera orbit', () => {
+    // A ridge nearer than the eye ends up between the camera and the diorama at
+    // some rotation, and swallows the map.
+    for (const ring of HILL_RINGS) {
+      const closestReach = Math.hypot(ring.radiusX, ring.radiusZ) - ring.maxWidth * ring.stretch[1];
+      expect(closestReach, 'a hill can stand between the eye and the map').toBeGreaterThan(
+        CAMERA_ORBIT_LIMIT - 10,
+      );
+    }
   });
 
-  it('drops water off the flanks, never onto the spawn', () => {
-    const falls = scene.root.getObjectByName('island-waterfalls');
-    expect(falls, 'no waterfalls').toBeTruthy();
-    const box = new THREE.Box3().setFromObject(falls!);
-    expect(box.min.y).toBeLessThan(ISLAND_EDGE_Y - 6);
-    // The spawn is at +Z; nothing should be pouring there.
-    const southFalls = scene.root.children.length > 0;
-    expect(southFalls).toBe(true);
+  it('keeps the mountains inside the far plane and the haze off the fields', () => {
+    const range = scene.root.getObjectByName('mountain-range');
+    expect(range, 'no mountain range').toBeTruthy();
+    range!.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(range!);
+    // The range is the skyline: tall enough to read, and close enough to the far
+    // plane that it is never clipped.
+    expect(box.max.y, 'the mountains are not tall enough to close the view').toBeGreaterThan(300);
+    expect(box.min.y, 'a mountain base is floating above the ground').toBeLessThan(40);
+    const furthest = Math.max(Math.abs(box.min.x), Math.abs(box.max.x), Math.abs(box.min.z), Math.abs(box.max.z));
+    expect(furthest, 'the range is clipped by the far plane').toBeLessThan(HORIZON_FAR_PLANE * 0.75);
+    // Haze starts past the playfield, so the fields are never washed out.
+    expect(HORIZON_FOG.near, 'the haze starts inside the playfield').toBeGreaterThan(600);
   });
 
-  it('keeps the far haze off the rock', () => {
-    // Fog near-plane must be beyond the island's own diagonal, or the cliff is
-    // washed out at exactly the distance the default camera sits at.
-    const diagonal = Math.hypot(ISLAND_RADIUS.x, ISLAND_RADIUS.z);
-    expect(HORIZON_FOG.near, 'the haze starts inside the island').toBeGreaterThan(diagonal * 4);
-    expect(HORIZON_FOG.far).toBeGreaterThan(HORIZON_FOG.near);
+  it('builds pink rock buttes on the flanks', () => {
+    const mesas = scene.root.getObjectByName('mesa-buttes');
+    expect(mesas, 'no buttes').toBeTruthy();
+    expect(mesas!.children.length, 'the buttes are missing their caps').toBeGreaterThan(4);
   });
 });

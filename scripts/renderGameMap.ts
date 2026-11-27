@@ -45,7 +45,7 @@ interface Options {
 }
 
 const VIEWS: Record<string, { eye: [number, number, number]; target: [number, number, number]; fov?: number }> = {
-  overview: { eye: [238, 214, 416], target: [-6, 20, 0], fov: 34 },
+  overview: { eye: [165, 135, 375], target: [0, 22, -70], fov: 50 },
   top: { eye: [0, 430, 16], target: [0, 0, 4], fov: 29 },
   start: { eye: [24, 30, 178], target: [0, 2, 118], fov: 52 },
   farm: { eye: [44, 42, 118], target: [14, 2, 34], fov: 48 },

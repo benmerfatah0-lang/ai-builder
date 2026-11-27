@@ -53,8 +53,12 @@ import './game-map.css';
 
 type ViewMode = 'diorama' | 'top' | 'flythrough';
 
-const CAMERA_HOME = new THREE.Vector3(238, 214, 416);
-const TARGET_HOME = new THREE.Vector3(-6, 22, 0);
+// Bird's-eye, looking north-ish: the reference reads *down* into the valley, so
+// the fields fill the frame and the mountain range sits in a band along the top.
+// Pulled back from the old island framing because the valley is now continuous
+// and there is no cliff edge holding the eye in.
+const CAMERA_HOME = new THREE.Vector3(165, 135, 375);
+const TARGET_HOME = new THREE.Vector3(0, 22, -70);
 
 const VIEW_PRESETS: Record<string, { eye: THREE.Vector3; target: THREE.Vector3 }> = {
   overview: { eye: CAMERA_HOME, target: TARGET_HOME },
@@ -180,7 +184,9 @@ export function GameMap({ embedded = false }: GameMapProps) {
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.02;
+    // Bright cartoon daylight: a touch over 1 keeps the saturated greens from
+    // going muddy under ACES filmic.
+    renderer.toneMappingExposure = 1.18;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     mount.appendChild(renderer.domElement);
@@ -189,12 +195,12 @@ export function GameMap({ embedded = false }: GameMapProps) {
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    // Golden hour: the reference is a valley at sunset, and a neutral blue sky
-    // with white light made every green read as midday.
-    scene.background = new THREE.Color('#c9dbe8');
+    // Clear blue noon: the reference is a sunny farm valley with a hard blue sky
+    // above and no haze on the ground.
+    scene.background = new THREE.Color('#8ec5e8');
     scene.fog = new THREE.Fog(HORIZON_FOG.colour, HORIZON_FOG.near, HORIZON_FOG.far);
 
-    const camera = new THREE.PerspectiveCamera(32, mount.clientWidth / mount.clientHeight, 0.6, HORIZON_FAR_PLANE);
+    const camera = new THREE.PerspectiveCamera(50, mount.clientWidth / mount.clientHeight, 0.6, HORIZON_FAR_PLANE);
     camera.position.copy(CAMERA_HOME);
     cameraRef.current = camera;
 
@@ -209,13 +215,14 @@ export function GameMap({ embedded = false }: GameMapProps) {
     controls.rotateSpeed = 0.7;
     controlsRef.current = controls;
 
-    // Lights: sunset key + sky fill + warm bounce.
-    const hemisphere = new THREE.HemisphereLight('#dce9f4', '#7d7a45', 1.12);
+    // Lights: high white sun, blue sky fill, green bounce off the grass.
+    const hemisphere = new THREE.HemisphereLight('#cfe6fb', '#7a9c46', 1.28);
     scene.add(hemisphere);
-    // Low, warm key from the south-west: long shadows across the fields are what
-    // sell the sunset, so the light has to come in almost sideways.
-    const sun = new THREE.DirectionalLight('#ffd39a', 2.75);
-    sun.position.set(-210, 132, 165);
+    // High key from the south-west. Noon, so the shadows are short and crisp
+    // instead of the long amber bars of the sunset version; the reference is lit
+    // from almost directly above with the sun slightly behind the camera.
+    const sun = new THREE.DirectionalLight('#fff6e2', 2.9);
+    sun.position.set(-260, 420, 300);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.camera.left = -190;
@@ -227,8 +234,10 @@ export function GameMap({ embedded = false }: GameMapProps) {
     sun.shadow.bias = -0.0006;
     sun.shadow.normalBias = 0.5;
     scene.add(sun);
-    const rim = new THREE.DirectionalLight('#ffb877', 0.75);
-    rim.position.set(170, 62, -190);
+    // Cool sky bounce from the north, which is what stops the far side of every
+    // object from going flat black in daylight.
+    const rim = new THREE.DirectionalLight('#bfe0ff', 0.55);
+    rim.position.set(170, 200, -190);
     scene.add(rim);
 
     const map = buildMapScene({

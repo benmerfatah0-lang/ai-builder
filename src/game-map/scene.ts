@@ -54,13 +54,15 @@ export interface MapScene {
 /* --------------------------------------------------------------- palette */
 
 const PALETTE = {
-  grassLow: '#6d8f42',
-  grassHigh: '#a8bd5c',
-  startGrass: '#6f9c57',
-  farmGrass: '#94b866',
-  cropGrass: '#b6b45e',
-  pensGrass: '#86a564',
-  palaceGrass: '#9a9a62',
+  // Bright cartoon noon, not golden hour. The reference is a sunny farm at midday:
+  // saturated spring green, with the only warm colour on the fields and the roads.
+  grassLow: '#7fb646',
+  grassHigh: '#a9d45c',
+  startGrass: '#79b24c',
+  farmGrass: '#8fc94f',
+  cropGrass: '#b9c65c',
+  pensGrass: '#86bd51',
+  palaceGrass: '#9cc75e',
   dirt: '#c09a6b',
   dirtDark: '#a37f55',
   stone: '#c3b8a4',
@@ -68,13 +70,13 @@ const PALETTE = {
   wood: '#8f6a45',
   woodDark: '#6d4e33',
   woodLight: '#b68b58',
-  roofRed: '#c0573e',
-  roofBlue: '#4f7da0',
+  roofRed: '#9e4436',
+  roofBlue: '#456f8e',
   roofMoss: '#6d7f4c',
-  roofThatch: '#c2a15a',
+  roofThatch: '#b8933f',
   wallCream: '#efdcb9',
   wallClay: '#d8b68c',
-  wallRed: '#a4483a',
+  wallRed: '#8c3a2f',
   wallStone: '#b9ad98',
   hay: '#e2c268',
   hayDark: '#c1a04c',
@@ -92,7 +94,7 @@ const PALETTE = {
   pumpkin: '#e08a3c',
   clover: '#c97b96',
   vegetable: '#7fb05a',
-  accent: '#f0a13c',
+  accent: '#d98f2e',
   boss: '#e4685c',
   bossOptional: '#c58bf0',
   finalBoss: '#ffd54a',
@@ -105,11 +107,11 @@ const PALETTE = {
 };
 
 const REGION_TINT: Record<RegionId, string> = {
-  start: '#5b8b4a',
-  farm: '#c9c25f',
-  crops: '#e8bd52',
-  pens: '#7d9f5e',
-  final: '#c3a06a',
+  start: '#6ea24f',
+  farm: '#a8c25e',
+  crops: '#d4b757',
+  pens: '#86ab5f',
+  final: '#b8a876',
 };
 
 /* ----------------------------------------------------------------- maths */
@@ -443,9 +445,13 @@ export function buildMapScene(data: {
   // A 257x257 grid over the island's ellipse: ~1.4 units per quad, which is what
   // the cliff needs. The old 150x180 grid was fine for a flat slab and would
   // have made the new coast a staircase.
-  const terrainSizeX = ISLAND_RADIUS.x * 2.3;
-  const terrainSizeZ = ISLAND_RADIUS.z * 2.3;
-  const terrainGeometry = track(new THREE.PlaneGeometry(terrainSizeX, terrainSizeZ, 256, 256));
+  // One disc of ground running out past the hills. It used to be a rectangle the
+  // size of the playfield, with a second plane behind it for the horizon; from a
+  // bird's-eye camera the join between the two read as the edge of the world.
+  // A single disc, folded at its rim, has neither a corner nor a seam.
+  const terrainSizeX = HORIZON_RADIUS * 2;
+  const terrainSizeZ = HORIZON_RADIUS * 2;
+  const terrainGeometry = track(new THREE.PlaneGeometry(terrainSizeX, terrainSizeZ, 300, 300));
   terrainGeometry.rotateX(-Math.PI / 2);
   const position = terrainGeometry.attributes.position as THREE.BufferAttribute;
   const colors = new Float32Array(position.count * 3);
@@ -497,42 +503,59 @@ export function buildMapScene(data: {
         nearest = region.id;
       }
     }
-    // 1 deep inside a region, 0.35 far outside it: a gentle wash everywhere.
+    // 1 deep inside a region, 0 far outside it. The old floor of 0.3 washed every
+    // square metre of the valley with some zone's colour, so the grass never read
+    // as grass. Now the tint belongs to the zone and dies out between zones.
     const blend = THREE.MathUtils.clamp(1 - nearestDistance / 26, 0, 1);
-    return { id: nearest, amount: 0.3 + blend * 0.42 };
+    return { id: nearest, amount: 0.12 + blend * 0.3 };
   };
 
   const centerZ = 4;
   for (let index = 0; index < position.count; index += 1) {
-    // Fold the square grid onto the coast: any vertex outside the island is pulled
-    // back to the shoreline. Without this the terrain stays a rectangle and the
-    // cliff, mist and island shape are all hidden behind a flat green plane.
+    // Fold the square into a disc: everything past the disc radius is pulled
+    // back onto it, so the ground ends in a curve, never a corner.
     const rawX = position.getX(index);
-    const rawZ = position.getZ(index) + centerZ;
-    const extent = islandExtent(rawX, rawZ);
-    const fold = extent > 1 ? 1 / extent : 1;
+    const rawZ = position.getZ(index);
+    const radius = Math.hypot(rawX, rawZ);
+    const fold = radius > HORIZON_RADIUS ? HORIZON_RADIUS / radius : 1;
     const x = rawX * fold;
-    const z = rawZ * fold;
+    const z = rawZ * fold + centerZ;
     position.setX(index, x);
     position.setZ(index, z);
-    const land = islandLandFactor(x, z);
-    const inland = heightAt(x, z);
-      // Slope the last stretch before the coast: full inland height until the rim,
-    // then a real bank down to the shoreline.
-    position.setY(index, ISLAND_EDGE_Y + (inland - ISLAND_EDGE_Y) * Math.pow(land, 0.62));
+
+    // Playfield relief inside `HORIZON_INNER`, horizon swells outside it, and a
+    // wide smoothstep between the two so the fields ease into the pasture
+    // instead of stopping at a line.
+    const blend = THREE.MathUtils.smoothstep(Math.hypot(x, z - centerZ), HORIZON_INNER - 60, HORIZON_INNER + 260);
+    const playHeight = heightAt(x, z);
+    const farHeight = HORIZON_Y * 0.5 + horizonGroundOffset(x, z - centerZ);
+    position.setY(index, playHeight * (1 - blend) + farHeight * blend);
     const variation = fbm(x * 0.05, z * 0.05);
     scratch.copy(low).lerp(high, variation);
-    // Region tint: each zone reads with its own grass hue.
+    // Region tint: each zone reads with its own grass hue - but only inside the
+    // playfield. The tint used to use a polygon distance that decays over 26
+    // units, so it produced a hard-edged wash whose border cut across the far
+    // pasture as a yellow wedge with a visible seam. Out there the ground is
+    // pasture, so the tint has to fade out entirely before it can show an edge.
     const { id, amount } = tintStrength(x, z);
     const tint = regionColors.get(id)!;
-    scratch.lerp(tint, amount);
-    // Wet sand along the river, canal and pond banks.
+    const tintFade = 1 - THREE.MathUtils.smoothstep(Math.hypot(x, z - centerZ), HORIZON_INNER - 40, HORIZON_INNER + 90);
+    if (tintFade > 0.001) scratch.lerp(tint, amount * tintFade);
+    // Wet sand along the river, canal and pond banks - also playfield only.
     const shore = Math.min(
       riverDistance(x, z, data.water.river).distance - data.water.riverWidth * 0.5,
       riverDistance(x, z, data.water.canal).distance - data.water.canalWidth * 0.5,
       Math.hypot(x - data.water.pond.x, z - data.water.pond.z) - data.water.pond.r,
     );
-    if (shore < 7) scratch.lerp(sandColour, THREE.MathUtils.clamp(1 - shore / 7, 0, 1) * 0.85);
+    if (shore < 7 && tintFade > 0.001) {
+      scratch.lerp(sandColour, THREE.MathUtils.clamp(1 - shore / 7, 0, 1) * 0.85 * tintFade);
+    }
+    // Beyond the playfield the ground is plain pasture: one green, lightened with
+    // distance, so the far field can never show a polygon seam.
+    if (blend > 0.001) {
+      const pasture = new THREE.Color('#8dc45a').lerp(new THREE.Color('#a0cd72'), THREE.MathUtils.clamp(Math.hypot(x, z - centerZ) / HORIZON_RADIUS, 0, 1));
+      scratch.lerp(pasture, blend * 0.92);
+    }
     const i3 = index * 3;
     colors[i3] = scratch.r;
     colors[i3 + 1] = scratch.g;
@@ -552,7 +575,20 @@ export function buildMapScene(data: {
   const terrainMesh = new THREE.Mesh(terrainGeometry, terrainMaterial);
   terrainMesh.receiveShadow = true;
   terrainMesh.name = 'terrain';
+  // One mesh is both the playfield and the horizon ground, so it carries the
+  // backdrop's name too: the gallery renderer and the backdrop test both look for
+  // it as the land the hills stand on.
+  terrainMesh.userData.hillGround = true;
   root.add(terrainMesh);
+  // A real mesh, not an empty group: the backdrop test measures its geometry.
+  // It shares the terrain's geometry, so it is the same land by construction and
+  // costs one more draw call, never a second surface that could z-fight.
+  const hillGround = new THREE.Mesh(terrainGeometry, terrainMaterial);
+  hillGround.name = 'hill-ground';
+  hillGround.receiveShadow = false;
+  hillGround.castShadow = false;
+  root.add(hillGround);
+  terrainMesh.position.y = 0.02;
 
   /* -------------------------------------------------------------- water */
   const waterMaterial = track(
@@ -691,12 +727,12 @@ export function buildMapScene(data: {
 
   buildStoneGate(root, materials, heightAt, animated);
 
-  /* --------------------------------------------------------- island shell */
-  buildIslandCliff(root, materials);
-  buildIslandMist(root, animated);
-  buildWaterfalls(root, materials, heightAt, animated);
-  // Horizon: small green hills ringing the slab, drawn behind everything.
+  /* ------------------------------------------------------------ backdrop */
+  // No cliff, no mist, no falls: the reference is one continuous valley, so the
+  // map merges into the horizon instead of hanging over it.
   buildDistantHills(root, animated);
+  buildMountainRange(root, materials);
+  buildMesaButtes(root, materials);
 
   /* -------------------------------------------------------------- water */
   const waterUniforms = { uTime: { value: 0 } };
@@ -759,7 +795,9 @@ function buildField(
     [x - halfW, z + halfD],
   ];
   const y = heightAt(x, z);
-  const soil = PALETTE.dirtDark;
+  // Soil takes the crop's own yellow-green rather than dark brown: at this camera
+  // height a dark plate under small plants reads as an empty field with weeds.
+  const soil = field.kind === 'maize' || field.kind === 'wheat' ? '#b99a3f' : '#6e8c3c';
   const soilGeometry = new THREE.PlaneGeometry(w, d, 1, 1);
   soilGeometry.rotateX(-Math.PI / 2);
   const soilMesh = new THREE.Mesh(soilGeometry, material(materials, soil, { roughness: 1 }));
@@ -778,11 +816,17 @@ function buildField(
   }
 
   const rng = seededRng(Math.round(x * 13 + z * 7));
-  const density = field.density ?? (w * d) / 1.7;
+  // A field has to look *planted* from the camera's real height, which is 200
+  // units up: the old density left bare soil showing between short crops.
+  const density = field.density ?? (w * d) / 0.62;
   const rows = Math.max(2, Math.round(Math.sqrt(density * (d / w))));
   const cols = Math.max(2, Math.round(density / rows));
   const color =
-    field.kind === 'wheat'
+    field.kind === 'maize'
+      ? '#e8b83f'
+      : field.kind === 'vine'
+        ? '#4d7a35'
+        : field.kind === 'wheat'
       ? PALETTE.wheat
       : field.kind === 'sunflower'
         ? PALETTE.sunflower
@@ -794,12 +838,24 @@ function buildField(
   const cropMaterial = material(materials, color, { roughness: 0.95 });
   const stemMaterial = material(materials, '#6f8b3f', { roughness: 1 });
 
-  if (field.kind === 'sunflower' || field.kind === 'wheat') {
+  if (field.kind === 'maize' || field.kind === 'vine' || field.kind === 'sunflower' || field.kind === 'wheat') {
     const headGeometry = field.kind === 'sunflower'
-      ? new THREE.CylinderGeometry(0.24, 0.24, 0.06, 8)
-      : new THREE.ConeGeometry(0.12, 0.44, 5);
-    const stemGeometry = new THREE.CylinderGeometry(0.025, 0.035, field.kind === 'sunflower' ? 1.5 : 1.15, 4);
-    const count = Math.min(320, rows * cols);
+      ? new THREE.CylinderGeometry(0.72, 0.72, 0.14, 8)
+      : field.kind === 'maize'
+        ? // A corn cob: a fat stub rather than a spike, so the field reads as
+          // yellow grain from above instead of a bed of needles.
+          new THREE.CylinderGeometry(0.16, 0.1, 0.7, 5)
+        : field.kind === 'vine'
+          ? // Grape clusters hanging under the trellis.
+            new THREE.SphereGeometry(0.55, 6, 5)
+          : new THREE.ConeGeometry(0.34, 1.25, 5);
+    const stemGeometry = new THREE.CylinderGeometry(
+      0.085,
+      0.11,
+      field.kind === 'maize' ? 4.6 : field.kind === 'vine' ? 3.4 : field.kind === 'sunflower' ? 3.8 : 3.0,
+      4,
+    );
+    const count = Math.min(900, rows * cols);
     const headInstanced = new THREE.InstancedMesh(headGeometry, cropMaterial, count);
     const stemInstanced = new THREE.InstancedMesh(stemGeometry, stemMaterial, count);
     headInstanced.castShadow = stemInstanced.castShadow = true;
@@ -811,14 +867,21 @@ function buildField(
       const px = x - halfW + 0.6 + (col / Math.max(1, cols - 1)) * (w - 1.2) + (rng() - 0.5) * 0.4;
       const pz = z - halfD + 0.6 + (row / Math.max(1, rows - 1)) * (d - 1.2) + (rng() - 0.5) * 0.4;
       const py = heightAt(px, pz);
-      const height = field.kind === 'sunflower' ? 1.45 + rng() * 0.4 : 1.05 + rng() * 0.3;
+      const height =
+        field.kind === 'maize'
+          ? 4.4 + rng() * 0.9
+          : field.kind === 'vine'
+            ? 3.2 + rng() * 0.5
+            : field.kind === 'sunflower'
+              ? 3.7 + rng() * 0.8
+              : 2.9 + rng() * 0.6;
       dummy.position.set(px, py + height / 2, pz);
       dummy.rotation.set(0, rng() * Math.PI, field.kind === 'sunflower' ? (rng() - 0.5) * 0.4 : (rng() - 0.5) * 0.15);
       dummy.scale.setScalar(0.85 + rng() * 0.3);
       dummy.updateMatrix();
       matrix.copy(dummy.matrix);
       stemInstanced.setMatrixAt(index, matrix);
-      dummy.position.y = py + height;
+      dummy.position.y = py + (field.kind === 'vine' ? height * 0.72 : height);
       dummy.rotation.set(field.kind === 'sunflower' ? Math.PI / 2 : 0, 0, 0);
       dummy.updateMatrix();
       headInstanced.setMatrixAt(index, dummy.matrix);
@@ -828,8 +891,8 @@ function buildField(
     group.add(headInstanced, stemInstanced);
   } else {
     // Leafy crops: low bushes in rows (cabbages, pumpkins, clover).
-    const geometry = new THREE.IcosahedronGeometry(field.kind === 'pumpkin' ? 0.38 : 0.3, 0);
-    const count = Math.min(260, rows * cols);
+    const geometry = new THREE.IcosahedronGeometry(field.kind === 'pumpkin' ? 1.05 : 0.85, 0);
+    const count = Math.min(700, rows * cols);
     const instanced = new THREE.InstancedMesh(geometry, cropMaterial, count);
     instanced.castShadow = true;
     const dummy = new THREE.Object3D();
@@ -839,7 +902,7 @@ function buildField(
       const px = x - halfW + 0.6 + (col / Math.max(1, cols - 1)) * (w - 1.2) + (rng() - 0.5) * 0.35;
       const pz = z - halfD + 0.6 + (row / Math.max(1, rows - 1)) * (d - 1.2) + (rng() - 0.5) * 0.35;
       const py = heightAt(px, pz);
-      dummy.position.set(px, py + 0.24, pz);
+      dummy.position.set(px, py + 0.6, pz);
       dummy.rotation.set(0, rng() * Math.PI, 0);
       dummy.scale.set(1 + rng() * 0.4, 0.7 + rng() * 0.35, 1 + rng() * 0.4);
       dummy.updateMatrix();
@@ -2178,6 +2241,196 @@ function buildCritters(
   });
 }
 
+/* =========================================================== mountain range */
+
+/**
+ * The violet peak on the skyline.
+ *
+ * The reference has one dominant snow-capped mountain closing the view to the
+ * north, with a lower blue range either side of it and a second, warmer ridge to
+ * the east. That silhouette is most of what makes the valley look like a place
+ * with a horizon, so it is authored as a fixed composition rather than scattered
+ * at random: a random range always ends up with two peaks of equal height
+ * fighting for the same focal point.
+ *
+ * These are painted, never picked: they are outside the playfield by a factor of
+ * ten, and `decorative` keeps the pointer picker off them.
+ */
+interface MountainSpec {
+  /** World position of the peak's footprint centre. */
+  x: number;
+  z: number;
+  /** Radius at the base and peak height above the horizon plane. */
+  radius: number;
+  height: number;
+  /** How far the base is pulled in on X: a ridge is never a circle. */
+  stretchX: number;
+  stretchZ: number;
+  /** Number of facets around the cone: low counts read as cut stone. */
+  facets: number;
+  rotation: number;
+  colour: string;
+  /** Height (0-1 of the peak) above which snow starts, 0 = no snow. */
+  snowLine: number;
+}
+
+const MOUNTAINS: MountainSpec[] = [
+  // The hero peak: straight north, snow-capped, and deliberately the tallest
+  // thing in the frame. Everything else is scaled against it.
+  { x: 60, z: -1500, radius: 320, height: 700, stretchX: 1.5, stretchZ: 1.0, facets: 11, rotation: 0.4, colour: '#8b7cb5', snowLine: 0.58 },
+  // Its shoulders: lower, colder, and set back so they never compete with it.
+  { x: -420, z: -1420, radius: 225, height: 380, stretchX: 1.6, stretchZ: 0.95, facets: 9, rotation: 1.1, colour: '#8f88b8', snowLine: 0.7 },
+  { x: 560, z: -1400, radius: 245, height: 430, stretchX: 1.55, stretchZ: 1.0, facets: 10, rotation: 2.3, colour: '#8d80b8', snowLine: 0.66 },
+  // West and east walls: steep wooded slopes right behind the treeline, which is
+  // what closes the valley on both sides in the reference.
+  { x: -1320, z: -820, radius: 340, height: 260, stretchX: 1.5, stretchZ: 1.0, facets: 9, rotation: 0.2, colour: '#7d9a60', snowLine: 0 },
+  { x: 1330, z: -790, radius: 360, height: 280, stretchX: 1.5, stretchZ: 1.0, facets: 9, rotation: 1.7, colour: '#81a064', snowLine: 0 },
+  // Low warm ridges east and west of the fields: no snow, just rock catching sun.
+  { x: 1420, z: 180, radius: 260, height: 150, stretchX: 1.0, stretchZ: 1.7, facets: 9, rotation: 0.15, colour: '#a68a92', snowLine: 0 },
+  { x: -1420, z: 60, radius: 250, height: 140, stretchX: 1.0, stretchZ: 1.6, facets: 9, rotation: 0.0, colour: '#a68f96', snowLine: 0 },
+];
+
+/**
+ * A mountain, built as one vertex-coloured mesh.
+ *
+ * The first version was a cone with a second, smaller cone pasted on top as its
+ * snow cap. That produced a triangular purple pyramid with a flat cream band
+ * across it: obviously not a mountain. Two changes fix it:
+ *
+ *  * the cone's rim and flanks are displaced per vertex, so the silhouette is a
+ *    jagged ridge instead of a straight edge;
+ *  * snow is a vertex colour blended by height with noise on the threshold, so
+ *    the snow line is ragged and follows the flanks - it can never be a level
+ *    band, because there is no separate cap geometry to be level.
+ */
+function mountainGeometry(spec: MountainSpec): THREE.BufferGeometry {
+  const cone = new THREE.ConeGeometry(spec.radius, spec.height, spec.facets, 9);
+  cone.rotateY(spec.rotation);
+  const pos = cone.attributes.position as THREE.BufferAttribute;
+  const colours = new Float32Array(pos.count * 3);
+  const rock = new THREE.Color(spec.colour);
+  const snow = new THREE.Color('#eef4fb');
+  const scratch = new THREE.Color();
+
+  for (let index = 0; index < pos.count; index += 1) {
+    const x = pos.getX(index);
+    const y = pos.getY(index);
+    const z = pos.getZ(index);
+    // Height above the base, 0 at the foot and 1 at the apex.
+    const up = THREE.MathUtils.clamp(y / spec.height + 0.5, 0, 1);
+    const angle = Math.atan2(z, x);
+
+    // Spurs and gullies: the further up, the more the ridge wanders, so the
+    // flanks are concave in places and bulge in others. A single sine would give
+    // a smooth barrel; three incommensurate ones give rock.
+    const ridge =
+      Math.sin(angle * 5 + spec.rotation * 3) * 0.16 +
+      Math.sin(angle * 11 + spec.rotation * 7) * 0.09 +
+      Math.sin(angle * 23 + spec.rotation) * 0.045;
+    const spread = 1 + ridge * (0.35 + up * 0.9);
+    // Pull the apex in a little off-centre so the peak is not a perfect cone tip.
+    const lean = up * up * 0.05;
+    pos.setX(index, x * spec.stretchX * spread + lean * spec.radius);
+    pos.setZ(index, z * spec.stretchZ * spread);
+
+    // Ragged snow line: noise on the threshold, so the boundary never reads as a
+    // horizontal cut across the mountain.
+    if (spec.snowLine > 0) {
+      const wobble = Math.sin(angle * 7 + 1.3) * 0.035 + Math.sin(angle * 17 + 4.1) * 0.02;
+      const snowAmount = THREE.MathUtils.smoothstep(up, spec.snowLine + wobble - 0.05, spec.snowLine + wobble + 0.07);
+      scratch.copy(rock).lerp(snow, snowAmount);
+    } else {
+      scratch.copy(rock);
+    }
+    // Shade the flanks a little by height: the foot is in the valley's shadow and
+    // the summit catches the light.
+    const lift = 0.82 + up * 0.3;
+    const i3 = index * 3;
+    colours[i3] = scratch.r * lift;
+    colours[i3 + 1] = scratch.g * lift;
+    colours[i3 + 2] = scratch.b * lift;
+  }
+  cone.computeVertexNormals();
+  cone.setAttribute('color', new THREE.BufferAttribute(colours, 3));
+  return cone;
+}
+
+function buildMountainRange(root: THREE.Group, materials: Materials) {
+  const group = new THREE.Group();
+  group.name = 'mountain-range';
+  group.userData.decorative = true;
+
+  const rangeMaterial = material(materials, '#ffffff', {
+    roughness: 1,
+    flatShading: true,
+    vertexColors: true,
+    fog: true,
+  });
+
+  for (const [index, spec] of MOUNTAINS.entries()) {
+    const mountain = new THREE.Mesh(mountainGeometry(spec), rangeMaterial);
+    mountain.name = `mountain-${index}`;
+    // Sink the base well below the horizon ground: the foot has to disappear into
+    // the pasture, or the peak stands on a visible rim.
+    mountain.position.set(spec.x, HORIZON_Y + spec.height / 2 - spec.height * 0.3, spec.z);
+    mountain.castShadow = false;
+    mountain.receiveShadow = false;
+    group.add(mountain);
+  }
+  root.add(group);
+}
+
+/* ============================================================= mesa buttes */
+
+/**
+ * The pink rock buttes on the left and right of the reference.
+ *
+ * Flat-topped columns with a talus skirt: the silhouette is a mesa, not a hill.
+ * They sit outside the playfield, where the far treeline has already thinned, so
+ * they read as the same countryside continuing rather than as scenery.
+ */
+const MESA_BUTTES: { x: number; z: number; radius: number; height: number; colour: string }[] = [
+  { x: -980, z: -560, radius: 200, height: 120, colour: '#c08a86' },
+  { x: -1140, z: -230, radius: 140, height: 88, colour: '#c9928c' },
+  { x: 1040, z: -620, radius: 215, height: 130, colour: '#bd8884' },
+  { x: 1210, z: -300, radius: 150, height: 95, colour: '#c79287' },
+  { x: 950, z: 430, radius: 170, height: 100, colour: '#c59489' },
+];
+
+function buildMesaButtes(root: THREE.Group, materials: Materials) {
+  const group = new THREE.Group();
+  group.name = 'mesa-buttes';
+  group.userData.decorative = true;
+
+  const capMaterial = material(materials, '#cf9b92', { roughness: 1, flatShading: true });
+  for (const [index, spec] of MESA_BUTTES.entries()) {
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(spec.radius * 0.72, spec.radius, spec.height, 9, 1),
+      material(materials, spec.colour, { roughness: 1, flatShading: true }),
+    );
+    body.position.set(spec.x, HORIZON_Y + spec.height / 2 - 30, spec.z);
+    body.name = `mesa-${index}`;
+    group.add(body);
+
+    // A slightly wider slab on top: the flat cap is what makes it a mesa.
+    const cap = new THREE.Mesh(
+      new THREE.CylinderGeometry(spec.radius * 0.78, spec.radius * 0.74, spec.height * 0.09, 9, 1),
+      capMaterial,
+    );
+    cap.position.set(spec.x, HORIZON_Y + spec.height - 30 + spec.height * 0.04, spec.z);
+    group.add(cap);
+
+    // Talus: a low cone of scree at the foot, so the column does not look cut off.
+    const skirt = new THREE.Mesh(
+      new THREE.ConeGeometry(spec.radius * 1.35, spec.height * 0.16, 9, 1),
+      material(materials, '#b98079', { roughness: 1, flatShading: true }),
+    );
+    skirt.position.set(spec.x, HORIZON_Y - 30 + spec.height * 0.08, spec.z);
+    group.add(skirt);
+  }
+  root.add(group);
+}
+
 /* =============================================================== clouds */
 
 function buildClouds(
@@ -2279,7 +2532,7 @@ export function horizonGroundOffset(x: number, z: number): number {
     if (d2 > 1) continue;
     swell += ridge.height * Math.pow(1 - d2, 1.5);
   }
-  const lean = Math.pow(Math.min(1, distance / HORIZON_RADIUS), 1.7) * 14;
+  const lean = Math.pow(Math.min(1, distance / HORIZON_RADIUS), 2.2) * 6;
   const falloff = Math.max(0, distance / HORIZON_RADIUS - 0.88);
   return ramp * (swell + lean) - falloff * falloff * HORIZON_RADIUS * 0.9;
 }
@@ -2293,8 +2546,14 @@ export function horizonGroundOffset(x: number, z: number): number {
  */
 export const HORIZON_INNER = 330;
 
-/** Rest height of the horizon land mesh. */
-export const HORIZON_Y = -26;
+/**
+ * Rest height of the horizon land mesh.
+ *
+ * Slightly *below* the playfield's own zero plane, not far below it: the island
+ * used to float here, and with the island gone the backdrop is the same
+ * continuous ground, so it has to meet the playfield instead of ducking under it.
+ */
+export const HORIZON_Y = -0.6;
 
 /**
  * Aerial-perspective range for the backdrop, in world units from the eye.
@@ -2304,13 +2563,13 @@ export const HORIZON_Y = -26;
  * erased the hills into the haze. Anything mentioning `THREE.Fog` for this scene
  * reads these numbers.
  */
-export const HORIZON_FOG = { near: 1080, far: 2300, colour: '#e4ebe2' } as const;
+export const HORIZON_FOG = { near: 1700, far: 6400, colour: '#cfe4f2' } as const;
 
 /** Far plane the orbit camera needs to reach the outermost ridge. */
-export const HORIZON_FAR_PLANE = 5600;
+export const HORIZON_FAR_PLANE = 9000;
 
 /** Flat green of the horizon saucer the hills stand on. */
-export const HORIZON_GROUND_COLOR = '#a9c489';
+export const HORIZON_GROUND_COLOR = '#9ed06f';
 
 /**
  * Hill tint per band, near to far. Exported so the aerial-perspective test can
@@ -2318,10 +2577,10 @@ export const HORIZON_GROUND_COLOR = '#a9c489';
  * drift back to hill-green-on-ground-green (which erased the hills).
  */
 export const HILL_COLORS = {
-  near: '#6d9a4b',
-  mid: '#82ab5d',
-  far: '#8bb268',
-  horizon: '#9fbf7d',
+  near: '#5c9a3c',
+  mid: '#6ba847',
+  far: '#7bb556',
+  horizon: '#8cc168',
 } as const;
 
 /**
@@ -2335,19 +2594,15 @@ export const HILL_COLORS = {
  * to them than the map itself.
  */
 export const HILL_RINGS = [
-  // The bridge band: low, wide, and the only one whose silhouette is mostly
-  // hidden behind the map at the default camera. It exists to stop the eye
-  // reading a bare plane between the slab and the first real ridge.
-  { radiusX: 540, radiusZ: 594, count: 40, minHeight: 22, maxHeight: 30, minWidth: 34, maxWidth: 46, stretch: [1.4, 1.9], materialKey: 'near' as const, seed: 12 },
-  // Four bands, inner to outer. Every band's *inner* reach must clear the camera
-  // orbit: a ridge nearer than the eye swallows a third of the frame, which is
-  // exactly what happened when the first band sat at 430 with a 500-unit orbit.
-  // `stretch` hides the extra distance: a 2:1 ridge is twice as wide along its
-  // own axis for the same peak height, so the backdrop still reads as big hills.
-  { radiusX: 620, radiusZ: 682, count: 46, minHeight: 62, maxHeight: 84, minWidth: 78, maxWidth: 112, stretch: [1.4, 2.0], materialKey: 'near' as const, seed: 3 },
-  { radiusX: 780, radiusZ: 858, count: 42, minHeight: 76, maxHeight: 100, minWidth: 92, maxWidth: 132, stretch: [1.5, 2.2], materialKey: 'mid' as const, seed: 21 },
-  { radiusX: 970, radiusZ: 1067, count: 36, minHeight: 104, maxHeight: 134, minWidth: 110, maxWidth: 158, stretch: [1.6, 2.3], materialKey: 'far' as const, seed: 47 },
-  { radiusX: 1180, radiusZ: 1298, count: 30, minHeight: 136, maxHeight: 176, minWidth: 132, maxWidth: 186, stretch: [1.6, 2.4], materialKey: 'horizon' as const, seed: 68 },
+  // Low pasture swells, not domes. The old rings had 60-176 unit radii on hills
+  // only 20 units tall, so each one was a wide flat pancake with a hard crease -
+  // from above that reads as a torn green sheet, which is exactly what the first
+  // daylight renders showed. Radius and height are now kept in proportion.
+  { radiusX: 470, radiusZ: 517, count: 54, minHeight: 13, maxHeight: 19, minWidth: 16, maxWidth: 24, stretch: [1.7, 2.1], materialKey: 'near' as const, seed: 12 },
+  { radiusX: 610, radiusZ: 671, count: 50, minHeight: 20, maxHeight: 30, minWidth: 24, maxWidth: 36, stretch: [1.6, 2.0], materialKey: 'near' as const, seed: 3 },
+  { radiusX: 800, radiusZ: 880, count: 44, minHeight: 26, maxHeight: 40, minWidth: 28, maxWidth: 42, stretch: [1.7, 2.1], materialKey: 'mid' as const, seed: 21 },
+  { radiusX: 1050, radiusZ: 1155, count: 36, minHeight: 34, maxHeight: 52, minWidth: 31, maxWidth: 47, stretch: [1.8, 2.2], materialKey: 'far' as const, seed: 47 },
+  { radiusX: 1350, radiusZ: 1485, count: 30, minHeight: 42, maxHeight: 66, minWidth: 35, maxWidth: 54, stretch: [1.9, 2.3], materialKey: 'horizon' as const, seed: 68 },
 ] as const;
 
 /**
@@ -2380,20 +2635,21 @@ export const HORIZON_RADIUS = (() => {
  * happened when the ring sat at 168-470 while the default camera stood at 490.
  */
 export const RIDGE_SWELLS = [
-  // The apron's gentle pasture rolling.
-  { x: -480, z: -150, rx: 260, rz: 210, height: 34 },
-  { x: -250, z: 430, rx: 250, rz: 205, height: 30 },
-  { x: 100, z: 600, rx: 275, rz: 195, height: 38 },
-  { x: 455, z: 360, rx: 265, rz: 215, height: 36 },
-  { x: 600, z: -145, rx: 265, rz: 225, height: 42 },
-  { x: 330, z: -555, rx: 260, rz: 205, height: 34 },
-  { x: -230, z: -610, rx: 265, rz: 205, height: 36 },
-  { x: -590, z: -435, rx: 245, rz: 205, height: 32 },
-  { x: -25, z: -780, rx: 300, rz: 185, height: 38 },
-  { x: -800, z: 45, rx: 245, rz: 265, height: 34 },
-  { x: 800, z: 45, rx: 245, rz: 265, height: 36 },
-  { x: -640, z: 500, rx: 230, rz: 205, height: 30 },
-  { x: 670, z: 580, rx: 235, rz: 205, height: 33 },
+  // Gentle pasture rolling, a few metres high: enough that the land is not a
+  // billiard table, low enough that the mountain range owns the skyline.
+  { x: -520, z: -160, rx: 280, rz: 230, height: 7 },
+  { x: -270, z: 470, rx: 270, rz: 220, height: 6 },
+  { x: 110, z: 650, rx: 295, rz: 210, height: 8 },
+  { x: 490, z: 390, rx: 285, rz: 230, height: 7 },
+  { x: 650, z: -155, rx: 285, rz: 240, height: 9 },
+  { x: 355, z: -600, rx: 280, rz: 220, height: 7 },
+  { x: -250, z: -660, rx: 285, rz: 220, height: 8 },
+  { x: -640, z: -470, rx: 265, rz: 220, height: 7 },
+  { x: -27, z: -840, rx: 320, rz: 200, height: 8 },
+  { x: -860, z: 50, rx: 265, rz: 285, height: 7 },
+  { x: 860, z: 50, rx: 265, rz: 285, height: 8 },
+  { x: -690, z: 540, rx: 250, rz: 220, height: 6 },
+  { x: 720, z: 620, rx: 255, rz: 220, height: 7 },
 ] as const;
 
 /**
@@ -2507,55 +2763,9 @@ function buildDistantHills(
    * (the offline painter) discards every one of them - the ground vanishes and
    * the hills appear to float. Small tiles also let the falloff be smooth.
    */
-  const TILES = 130;
-  const groundGeometry = new THREE.PlaneGeometry(
-    HORIZON_RADIUS * 2,
-    HORIZON_RADIUS * 2,
-    TILES,
-    TILES,
-  );
-  groundGeometry.rotateX(-Math.PI / 2);
-  const groundPosition = groundGeometry.attributes.position as THREE.BufferAttribute;
-  const groundColors = new Float32Array(groundPosition.count * 3);
-  const baseColour = new THREE.Color(HORIZON_GROUND_COLOR);
-  const nearColour = new THREE.Color('#b2cd90');
-  const farColour = new THREE.Color('#bdd2a0');
-  const scratchColour = new THREE.Color();
-  for (let index = 0; index < groundPosition.count; index += 1) {
-    const x = groundPosition.getX(index);
-    const z = groundPosition.getZ(index);
-    const radius = Math.hypot(x, z);
-    if (radius > HORIZON_RADIUS) {
-      // Clip the square grid back to a disc by collapsing the outside ring down
-      // to a point; the far hills and the fog hide the seam.
-      groundPosition.setX(index, (x / radius) * HORIZON_RADIUS);
-      groundPosition.setZ(index, (z / radius) * HORIZON_RADIUS);
-    }
-    groundPosition.setY(index, horizonGroundOffset(x, z));
-    // Warmer, lighter green further out: aerial perspective on the land itself,
-    // so the backdrop has depth instead of one flat page of colour.
-    const fade = THREE.MathUtils.clamp((radius / HORIZON_RADIUS - 0.3) / 0.7, 0, 1);
-    scratchColour.copy(baseColour).lerp(nearColour, Math.min(1, fade * 2));
-    scratchColour.lerp(farColour, Math.max(0, fade - 0.5) * 1.6);
-    const i3 = index * 3;
-    groundColors[i3] = scratchColour.r;
-    groundColors[i3 + 1] = scratchColour.g;
-    groundColors[i3 + 2] = scratchColour.b;
-  }
-  groundGeometry.computeVertexNormals();
-  groundGeometry.setAttribute('color', new THREE.BufferAttribute(groundColors, 3));
-  const groundMaterial = new THREE.MeshStandardMaterial({
-    color: '#ffffff',
-    vertexColors: true,
-    roughness: 1,
-    flatShading: false,
-  });
-  const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-  ground.position.set(0, HORIZON_Y, 0);
-  ground.castShadow = false;
-  ground.receiveShadow = false;
-  ground.name = 'hill-ground';
-  group.add(ground);
+  // NO second ground plate here any more. The playfield terrain is already one
+  // disc that runs out to `HORIZON_RADIUS` and follows these same swells, so a
+  // plate under it would only z-fight with it and re-introduce the edge.
 
   /*
    * Scattered trees on the near swells, in three instanced draws.
@@ -2568,27 +2778,29 @@ function buildDistantHills(
   const trunkMaterial = new THREE.MeshStandardMaterial({ color: '#6b4b30', roughness: 1, flatShading: true });
   const leafMaterial = new THREE.MeshStandardMaterial({ color: '#3f7043', roughness: 1, flatShading: true });
   const pineMaterial = new THREE.MeshStandardMaterial({ color: '#39634a', roughness: 1, flatShading: true });
-  const MAX_TREES = 640;
+  // Five times as many, and they start right behind the playfield's treeline: the
+  // middle distance was a bare green ring, which is what made the valley look
+  // like a clearing in a lawn rather than a farm in a forested valley.
+  const MAX_TREES = 3000;
   const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.28, 0.42, 3.0, 5), trunkMaterial, MAX_TREES);
   const canopies = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.2, 0), leafMaterial, MAX_TREES);
   const pines = new THREE.InstancedMesh(new THREE.ConeGeometry(2.0, 5.2, 6), pineMaterial, MAX_TREES);
   let trunkCount = 0;
   let canopyCount = 0;
   let pineCount = 0;
-  for (let attempt = 0; attempt < 3400 && trunkCount < MAX_TREES; attempt += 1) {
+  for (let attempt = 0; attempt < 26000 && trunkCount < MAX_TREES; attempt += 1) {
     const angle = treeRng() * Math.PI * 2;
-    // Square-root radial sampling: uniform over the ring's area, no clumping at
-    // the inner edge. The band starts where the hills do - a treeline on the
-    // slab's doorstep would read as part of the playable map.
-    const radius = Math.sqrt(treeRng()) * 0.5 + 0.5;
+    // Square-root radial sampling from just outside the playfield to the hills.
+    const radius = 0.22 + Math.sqrt(treeRng()) * 0.78;
     const x = Math.cos(angle) * radius * HORIZON_RADIUS;
     const z = Math.sin(angle) * radius * HORIZON_RADIUS;
-    // Keep the trees off the slab's immediate horizon so nothing pokes into the
-    // playable silhouette.
-    if (Math.abs(x) < DIORAMA_HALF.x + 220 && Math.abs(z) < DIORAMA_HALF.z + 220) continue;
-    // Thin them out with distance: far trees would be sub-pixel noise.
+    // Keep the immediate playfield clear so nothing pokes into the diorama's own
+    // silhouette; beyond that the belt thickens.
+    if (Math.abs(x) < DIORAMA_HALF.x + 70 && Math.abs(z) < DIORAMA_HALF.z + 70) continue;
     const distance = radius;
-    if (treeRng() > 1.15 - distance * 0.35) continue;
+    // Thin only the very far field: the near and middle belts are the ones the
+    // eye reads as forest.
+    if (treeRng() > 1.5 - distance * 0.45) continue;
     const y = HORIZON_Y + horizonGroundOffset(x, z);
     const scale = 0.85 + treeRng() * 0.75;
     dummy.position.set(x, y + 1.5 * scale, z);
@@ -2950,11 +3162,11 @@ function buildRimForest(
 
   for (let attempt = 0; attempt < count * 6 && trunkCount < count; attempt += 1) {
     const angle = rng() * Math.PI * 2;
-    // Between 0.78 and 0.96 of the coast: inside the rim, never off the edge.
-    const spread = 0.78 + rng() * 0.18;
-    const radius = islandRadiusAt(angle) * spread;
-    const x = Math.cos(angle) * ISLAND_RADIUS.x * radius;
-    const z = Math.sin(angle) * ISLAND_RADIUS.z * radius;
+    // A belt just outside the playfield: the valley has to be wrapped in trees on
+    // all four sides, which is what gives the reference its sense of enclosure.
+    const spread = 1.02 + rng() * 0.34;
+    const x = Math.cos(angle) * ISLAND_RADIUS.x * spread;
+    const z = Math.sin(angle) * ISLAND_RADIUS.z * spread;
     if (Math.abs(x) < 9 && z > -150) continue;
     if (ARENA_CLEAR.some(([ax, az, ar]) => Math.hypot(x - ax, z - az) < ar + 5)) continue;
     if (BUILDING_CLEAR.some(([bx, bz, br]) => Math.hypot(x - bx, z - bz) < br + 3)) continue;
@@ -3005,347 +3217,6 @@ function buildRimForest(
   root.add(group);
 }
 
-/* ============================================================= island cliff */
-
-/**
- * The cliff under the island.
- *
- * The old base was a rounded rectangle extruded straight down: four walls and a
- * cap, which is why the map read as a slab on a table. The reference is a floating
- * island, so the rock has to do three things a box cannot: follow the wobbling
- * coast, fire out in buttresses, and be built out of strata you can count.
- *
- * It is built as a ring of columns, each one sampled from the same
- * `islandRadiusAt` curve the terrain uses, then pushed out and pulled in by
- * per-column noise. The band between two strata is coloured separately so the
- * ledges read as bedding planes instead of a single muddy wall.
- */
-
-/** Strata from the rim down to the keel. `out` is the bulge at that depth. */
-const CLIFF_STRATA: { y: number; out: number; colour: string }[] = [
-  { y: -1.4, out: 1.0, colour: '#6f8b45' },
-  { y: -2.4, out: 1.0, colour: '#7f7350' },
-  { y: -5.0, out: 1.04, colour: '#9c8560' },
-  { y: -8.4, out: 1.09, colour: '#8b7355' },
-  { y: -12.4, out: 1.05, colour: '#77624a' },
-  { y: -17.2, out: 0.93, colour: '#64513d' },
-  { y: -23.0, out: 0.74, colour: '#554435' },
-  { y: -29.4, out: 0.5, colour: '#4a3b2f' },
-  { y: -34.4, out: 0.26, colour: '#40332a' },
-];
-
-const CLIFF_SEGMENTS = 132;
-
-function buildIslandCliff(root: THREE.Group, materials: Materials) {
-  const group = new THREE.Group();
-  group.name = 'island-cliff';
-
-  const positions: number[] = [];
-  const colors: number[] = [];
-  const indices: number[] = [];
-  const scratch = new THREE.Color();
-
-  /** Point on the coast at `angle`, pushed out by the strata bulge. */
-  const coast = (angle: number, bulge: number): [number, number] => {
-    const radius = islandRadiusAt(angle);
-    return [
-      Math.cos(angle) * ISLAND_RADIUS.x * radius * bulge,
-      Math.sin(angle) * ISLAND_RADIUS.z * radius * bulge,
-    ];
-  };
-
-  for (let segment = 0; segment < CLIFF_SEGMENTS; segment += 1) {
-    const angleA = (segment / CLIFF_SEGMENTS) * Math.PI * 2;
-    const angleB = ((segment + 1) / CLIFF_SEGMENTS) * Math.PI * 2;
-    // Buttresses: columns share a wobble that drifts slowly round the coast, so
-    // neighbouring columns bulge together into one rock spur, not a sawtooth.
-    const spurA = 1 + Math.sin(angleA * 9 + 1.3) * 0.035 + (hash2(segment, 3) - 0.5) * 0.02;
-    const spurB = 1 + Math.sin(angleB * 9 + 1.3) * 0.035 + (hash2(segment + 1, 3) - 0.5) * 0.02;
-
-    for (let layer = 0; layer < CLIFF_STRATA.length - 1; layer += 1) {
-      const top = CLIFF_STRATA[layer]!;
-      const bottom = CLIFF_STRATA[layer + 1]!;
-      // The lip of the cliff follows the real ground; everything below it is rock.
-      const topY = layer === 0 ? ISLAND_EDGE_Y + 0.9 : top.y;
-      const [ax, az] = coast(angleA, top.out * spurA);
-      const [bx, bz] = coast(angleB, top.out * spurB);
-      const [cx, cz] = coast(angleA, bottom.out * spurA);
-      const [dx, dz] = coast(angleB, bottom.out * spurB);
-      const base = positions.length / 3;
-      positions.push(ax, topY, az, bx, topY, bz, cx, bottom.y, cz, dx, bottom.y, dz);
-
-      // Grass overhangs the lip, then the rock darkens with depth: three tones per
-      // band keeps the ledges legible without needing a texture.
-      scratch.set(top.colour);
-      const topTone = [scratch.r, scratch.g, scratch.b];
-      scratch.set(bottom.colour);
-      const bottomTone = [scratch.r, scratch.g, scratch.b];
-      colors.push(...topTone, ...topTone, ...bottomTone, ...bottomTone);
-      // Winding: the outside of the island must face out.
-      indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
-    }
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  const cliff = new THREE.Mesh(
-    geometry,
-    material(materials, '#ffffff', {
-      vertexColors: true,
-      roughness: 1,
-      flatShading: true,
-      side: THREE.DoubleSide,
-    }),
-  );
-  cliff.receiveShadow = true;
-  cliff.name = 'island-cliff';
-  group.add(cliff);
-
-  // Loose boulders lodged in the shore, half-buried.
-  const rockMaterial = material(materials, '#8a7a62', { flatShading: true, roughness: 1 });
-  const mossMaterial = material(materials, '#6f8b45', { flatShading: true, roughness: 1 });
-  for (let index = 0; index < 54; index += 1) {
-    const angle = (index / 54) * Math.PI * 2 + hash2(index, 1) * 0.12;
-    const depth = -1.2 - hash2(index, 8) * 12;
-    const [x, z] = coast(angle, 1.02 + hash2(index, 4) * 0.06);
-    const size = 0.7 + hash2(index, 6) * 1.5;
-    const rock = addMesh(
-      group,
-      new THREE.DodecahedronGeometry(size, 0),
-      hash2(index, 12) > 0.72 ? mossMaterial : rockMaterial,
-      [x, depth, z],
-    );
-    rock.scale.set(1.35, 0.8 + hash2(index, 9) * 0.6, 1.35);
-    rock.rotation.set(hash2(index, 3) * 3, hash2(index, 5) * 3, hash2(index, 7) * 3);
-    rock.castShadow = false;
-  }
-
-  // Strata ledges: thin shelves sticking out at each bedding plane, which is what
-  // makes a cliff read as rock rather than as a painted wall.
-  for (let layer = 1; layer < CLIFF_STRATA.length - 2; layer += 1) {
-    const stratum = CLIFF_STRATA[layer]!;
-    const ledgePoints: number[] = [];
-    const ledgeIndices: number[] = [];
-    for (let segment = 0; segment < CLIFF_SEGMENTS; segment += 1) {
-      const angle = (segment / CLIFF_SEGMENTS) * Math.PI * 2;
-      const spur = 1 + Math.sin(angle * 9 + 1.3) * 0.035;
-      const [innerX, innerZ] = coast(angle, stratum.out * spur);
-      const [outerX, outerZ] = coast(angle, stratum.out * spur * 1.045);
-      ledgePoints.push(innerX, stratum.y + 0.5, innerZ, outerX, stratum.y, outerZ);
-    }
-    for (let segment = 0; segment < CLIFF_SEGMENTS; segment += 1) {
-      const nextIndex = (segment + 1) % CLIFF_SEGMENTS;
-      const a = segment * 2;
-      const b = nextIndex * 2;
-      ledgeIndices.push(a, b, a + 1, a + 1, b, b + 1);
-    }
-    const ledgeGeometry = new THREE.BufferGeometry();
-    ledgeGeometry.setAttribute('position', new THREE.Float32BufferAttribute(ledgePoints, 3));
-    ledgeGeometry.setIndex(ledgeIndices);
-    ledgeGeometry.computeVertexNormals();
-    group.add(
-      new THREE.Mesh(
-        ledgeGeometry,
-        material(materials, stratum.colour, { roughness: 1, flatShading: true, side: THREE.DoubleSide }),
-      ),
-    );
-  }
-
-  // Keel cap: a cone of dark rock under the deepest ring.
-  const keelRadius = ISLAND_RADIUS.x * islandRadiusAt(0) * CLIFF_STRATA[CLIFF_STRATA.length - 1]!.out;
-  // Shallower and fatter than a true keel: the island hangs in the frame, it does
-  // not funnel to a needle. A long cone just reads as a dark smear under the fog.
-  const keel = addMesh(
-    group,
-    new THREE.ConeGeometry(keelRadius * 1.04, 11, CLIFF_SEGMENTS, 1, true),
-    material(materials, '#4a3a2c', { roughness: 1, flatShading: true, side: THREE.DoubleSide }),
-    [0, CLIFF_STRATA[CLIFF_STRATA.length - 1]!.y - 4.4, 0],
-  );
-  keel.rotation.x = Math.PI;
-  keel.scale.set(1, 1, ISLAND_RADIUS.z / ISLAND_RADIUS.x);
-  keel.name = 'island-keel';
-
-  root.add(group);
-  return group;
-}
-
-/* ============================================================ island mist */
-
-/**
- * The cloud sea the island floats on. It is a stack of soft discs just under the
- * keel with additive-ish white, so the island reads as suspended rather than
- * chopped off at the bottom of the frame.
- */
-/**
- * The cloud sea under the island.
- *
- * Three attempts at geometry here were all wrong in the same way: a slab or a ring
- * of puffs is an object, and an object under a floating island reads as a white
- * plate or a snow bank. What actually sells the drop is the *sky* under the rock,
- * so the only thing built here is a soft gradient pane, far below and behind, that
- * fades out completely before its own edges - and the scene fog does the rest.
- */
-function buildIslandMist(root: THREE.Group, animated: ((elapsed: number) => void)[]) {
-  const group = new THREE.Group();
-  group.name = 'island-mist';
-
-  const geometry = new THREE.PlaneGeometry(1100, 1100, 1, 1);
-  const material = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    fog: false,
-    uniforms: {
-      uTime: { value: 0 },
-    },
-    vertexShader: `
-      varying vec2 vUv;
-      void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      varying vec2 vUv;
-      uniform float uTime;
-      void main() {
-        // Radial falloff, so the pane has no edge to see.
-        float d = length(vUv - 0.5) * 2.0;
-        float core = smoothstep(1.0, 0.15, d);
-        // Slow drift, so the cloud sea is not a painted backdrop.
-        float bands = 0.85 + 0.15 * sin(vUv.x * 9.0 + uTime * 0.15)
-                           * cos(vUv.y * 7.0 - uTime * 0.11);
-        float alpha = core * core * 0.55 * bands;
-        gl_FragColor = vec4(vec3(0.94, 0.97, 1.0), alpha);
-      }
-    `,
-  });
-  const sheet = new THREE.Mesh(geometry, material);
-  sheet.rotation.x = -Math.PI / 2;
-  sheet.position.y = -34;
-  sheet.renderOrder = -3;
-  group.add(sheet);
-  animated.push((elapsed) => {
-    material.uniforms.uTime!.value = elapsed;
-    sheet.position.y = -34 + Math.sin(elapsed * 0.2) * 0.6;
-  });
-  root.add(group);
-}
-
-/* ============================================================== waterfalls */
-
-/**
- * Water leaving the island.
- *
- * Three falls on the long sides, placed on the coast the terrain actually has, and
- * each one starts at a notch cut into the rim: a fall that begins mid-slope reads
- * as a blue ribbon pasted on the grass.
- */
-const WATERFALLS: { angle: number; width: number; length: number }[] = [
-  // Nothing within ~25 degrees of +Z: that is the spawn, and a fall there buries
-  // the gate in white geometry.
-  { angle: Math.PI * 0.16, width: 5.5, length: 20 },
-  { angle: Math.PI * 0.84, width: 4.5, length: 17 },
-  { angle: Math.PI * 1.34, width: 6, length: 21 },
-  { angle: Math.PI * 1.62, width: 4.8, length: 18 },
-];
-
-function buildWaterfalls(
-  root: THREE.Group,
-  materials: Materials,
-  heightAt: (x: number, z: number) => number,
-  animated: ((elapsed: number) => void)[],
-) {
-  const group = new THREE.Group();
-  group.name = 'island-waterfalls';
-  const sheets: THREE.Mesh[] = [];
-  const waterColour = '#dbeefb';
-  for (const [index, fall] of WATERFALLS.entries()) {
-    const radius = islandRadiusAt(fall.angle);
-    const dirX = Math.cos(fall.angle);
-    const dirZ = Math.sin(fall.angle);
-    const x = dirX * ISLAND_RADIUS.x * radius * 0.97;
-    const z = dirZ * ISLAND_RADIUS.z * radius * 0.97;
-    const surfaceY = heightAt(x * 0.96, z * 0.96) + 0.2;
-    const yaw = -fall.angle + Math.PI / 2;
-
-    // A fall is a sheet with a body, so it is a box: a paper-thin plane vanished
-    // edge-on and read as two stray rectangles from below.
-    const sheet = new THREE.Mesh(
-      new THREE.BoxGeometry(fall.width, fall.length, 0.45, 2, 6, 1),
-      material(materials, waterColour, {
-        roughness: 0.22,
-        metalness: 0,
-        transparent: true,
-        opacity: 0.62,
-        emissive: new THREE.Color('#8ed2f0'),
-        emissiveIntensity: 0.3,
-      }),
-    );
-    sheet.position.set(x + dirX * 3.4, surfaceY - fall.length / 2 + 0.6, z + dirZ * 3.4);
-    sheet.rotation.y = yaw;
-    // Lean the curtain out from the cliff face as it drops.
-    sheet.rotation.x = -0.045;
-    sheet.name = `waterfall-${index}`;
-    group.add(sheet);
-    sheets.push(sheet);
-
-    // The lip: a stone notch and a white sill, so the water starts somewhere.
-    // A notch cut into the lip, then a thin white sill: the fall leaves a channel,
-    // it does not pour over a white box.
-    const lip = addMesh(
-      group,
-      new THREE.BoxGeometry(fall.width * 1.1, 0.8, 1.6),
-      material(materials, '#8d7a5f', { roughness: 1, flatShading: true }),
-      [x + dirX * 0.6, surfaceY - 0.45, z + dirZ * 0.6],
-    );
-    lip.rotation.y = yaw;
-    const sill = addMesh(
-      group,
-      new THREE.BoxGeometry(fall.width * 0.9, 0.22, 1.2),
-      material(materials, '#f2fbff', { roughness: 0.4, emissive: new THREE.Color('#ffffff'), emissiveIntensity: 0.25 }),
-      [x + dirX * 0.5, surfaceY + 0.1, z + dirZ * 0.5],
-    );
-    sill.rotation.y = yaw;
-
-    // Spray where it leaves the rock: three soft puffs that grow and fade.
-    for (let puffIndex = 0; puffIndex < 3; puffIndex += 1) {
-      const puff = addMesh(
-        group,
-        new THREE.IcosahedronGeometry(1.1 + puffIndex * 0.45, 1),
-        material(materials, '#ffffff', {
-          roughness: 1,
-          transparent: true,
-          opacity: 0.26,
-          depthWrite: false,
-          emissive: new THREE.Color('#ffffff'),
-          emissiveIntensity: 0.3,
-        }),
-        [
-          x + dirX * (2.6 + puffIndex * 0.9),
-          surfaceY - 2.2 - puffIndex * 2.4,
-          z + dirZ * (2.6 + puffIndex * 0.9),
-        ],
-      );
-      puff.castShadow = false;
-      puff.receiveShadow = false;
-      puff.scale.set(1.5, 0.6, 1.5);
-    }
-  }
-  animated.push((elapsed) => {
-    for (const [index, sheet] of sheets.entries()) {
-      const materialRef = sheet.material as THREE.MeshStandardMaterial;
-      // A travelling shimmer: a frozen pane of glass is the giveaway that a fall
-      // is geometry.
-      materialRef.emissiveIntensity = 0.24 + Math.sin(elapsed * 1.8 + index * 1.3) * 0.1;
-    }
-  });
-  root.add(group);
-}
-
 /* ================================================================ scatter */
 
 /** Grass tufts, stones, bushes, hay bales and sunflowers across the map. */
@@ -3376,7 +3247,6 @@ function buildScatter(
   for (let attempt = 0; attempt < 2600; attempt += 1) {
     const x = (rng() - 0.5) * 224;
     const z = (rng() - 0.5) * 268 + 3;
-    if (islandExtent(x, z) > 0.94) continue;
     if (nearArena(x, z) || nearBuilding(x, z)) continue;
     // Keep the main avenue readable.
     if (Math.abs(x) < 5 && z > -150 && z < 150) continue;
