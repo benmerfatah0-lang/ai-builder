@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { BossDef, RegionDef } from '../types';
 
 /**
@@ -21,12 +22,25 @@ const TIER_LABEL: Record<BossDef['tier'], string> = {
 };
 
 export function MapHud({ bosses, regions, selectedBoss, hoveredBoss, onBossSelect, onRegionSelect }: MapHudProps) {
+  // Collapsed by default. On a phone this list, the side panel and the minimap
+  // were fighting over the same bottom half of the screen and the map itself was
+  // mostly hidden; the route is reference material, not something to stare at
+  // while walking, so it opens on demand.
+  const [open, setOpen] = useState(false);
   return (
-    <aside className="map-hud" aria-label="مسار البوسات">
-      <div className="map-hud-head">
-        <p className="map-kicker">خط سير زعتر</p>
-        <h2>خمس بوابات… وخاتمة</h2>
-      </div>
+    <aside className={`map-hud${open ? ' is-open' : ''}`} aria-label="مسار البوسات">
+      <button
+        type="button"
+        className="map-hud-head"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        <span className="map-kicker">خط سير زعتر</span>
+        <h2>
+          خمس بوابات… وخاتمة
+          <span className="map-hud-chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
+        </h2>
+      </button>
       <ol className="map-hud-list">
         {bosses.map((boss, index) => {
           const region = regions.find((entry) => entry.id === boss.regionId);
