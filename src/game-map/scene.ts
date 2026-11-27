@@ -6,6 +6,7 @@ import type {
   BuildingSpec,
   CircleFence,
   FenceRun,
+  FieldKind,
   FieldSpec,
   RegionDef,
   RegionId,
@@ -28,6 +29,7 @@ import {
   isOpenGround,
 } from './layout';
 import type { Rect } from './layout';
+import { getModel, modelPrototype } from './models/pack';
 
 /**
  * Clearance discs used by scatter so props never invade arenas/buildings.
@@ -800,12 +802,106 @@ function seededRng(seed: number) {
   return mulberry32(seed);
 }
 
+/**
+ * Which Quaternius crop stands in for each procedural field, and how tall it
+ * should read in world units.
+ *
+ * The heights are authored, not measured: the models are at arbitrary scales
+ * (a wheat stalk is 0.24 units tall, a corn stalk 1.97) and what matters is how
+ * a mustard-yellow block of corn looks from the air next to a green block of
+ * cabbages, so each one is normalised to the silhouette the old geometry had.
+ */
+const CROP_MODELS: Partial<Record<FieldKind, { model: string; height: number }>> = {
+  // The first-detail variants: 40-130 triangles each. A field is a thousand
+  // plants, so this is the only level where the whole farm still fits in a
+  // phone's frame budget. Second and third detail live in the pack for props.
+  wheat: { model: 'Wheat_4', height: 2.3 },
+  maize: { model: 'Corn_1', height: 4.3 },
+  sunflower: { model: 'Flower_2', height: 3.4 },
+  vine: { model: 'BushBerries_1', height: 2.6 },
+  pumpkin: { model: 'Pumpkin_1', height: 1.1 },
+  vegetable: { model: 'Lettuce_1', height: 1.3 },
+  clover: { model: 'Grass_1', height: 0.55 },
+};
+
+/**
+ * Plant a field from one packed model, instanced.
+ *
+ * An `InstancedMesh` draws every stalk in a single call and the geometry ships
+ * once, so the only per-plant cost at runtime is filling a matrix. That is why
+ * the densest field in the map can now be the one with the most detail: eight
+ * hundred wheat stalks used to be 1,600 instanced primitives of cones and
+ * cylinders, and are now one draw of a real stalk.
+ */
+function buildModelField(
+  root: THREE.Group,
+  field: FieldSpec,
+  model: string,
+  height: number,
+  heightAt: (x: number, z: number) => number,
+  materials: Materials,
+): boolean {
+  const prototype = modelPrototype(model);
+  if (!prototype) return false;
+  const { x, z, w, d } = field;
+  const y = heightAt(x, z);
+  const rng = seededRng(Math.round(x * 13 + z * 7) + 1);
+  const density = field.density ?? (w * d) / 0.62;
+  const rows = Math.max(2, Math.round(Math.sqrt(density * (d / w))));
+  const cols = Math.max(2, Math.round(density / rows));
+  // Real stalks read denser than the cones they replace, so the count drops
+  // with the triangle budget rather than holding the old plant count.
+  const count = Math.min(900, Math.round(rows * cols * 0.55));
+
+  const group = new THREE.Group();
+  group.name = `field-${field.kind}`;
+  const soilGeometry = new THREE.PlaneGeometry(w, d, 1, 1);
+  soilGeometry.rotateX(-Math.PI / 2);
+  const soilMesh = new THREE.Mesh(soilGeometry, material(materials, field.kind === 'maize' || field.kind === 'wheat' ? '#b99a3f' : '#6e8c3c', { roughness: 1 }));
+  soilMesh.position.set(x, y + 0.05, z);
+  soilMesh.receiveShadow = true;
+  group.add(soilMesh);
+
+  const instanced = new THREE.InstancedMesh(prototype.geometry, prototype.material, count);
+  instanced.castShadow = true;
+  instanced.receiveShadow = true;
+  const dummy = new THREE.Object3D();
+  for (let index = 0; index < count; index += 1) {
+    const row = Math.floor(index / cols);
+    const col = index % cols;
+    const px = x - w / 2 + 0.6 + (col / Math.max(1, cols - 1)) * (w - 1.2) + (rng() - 0.5) * 0.5;
+    const pz = z - d / 2 + 0.6 + (row / Math.max(1, rows - 1)) * (d - 1.2) + (rng() - 0.5) * 0.5;
+    const scale = (height / Math.max(0.05, prototypeHeight(model))) * (0.82 + rng() * 0.36);
+    dummy.position.set(px, heightAt(px, pz), pz);
+    dummy.rotation.set(0, rng() * Math.PI * 2, 0);
+    dummy.scale.setScalar(scale);
+    dummy.updateMatrix();
+    instanced.setMatrixAt(index, dummy.matrix);
+  }
+  instanced.instanceMatrix.needsUpdate = true;
+  group.add(instanced);
+  root.add(group);
+  return true;
+}
+
+const prototypeHeights = new Map<string, number>();
+function prototypeHeight(model: string): number {
+  const cached = prototypeHeights.get(model);
+  if (cached !== undefined) return cached;
+  const loaded = getModel(model);
+  const height = loaded?.height ?? 1;
+  prototypeHeights.set(model, height);
+  return height;
+}
+
 function buildField(
   root: THREE.Group,
   materials: Materials,
   field: FieldSpec,
   heightAt: (x: number, z: number) => number,
 ) {
+  const replacement = CROP_MODELS[field.kind];
+  if (replacement && buildModelField(root, field, replacement.model, replacement.height, heightAt, materials)) return;
   const group = new THREE.Group();
   const { x, z, w, d } = field;
   const halfW = w / 2;
@@ -1142,12 +1238,69 @@ function buildCircleFence(
   root.add(group);
 }
 
+/**
+ * Forests drawn from the packed models instead of cones and icosahedra.
+ *
+ * Each species is one `InstancedMesh`, so a five-thousand-tree wood is three
+ * draw calls. The old version stacked five meshes per zone (trunk, two leaf
+ * blobs, pine cone, cone again) and needed a per-species material set; the pack
+ * already carries the colours on the vertices.
+ */
+const TREE_SPECIES = ['Tree1', 'Tree2', 'Tree3'] as const;
+
+function buildModelTreeZone(
+  root: THREE.Group,
+  zone: TreeZone,
+  heightAt: (x: number, z: number) => number,
+): boolean {
+  const prototypes = TREE_SPECIES.map((name) => ({ name, ...(modelPrototype(name) ?? {}) }));
+  if (prototypes.some((prototype) => !prototype.geometry)) return false;
+  const heights = TREE_SPECIES.map((name) => getModel(name)?.height ?? 1);
+  const rng = seededRng(zone.seed * 977 + 13);
+  const buckets: THREE.Matrix4[][] = TREE_SPECIES.map(() => []);
+  const dummy = new THREE.Object3D();
+  const pines = zone.mix === 'pine';
+  const birches = zone.mix === 'birch';
+  for (let index = 0; index < zone.count; index += 1) {
+    const px = zone.x + (rng() - 0.5) * zone.w;
+    const pz = zone.z + (rng() - 0.5) * zone.d;
+    const py = heightAt(px, pz);
+    // Pines use the conifer of the three, broadleaf and birch pick between the
+    // rounder two; the choice is deterministic from the zone's own seed.
+    const species = pines ? 2 : birches ? (rng() < 0.5 ? 0 : 1) : rng() < 0.45 ? 2 : rng() < 0.6 ? 0 : 1;
+    const target = (pines ? 11 : 9) * (0.82 + rng() * 0.5);
+    const scale = target / heights[species]!;
+    dummy.position.set(px, py, pz);
+    dummy.rotation.set(0, rng() * Math.PI * 2, 0);
+    dummy.scale.setScalar(scale);
+    dummy.updateMatrix();
+    buckets[species]!.push(dummy.matrix.clone());
+  }
+  const group = new THREE.Group();
+  group.name = `trees-${zone.id ?? 'zone'}`;
+  TREE_SPECIES.forEach((name, species) => {
+    const matrices = buckets[species]!;
+    if (!matrices.length) return;
+    const prototype = modelPrototype(name);
+    if (!prototype) return;
+    const instanced = new THREE.InstancedMesh(prototype.geometry, prototype.material, matrices.length);
+    matrices.forEach((matrix, index) => instanced.setMatrixAt(index, matrix));
+    instanced.instanceMatrix.needsUpdate = true;
+    instanced.castShadow = true;
+    instanced.receiveShadow = true;
+    group.add(instanced);
+  });
+  root.add(group);
+  return true;
+}
+
 function buildTreeZone(
   root: THREE.Group,
   materials: Materials,
   zone: TreeZone,
   heightAt: (x: number, z: number) => number,
 ) {
+  if (buildModelTreeZone(root, zone, heightAt)) return;
   const rng = seededRng(zone.seed * 977 + 13);
   const group = new THREE.Group();
   // `zone.x/z/w/d` arrive already scaled; the geometry below is authored at the
@@ -1615,6 +1768,66 @@ const BUILDING_KITS: Record<BuildingKind, BuildingKit> = {
   scarecrowShed: { wall: PALETTE.wallClay, roof: PALETTE.roofThatch, trim: PALETTE.woodDark, accent: PALETTE.hay, width: 3, depth: 2.4, wallHeight: 1.8, roofHeight: 1.2, roofStyle: 'gable' },
 };
 
+/**
+ * Which Quaternius building stands in for each procedural kind.
+ *
+ * Kinds with no replacement keep their hand-built geometry: a silo, a windmill
+ * and a hen palace are bespoke silhouettes that no pack here has, and swapping
+ * them for a cottage would lose the thing that makes the homestead read as a
+ * working farm. `height` is the authored world height the model is normalised
+ * to, chosen so a barn still overhangs its neighbours the way it did before.
+ */
+const BUILDING_MODELS: Partial<Record<BuildingKind, { model: string; height: number }>> = {
+  // Heights are authored world units, picked against two references: the fox the
+  // player drives (about 2.7 tall) and a real farmhouse. The first pass normalised
+  // the models to the *procedural* kits' heights, which were themselves authored
+  // for a much smaller map, and the whole homestead came out doll-sized.
+  farmhouse: { model: 'House_1', height: 11.5 },
+  barn: { model: 'House_2', height: 14.0 },
+  stable: { model: 'Stable', height: 9.5 },
+  shed: { model: 'House_3', height: 6.5 },
+  market: { model: 'MarketStand_1', height: 6.2 },
+  well: { model: 'Well', height: 5.6 },
+  sheepShelter: { model: 'Stable', height: 6.0 },
+  dogHouse: { model: 'House_3', height: 5.4 },
+  duckHouse: { model: 'House_3', height: 4.2 },
+  nursery: { model: 'House_3', height: 5.2 },
+  threshingGranary: { model: 'Stable', height: 10.5 },
+  scarecrowShed: { model: 'House_3', height: 5.0 },
+  gatehouse: { model: 'House_2', height: 10.0 },
+  silo: { model: 'Mill', height: 15.0 },
+  windmill: { model: 'Mill', height: 16.0 },
+  tower: { model: 'House_1', height: 13.0 },
+  henPalace: { model: 'House_2', height: 12.5 },
+};
+
+/**
+ * Places a packed model where a procedural building would have stood.
+ *
+ * The model is normalised by height rather than by its own units, so the
+ * authored `scale` on a building still means what it meant: a barn at 1.95 is
+ * nearly twice the height of the same barn at 1.0.
+ */
+function placeBuildingModel(
+  root: THREE.Group,
+  spec: BuildingSpec,
+  heightAt: (x: number, z: number) => number,
+  choice: { model: string; height: number },
+): boolean {
+  const loaded = getModel(choice.model);
+  if (!loaded) return false;
+  const [x, z] = spec.position;
+  const group = loaded.group.clone(true);
+  const scale = (spec.scale ?? 1) * (choice.height / loaded.height);
+  group.scale.setScalar(scale);
+  group.position.set(x, heightAt(x, z), z);
+  group.rotation.y = spec.rotation;
+  group.name = `building-${spec.id}`;
+  group.userData.buildingKind = spec.kind;
+  root.add(group);
+  return true;
+}
+
 function buildBuildingByKind(
   root: THREE.Group,
   materials: Materials,
@@ -1622,6 +1835,9 @@ function buildBuildingByKind(
   heightAt: (x: number, z: number) => number,
   animated: ((elapsed: number) => void)[],
 ) {
+  const replacement = BUILDING_MODELS[spec.kind];
+  if (replacement && placeBuildingModel(root, spec, heightAt, replacement)) return;
+
   const kit = BUILDING_KITS[spec.kind];
   const scale = spec.scale ?? 1;
   const [x, z] = spec.position;
@@ -2029,6 +2245,28 @@ function buildCritters(
     return { group: foxGroup, head };
   };
 
+  /**
+   * Drops a packed animal on the terrain at a given world height.
+   *
+   * Heads-up that the pack is authored in animal units and the old animals were
+   * authored in world units, so every call names the height it wants. A cow at
+   * 2.6 stands shoulder-high to a 6.6 farmhouse, which is the ratio the old
+   * procedural herd had; guessing from the model's own scale gives mice.
+   */
+  const placeAnimal = (model: string, x: number, z: number, rotation: number, height: number) => {
+    const loaded = getModel(model);
+    if (!loaded) return null;
+    const group = loaded.group.clone(true);
+    group.scale.setScalar(height / loaded.height);
+    // Authored coordinates: `buildMapScene` has already scaled the data, so
+    // passing data-space numbers here put the herd in the middle of the farm.
+    group.position.set(x * WORLD_SCALE, heightAt(x * WORLD_SCALE, z * WORLD_SCALE), z * WORLD_SCALE);
+    group.rotation.y = rotation;
+    root.add(group);
+    critters.push({ group, phase: x * 0.7 + z * 0.3, spin: 0.05 + ((x + z) % 7) * 0.01 });
+    return group;
+  };
+
   const critters: { group: THREE.Group; phase: number; spin: number }[] = [];
   const place = (group: THREE.Group, x: number, z: number, rotation: number) => {
     group.position.set(x, heightAt(x, z), z);
@@ -2082,6 +2320,37 @@ function buildCritters(
     root.add(duck);
     critters.push({ group: duck, phase: x, spin: 0.1 });
   }
+
+  /**
+   * The herd.
+   *
+   * The old pasture had eight procedural sheep and two goats. The packs here have
+   * no sheep (that is Quaternius's separate Farm Animals set), so the pasture is
+   * stocked with what the animal pack actually has: cattle, horses, a donkey, a
+   * bull. Silhouettes are what matter from the air, and a mixed herd reads as a
+   * working farm far better than eight identical white blobs did.
+   */
+  // Kept clear of the roads that cut across the pasture: a cow standing in a
+  // cart track reads as a bug, not as livestock.
+  const herd: { model: string; x: number; z: number; rotation: number; height: number }[] = [
+    { model: 'Cow', x: 47, z: -75, rotation: 0.4, height: 2.6 },
+    { model: 'Cow', x: 60, z: -73, rotation: 2.6, height: 2.5 },
+    { model: 'Bull', x: 66, z: -79, rotation: 1.1, height: 2.9 },
+    { model: 'Cow', x: 57, z: -82, rotation: -0.8, height: 2.4 },
+    { model: 'Donkey', x: 72, z: -86, rotation: 2.2, height: 2.5 },
+    { model: 'Horse', x: 43, z: -88, rotation: 3.4, height: 3.1 },
+    { model: 'Horse', x: 70, z: -69, rotation: 0.9, height: 3.0 },
+    { model: 'Alpaca', x: 51, z: -89, rotation: 5.1, height: 2.4 },
+    { model: 'Alpaca', x: 37, z: -76, rotation: 3.9, height: 2.2 },
+  ];
+  for (const animal of herd) {
+    placeAnimal(animal.model, animal.x, animal.z, animal.rotation, animal.height);
+  }
+
+  // Two farm dogs by the kennel, and a deer at the edge of the wood.
+  placeAnimal('Husky', 44, 70, 2.4, 1.8);
+  placeAnimal('ShibaInu', 36, 64, 0.7, 1.6);
+  placeAnimal('Deer', 77, -95, 2.4, 2.6);
 
   // A goat by the stable and a second in the paddock.
   const makeGoat = () => {
@@ -3193,29 +3462,63 @@ function buildScatter(
   });
 
   /* --------------------------------------------------------- rocks, bushes */
+  // Both use the packed models: a scattered stone that is a real faceted rock,
+  // and a bush with a silhouette instead of a green ball. `placeModel` below
+  // falls back to the old primitives if a model is missing from the pack.
+  const placeModel = (
+    model: string,
+    spots: [number, number][],
+    targetHeight: number,
+    options: { spin?: number; squash?: number } = {},
+  ) => {
+    const prototype = modelPrototype(model);
+    const loaded = getModel(model);
+    if (!prototype || !loaded) return false;
+    const instanced = new THREE.InstancedMesh(prototype.geometry, prototype.material, spots.length);
+    const dummy = new THREE.Object3D();
+    const base = targetHeight / loaded.height;
+    spots.forEach(([x, z], index) => {
+      const scale = base * (0.7 + rng() * 0.6);
+      dummy.position.set(x, heightAt(x, z), z);
+      dummy.rotation.set(0, options.spin === undefined ? rng() * Math.PI * 2 : options.spin, 0);
+      dummy.scale.set(scale, scale * (options.squash ?? 1), scale);
+      dummy.updateMatrix();
+      instanced.setMatrixAt(index, dummy.matrix);
+    });
+    instanced.instanceMatrix.needsUpdate = true;
+    instanced.castShadow = true;
+    instanced.receiveShadow = true;
+    root.add(instanced);
+    return true;
+  };
+
   const rocks = sample(
     Math.round(170 * DETAIL),
     9000,
     (x, z) => clear.open(x, z, 1.6),
   );
-  place(
-    new THREE.DodecahedronGeometry(0.45, 0),
-    material(materials, '#a49a88', { flatShading: true, roughness: 1 }),
-    rocks,
-    { lift: 0.16, scale: [0.6, 1.7], squash: 0.7, tilt: 0.9, castShadow: true },
-  );
+  if (!placeModel('Rock2', rocks, 1.1, { squash: 0.75 })) {
+    place(
+      new THREE.DodecahedronGeometry(0.45, 0),
+      material(materials, '#a49a88', { flatShading: true, roughness: 1 }),
+      rocks,
+      { lift: 0.16, scale: [0.6, 1.7], squash: 0.7, tilt: 0.9, castShadow: true },
+    );
+  }
 
   const bushes = sample(
     Math.round(300 * DETAIL),
     9000,
     (x, z) => clear.open(x, z, 1.3),
   );
-  place(
-    new THREE.IcosahedronGeometry(0.8, 0),
-    material(materials, '#4e8642', { flatShading: true }),
-    bushes,
-    { lift: 0.42, scale: [0.6, 1.4], squash: 0.75, spin: rng() * 6, castShadow: true },
-  );
+  if (!placeModel('Bush2', bushes, 1.5, { squash: 1.05 })) {
+    place(
+      new THREE.IcosahedronGeometry(0.8, 0),
+      material(materials, '#4e8642', { flatShading: true }),
+      bushes,
+      { lift: 0.42, scale: [0.6, 1.4], squash: 0.75, spin: rng() * 6, castShadow: true },
+    );
+  }
 
   /* -------------------------------------------------------------- stumps */
   const stumps = sample(26, 2600, (x, z) => clear.open(x, z, 1.4));
@@ -3378,12 +3681,48 @@ function buildScatter(
   const stoneBlock = material(materials, '#9a9183', { roughness: 1 });
 
   // Hay ricks: the big conical stacks a real farm keeps through winter.
-  const ricks: [number, number][] = [[-96, 66], [-88, 72], [88, 26], [96, 20], [-108, -44], [104, -108]];
+  //
+  // Drawn from the pack's straw bale where it is available: same silhouette, but
+  // rounded and faceted like the rest of the world instead of a lathe cone. The
+  // procedural stack stays as the fallback so a pack without `Hay` still builds.
+  const hayModel = getModel('Hay');
+  // The pack's `Hay` is a standing sheaf — an hourglass of straw with a belt, not
+  // a bale — so the honest way to use it is the honest farm way: sheaves stood up
+  // in small shocks to dry. Five per cluster, staggered and tilted, reads as one
+  // landmark from the air and as individual sheaves up close.
+  const SHEAF_HEIGHTS = [1.75, 1.5, 1.62, 1.35, 1.2];
+  const SHEAF_SPOTS: [number, number][] = [
+    [-1.9, -1.0], [0.3, -2.0], [2.1, 0.2], [-0.7, 1.4], [1.4, 2.3],
+  ];
+  const ricks: [number, number][] = [
+    [-96, 66], [-88, 72], [-108, -44], [100, -70], [140, -60], [85, -120],
+  ];
   for (const [rx, rz] of ricks) {
     const x = rx * WORLD_SCALE;
     const z = rz * WORLD_SCALE;
     if (!clear.open(x, z, 2.5)) continue;
     const y = heightAt(x, z);
+    if (hayModel) {
+      SHEAF_SPOTS.forEach(([ox, oz], index) => {
+        const height = SHEAF_HEIGHTS[index]!;
+        const sheaf = hayModel.group.clone(true);
+        sheaf.scale.setScalar(height / hayModel.height);
+        sheaf.rotation.set(
+          (hash2(rx + index * 13, rz) - 0.5) * 0.12,
+          hash2(rx, rz + index * 17) * Math.PI,
+          (hash2(rx - index * 11, rz - index) - 0.5) * 0.12,
+        );
+        sheaf.position.set(x + ox, y, z + oz);
+        sheaf.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        root.add(sheaf);
+      });
+      continue;
+    }
     const rick = addMesh(
       root,
       new THREE.CylinderGeometry(1.1, 2.4, 4.4, 9),
