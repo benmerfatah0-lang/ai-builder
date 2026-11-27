@@ -51,10 +51,10 @@ export const REGIONS: RegionDef[] = [
     center: [0, 140],
     radius: 30,
     polygon: [
-      [-34, 128],
-      [34, 128],
-      [30, 152],
-      [-28, 152],
+      [-104, 126],
+      [104, 126],
+      [104, 156],
+      [-104, 156]
     ],
     tagline: 'حيث يبدأ الجوع… وقبلها التعليم.',
     summary:
@@ -80,19 +80,19 @@ export const REGIONS: RegionDef[] = [
   },
   {
     id: 'farm',
-    kicker: 'المنطقة ١ — المنطقة الأساسية',
-    name: 'المزرعة',
-    shortName: 'المزرعة',
+    kicker: 'المنطقة ١ — الحوش',
+    name: 'حوش المزرعة',
+    shortName: 'الحوش',
     emoji: '🏠',
     color: '#e07a3f',
     deep: '#5c2f18',
-    center: [4, 58],
-    radius: 62,
+    center: [0, 82],
+    radius: 64,
     polygon: [
-      [-40, 122],
-      [86, 122],
-      [86, -44],
-      [-40, -44],
+      [-104, 100],
+      [104, 100],
+      [104, 40],
+      [-104, 40]
     ],
     tagline: 'البيت والحوش والسوق… وأول بوس.',
     summary:
@@ -131,7 +131,7 @@ export const REGIONS: RegionDef[] = [
   },
   {
     id: 'crops',
-    kicker: 'المنطقة ٢',
+    kicker: 'المنطقة ٢ — الحقول',
     name: 'منطقة الزراعة',
     shortName: 'الزراعة',
     emoji: '🌾',
@@ -139,15 +139,13 @@ export const REGIONS: RegionDef[] = [
     deep: '#4f3a10',
     // Two blocks, west and east of the main road: the reference splits its
     // cropland either side of the avenue, and the east flank was empty pasture.
-    center: [0, 52],
-    radius: 96,
+    center: [0, 6],
+    radius: 64,
     polygon: [
-      [-96, 92],
-      [98, 92],
-      [98, -34],
-      [-42, -34],
-      [-42, 18],
-      [-96, 18],
+      [-104, 40],
+      [104, 40],
+      [104, -30],
+      [-104, -30]
     ],
     tagline: 'حقول ذهبية… وحصّاد لا يعرف المزاح.',
     summary:
@@ -178,20 +176,58 @@ export const REGIONS: RegionDef[] = [
     bossIds: ['grobak'],
   },
   {
+    id: 'final',
+    kicker: 'المنطقة ٤ — الخاتمة',
+    name: 'قصر الحضيرة',
+    shortName: 'القصر',
+    emoji: '👑',
+    color: '#a3324a',
+    deep: '#360a18',
+    center: [-46, -124],
+    radius: 24,
+    polygon: [
+      [-78, -104],
+      [-12, -104],
+      [-12, -144],
+      [-78, -144],
+    ],
+    tagline: 'حيث تُحسم المعركة… وحيث تُقدَّم البيضة.',
+    summary:
+      'فناء ملكي محصّن داخل منطقة الحظائر: سور حجري حجري عالٍ، بوابة بقفل ريشة، ساحة مفروشة بالقش وأعمدة معلّقة بالفوانيس، وعرش من التبن في أقصى الشمال. هنا آخر بوس: الملكة كلوكزيلا. الأرينا مساحة دائرية تتغيّر في المرحلة الثالثة: تنهار أرضية العشّ وتظهر حُفَر وفيضان دجاج صغير. بعد الهزيمة لا تُغلق اللعبة: مشهد نهاية كوميدي — الدجاج يقدّم «مأدبة سلام» للثعلب.',
+    mood: 'قرمزي ذهبي، فوانيس، قشّ متطاير، وأجراس كاتدرائية دجاج.',
+    objectives: [
+      'أدخل من بوابة القفل (تحتاج ريشة صياح) — أو استخدم الممرّ السري غربًا',
+      'اعبر فناء القصر وتفادَ الفوانيس المتساقطة',
+      'اهزم الملكة كلوكزيلا (البوس النهائي، ٣ مراحل)',
+      'شاهد النهاية: مأدبة السلام ومملكة جديدة للثعالب',
+    ],
+    beats: [
+      { title: '٤١ — بوابة القفل', detail: 'قفل كبير على شكل دجاجة؛ فتحه مقفل أصلاً لأن البوس الأول خارج الباب.' },
+      { title: '٤٢ — الفناء', detail: 'مساحة تمهيدية بأعمدة وفوانيس؛ أول حرق أرضي تُعلّمه الملكة.' },
+      { title: '٤٣ — عرش التبن', detail: 'غرفة العرش، دجاجات واقفة في صفوف مرتّبة، وممرّ جانبي خلف العرش.' },
+      { title: '٤٤ — الحلقة الأخيرة', detail: 'الأرينا الدائرية تنفتح على الحديقة؛ المرحلة الثالثة تحوّلها إلى عشّ متحرّك.' },
+    ],
+    encounters: ['كتاكيت صغيرة (مرحلة ٢ من البوس، تظهر كأعداء مساعدين)', 'دجاجات نبيلة تقف متفرّجة خارج الأرينا'],
+    hazards: ['فوانيس تتساقط وتُشعل القشّ', 'أرضية العشّ المنهارة في المرحلة ٣', 'ريش يُعمي الرؤية لفترة قصيرة'],
+    loot: ['البيضة الذهبية (مفتاح النهاية)', 'تاج الدجاج (تسجيل ١٠٠٪)', 'صندوق الغنائم: مأدبة السلام'],
+    secrets: ['كومة قشّ خلف العرش: مدخل نفق يخرج عند بوابة القصر', 'ريشة الملكة الساقطة تفتح ضريح القبر في البداية'],
+    bossIds: ['cluckzilla'],
+  },
+  {
     id: 'pens',
-    kicker: 'المنطقة ٣',
+    kicker: 'المنطقة ٣ — مرابع الحيوانات',
     name: 'منطقة الحظائر',
     shortName: 'الحظائر',
     emoji: '🐑',
     color: '#b9566f',
     deep: '#4a1c2a',
-    center: [-8, -90],
-    radius: 68,
+    center: [0, -90],
+    radius: 62,
     polygon: [
-      [-96, -44],
-      [76, -44],
-      [76, -140],
-      [-96, -140],
+      [-104, -30],
+      [104, -30],
+      [104, -152],
+      [-104, -152]
     ],
     tagline: 'أكبر منطقة… وأكثر مكان لا يريد الدجاج أن تدخله.',
     summary:
@@ -233,44 +269,7 @@ export const REGIONS: RegionDef[] = [
     ],
     bossIds: ['quackmire', 'bristleback'],
   },
-  {
-    id: 'final',
-    kicker: 'المنطقة ٤ — الخاتمة (داخل الحظائر)',
-    name: 'قصر الحضيرة',
-    shortName: 'القصر',
-    emoji: '👑',
-    color: '#a3324a',
-    deep: '#360a18',
-    center: [-46, -124],
-    radius: 24,
-    polygon: [
-      [-78, -104],
-      [-12, -104],
-      [-12, -144],
-      [-78, -144],
-    ],
-    tagline: 'حيث تُحسم المعركة… وحيث تُقدَّم البيضة.',
-    summary:
-      'فناء ملكي محصّن داخل منطقة الحظائر: سور حجري حجري عالٍ، بوابة بقفل ريشة، ساحة مفروشة بالقش وأعمدة معلّقة بالفوانيس، وعرش من التبن في أقصى الشمال. هنا آخر بوس: الملكة كلوكزيلا. الأرينا مساحة دائرية تتغيّر في المرحلة الثالثة: تنهار أرضية العشّ وتظهر حُفَر وفيضان دجاج صغير. بعد الهزيمة لا تُغلق اللعبة: مشهد نهاية كوميدي — الدجاج يقدّم «مأدبة سلام» للثعلب.',
-    mood: 'قرمزي ذهبي، فوانيس، قشّ متطاير، وأجراس كاتدرائية دجاج.',
-    objectives: [
-      'أدخل من بوابة القفل (تحتاج ريشة صياح) — أو استخدم الممرّ السري غربًا',
-      'اعبر فناء القصر وتفادَ الفوانيس المتساقطة',
-      'اهزم الملكة كلوكزيلا (البوس النهائي، ٣ مراحل)',
-      'شاهد النهاية: مأدبة السلام ومملكة جديدة للثعالب',
-    ],
-    beats: [
-      { title: '٤١ — بوابة القفل', detail: 'قفل كبير على شكل دجاجة؛ فتحه مقفل أصلاً لأن البوس الأول خارج الباب.' },
-      { title: '٤٢ — الفناء', detail: 'مساحة تمهيدية بأعمدة وفوانيس؛ أول حرق أرضي تُعلّمه الملكة.' },
-      { title: '٤٣ — عرش التبن', detail: 'غرفة العرش، دجاجات واقفة في صفوف مرتّبة، وممرّ جانبي خلف العرش.' },
-      { title: '٤٤ — الحلقة الأخيرة', detail: 'الأرينا الدائرية تنفتح على الحديقة؛ المرحلة الثالثة تحوّلها إلى عشّ متحرّك.' },
-    ],
-    encounters: ['كتاكيت صغيرة (مرحلة ٢ من البوس، تظهر كأعداء مساعدين)', 'دجاجات نبيلة تقف متفرّجة خارج الأرينا'],
-    hazards: ['فوانيس تتساقط وتُشعل القشّ', 'أرضية العشّ المنهارة في المرحلة ٣', 'ريش يُعمي الرؤية لفترة قصيرة'],
-    loot: ['البيضة الذهبية (مفتاح النهاية)', 'تاج الدجاج (تسجيل ١٠٠٪)', 'صندوق الغنائم: مأدبة السلام'],
-    secrets: ['كومة قشّ خلف العرش: مدخل نفق يخرج عند بوابة القصر', 'ريشة الملكة الساقطة تفتح ضريح القبر في البداية'],
-    bossIds: ['cluckzilla'],
-  },
+
 ];
 
 export const REGION_BY_ID: Record<RegionId, RegionDef> = Object.fromEntries(
@@ -287,8 +286,8 @@ export const BOSSES: BossDef[] = [
     species: 'الديك الرومي الحصّاد',
     emoji: '🦃',
     tier: 'required',
-    regionId: 'farm',
-    position: [-26, 44],
+    regionId: 'pens',
+    position: [-28, -46],
     arenaId: 'threshing',
     level: 'الفرع الأول — مستوى ٣',
     difficulty: 3,
@@ -321,8 +320,8 @@ export const BOSSES: BossDef[] = [
     species: 'ديك بلدي',
     emoji: '🐓',
     tier: 'required',
-    regionId: 'farm',
-    position: [2, -10],
+    regionId: 'pens',
+    position: [8, -44],
     arenaId: 'yard',
     level: 'الفرع الثاني — مستوى ٤',
     difficulty: 4,
@@ -357,7 +356,7 @@ export const BOSSES: BossDef[] = [
     emoji: '🐏',
     tier: 'optional',
     regionId: 'pens',
-    position: [44, -98],
+    position: [50, -96],
     arenaId: 'ramring',
     level: 'بوس اختياري — مستوى ٥',
     difficulty: 4,
@@ -392,7 +391,7 @@ export const BOSSES: BossDef[] = [
     emoji: '🦆',
     tier: 'optional',
     regionId: 'pens',
-    position: [12, -96],
+    position: [14, -96],
     arenaId: 'bridge',
     level: 'بوس اختياري — مستوى ٤',
     difficulty: 3,
@@ -469,10 +468,10 @@ export const ARENAS: ArenaDef[] = [
   {
     id: 'threshing',
     name: 'بيدر غُبار',
-    position: [-26, 44],
+    position: [-28, -46],
     radius: 14,
     style: 'threshing',
-    regionId: 'farm',
+    regionId: 'pens',
     note:
       'بيدر الدراس: أرض مدكوكة حول جرن الحبوب، وأشرعة الدراس تدور على المحيط في المرحلة ٢. البوس يستريح في ظلّ الجرن، فيبدأ القتال بخيار: تسرّق أم مواجهة?',
     // The boss's home is the granary itself: the turkey stands in its shade and
@@ -480,20 +479,20 @@ export const ARENAS: ArenaDef[] = [
     // Local +Z is the arena's front. The granary sits at the back rim, its
     // open bay looking across the floor at the player's approach.
     home: { kind: 'threshing', offset: [0, -9], rotation: 0 },
-    floor: 'straw',
+    floor: 'straw'
   },
   {
     id: 'yard',
     name: 'دوارة صيّاح',
-    position: [2, -10],
+    position: [8, -44],
     radius: 12,
     style: 'farmhouse',
-    regionId: 'farm',
+    regionId: 'pens',
     note:
       'بيت المزرعة وحوشه: صيّاح يعيش داخل البيت ويخرج من بابه عند الإزعاج. الباب مفتوح — أول من يدخل يجد عمودًا خشبيًا في الصالة، وسياج البالات هو الحاجز بين الداخل والخارج.',
     // The rooster's house sits at the north edge; the fight is on the doorstep.
     home: { kind: 'house', offset: [0, -13] },
-    floor: 'earth',
+    floor: 'earth'
   },
   {
     id: 'bridge',
@@ -501,24 +500,24 @@ export const ARENAS: ArenaDef[] = [
     // On the south bank, a few metres clear of the channel: at [10,-80] the heart
     // of the arena was the river bed itself (-3.6 m), so the pond and every prop
     // in it were underwater.
-    position: [12, -96],
+    position: [14, -96],
     radius: 14,
     style: 'pond',
     regionId: 'pens',
     note:
       'بركة البط تحت الجسر: بطبوط تختبئ في الماء لا في الهواء. القتال على حافة البركة وألواح الجسر — إن تراجعت خطوة واحدة تغرق، وإن صعدت اللوح تخرج من مداها.',
     home: { kind: 'pond', offset: [0, 0] },
-    floor: 'water-edge',
+    floor: 'water-edge'
   },
   {
     id: 'ramring',
     name: 'حلبة الكباش',
-    position: [44, -98],
+    position: [50, -96],
     radius: 16,
     style: 'ramring',
     regionId: 'pens',
     note: 'حلقة حجرية بلا دروع؛ أعمدة المحيط هي السلاح الحقيقي ضد الاندفاع.',
-    floor: 'earth',
+    floor: 'earth'
   },
   {
     id: 'palace',
@@ -529,8 +528,8 @@ export const ARENAS: ArenaDef[] = [
     regionId: 'final',
     note: 'أرينا القصر: أرضية عشّ متحرّكة، فوانيس معلّقة، وعرش تبن على الحافة.',
     home: { kind: 'palace', offset: [0, -17] },
-    floor: 'straw',
-  },
+    floor: 'straw'
+  }
 ];
 
 export const ARENA_BY_ID: Record<string, ArenaDef> = Object.fromEntries(
@@ -550,7 +549,7 @@ export const CHECKPOINTS: CheckpointDef[] = [
   {
     id: 'north-gate',
     name: 'فانوس البوابة',
-    position: [0, 118],
+    position: [0, 134],
     note: 'أول نقطة حفظ في المزرعة، أمام لافتة السور.',
     unlocks: 'اختصار إلى مخيّم البداية',
   },
@@ -597,7 +596,7 @@ export const LANDMARKS: LandmarkDef[] = [
   { id: 'crow-merchant', name: 'الغراب سعد التاجر', kind: 'npc', emoji: '🐦‍⬛', position: [16, 132], regionId: 'start', note: 'تاجر بذور: يبيع ترقيات وحبوبًا سوداء.' },
   { id: 'chicken-grave', name: 'قبر الدجاجة المجهولة', kind: 'secret', emoji: '🪦', position: [-24, 144], regionId: 'start', note: 'سرّ صغير: يمنح تعويذة «احترام الدجاج» (+١ دفاع).' },
   { id: 'start-smell', name: 'درب الرائحة', kind: 'hazard', emoji: '🌀', position: [0, 128], regionId: 'start', note: 'ريح المزرعة تجذب الثعلب؛ مؤشّر اتجاه لطيف بدل سهم.' },
-  { id: 'gate-farm', name: 'بوابة المزرعة', kind: 'gate', emoji: '🚪', position: [0, 122], regionId: 'farm', note: 'انتقال إلى المزرعة، نقطة حفظ تحتها.' },
+  { id: 'gate-farm', name: 'بوابة المزرعة', kind: 'gate', emoji: '🚪', position: [0, 96], regionId: 'farm', note: 'انتقال إلى المزرعة، نقطة حفظ تحتها.' },
 
   // ── farm
   { id: 'market', name: 'سوق المزرعة', kind: 'item', emoji: '🧺', position: [12, 56], regionId: 'farm', note: 'أكشاك ومؤن؛ يمكن شراء حبوب سوداء وأشرطة.' },
@@ -606,22 +605,22 @@ export const LANDMARKS: LandmarkDef[] = [
   { id: 'scarecrow-npc', name: 'خيّال الفزّاعة', kind: 'npc', emoji: '🧑‍🌾', position: [-12, 74], regionId: 'farm', note: 'فزّاعة تتكلّم؛ تطلب قبعة قشّها المفقودة في الزراعة.' },
   { id: 'silo-farm', name: 'صومعة الحبوب', kind: 'building', emoji: '🏗️', position: [52, 44], regionId: 'farm', note: 'علامة بصرية جنوب السوق، مخرج طوارئ جانبي.' },
   { id: 'windmill-farm', name: 'طاحونة المصعد', kind: 'shortcut', emoji: '🛗', position: [64, 90], regionId: 'farm', note: 'اختصار: مصعد تبن يصل إلى طاحونة الزراعة غربًا.' },
-  { id: 'tool-shed', name: 'سقيفة الأدوات', kind: 'secret', emoji: '🧰', position: [68, 22], regionId: 'farm', note: 'باب مسدود يُفتح لاحقًا؛ داخلها خريطة اختصار.' },
-  { id: 'mud-pond', name: 'بركة الوحل', kind: 'hazard', emoji: '🟤', position: [70, -12], regionId: 'farm', note: 'تبطئ وتكشف موقع اللاعب؛ خطر بيئي في أرينا صيّاح.' },
-  { id: 'straw-shoes', name: 'حذاء الفراولة', kind: 'item', emoji: '🍓', position: [30, 32], regionId: 'farm', note: 'ترقية: مسافة مريغة أطول.' },
-  { id: 'wooden-sign', name: 'لوحة «ممنوع دخول الثعالب»', kind: 'item', emoji: '🪧', position: [-14, 104], regionId: 'farm', note: 'لوحة سخرية: مكتوب عليها «الثعلب ممنوع… الدجاج مرحّب».' },
-  { id: 'rooster-gate', name: 'بوابة الديك', kind: 'building', emoji: '🏛️', position: [0, -30], regionId: 'farm', note: 'ممر طويل بأعمدة يهبط إلى الحوش، صيّاح يقفز من سطحه.' },
-  { id: 'squawk-arena', name: 'أرينا حوش الديك', kind: 'summit', emoji: '⚔️', position: [2, -10], regionId: 'farm', note: 'أرينا البوس الرئيسي الثاني.', bossId: 'squawk' },
+  { id: 'tool-shed', name: 'سقيفة الأدوات', kind: 'secret', emoji: '🧰', position: [68, 52], regionId: 'farm', note: 'باب مسدود يُفتح لاحقًا؛ داخلها خريطة اختصار.' },
+  { id: 'mud-pond', name: 'بركة الوحل', kind: 'hazard', emoji: '🟤', position: [70, -12], regionId: 'crops', note: 'تبطئ وتكشف موقع اللاعب؛ خطر بيئي في أرينا صيّاح.' },
+  { id: 'straw-shoes', name: 'حذاء الفراولة', kind: 'item', emoji: '🍓', position: [30, 32], regionId: 'crops', note: 'ترقية: مسافة مريغة أطول.' },
+  { id: 'wooden-sign', name: 'لوحة «ممنوع دخول الثعالب»', kind: 'item', emoji: '🪧', position: [-14, 98], regionId: 'farm', note: 'لوحة سخرية: مكتوب عليها «الثعلب ممنوع… الدجاج مرحّب».' },
+  { id: 'rooster-gate', name: 'بوابة الديك', kind: 'building', emoji: '🏛️', position: [40, 50], regionId: 'farm', note: 'ممر طويل بأعمدة يهبط إلى الحوش، صيّاح يقفز من سطحه.' },
+  { id: 'squawk-arena', name: 'أرينا حوش الديك', kind: 'summit', emoji: '⚔️', position: [8, -44], regionId: 'pens', note: 'أرينا البوس الرئيسي الثاني.', bossId: 'squawk' },
 
   // ── crops
   { id: 'grobak-arena', name: 'أرينا ساحة الدراس', kind: 'summit', emoji: '⚔️', position: [-26, 44], regionId: 'farm', note: 'أرينا البوس الرئيسي الأول (غُبار).', bossId: 'grobak' },
-  { id: 'barn', name: 'الجرن — مخزن الحبوب', kind: 'building', emoji: '🏚️', position: [-46, 56], regionId: 'crops', note: 'مبنى كبير، بولاية قمح، مساحة قتال منخفضة.' },
-  { id: 'windmill-crops', name: 'طاحونة الزراعة', kind: 'shortcut', emoji: '🌬️', position: [-76, 76], regionId: 'crops', note: 'أعلى نقطة في المنطقة؛ مصعد يرتبط بطاحونة المزرعة.' },
-  { id: 'worm-npc', name: 'الدودة بنبونة', kind: 'npc', emoji: '🪱', position: [-44, 62], regionId: 'crops', note: 'تلميح: القبو المخفي تحت البيدر.' },
+  { id: 'barn', name: 'الجرن — مخزن الحبوب', kind: 'building', emoji: '🏚️', position: [-54, 80], regionId: 'farm', note: 'مبنى كبير، بولاية قمح، مساحة قتال منخفضة.' },
+  { id: 'windmill-crops', name: 'طاحونة الزراعة', kind: 'shortcut', emoji: '🌬️', position: [-94, -4], regionId: 'crops', note: 'أعلى نقطة في المنطقة؛ مصعد يرتبط بطاحونة المزرعة.' },
+  { id: 'worm-npc', name: 'الدودة بنبونة', kind: 'npc', emoji: '🪱', position: [-44, 14], regionId: 'crops', note: 'تلميح: القبو المخفي تحت البيدر.' },
   { id: 'straw-hat', name: 'قبعة القشّ', kind: 'item', emoji: '👒', position: [-52, 36], regionId: 'crops', note: 'قطعة مهمة: أعِدها لخيّال الفزّاعة مقابل مكافأة.' },
   { id: 'seed-cellar', name: 'قبو البذور', kind: 'secret', emoji: '🕳️', position: [-94, 20], regionId: 'crops', note: 'باب مخفي في كومة قشّ؛ درع خفيف وحبوب.' },
-  { id: 'live-scarecrow', name: 'روح الحقل', kind: 'hazard', emoji: '🌫️', position: [-66, 46], regionId: 'crops', note: 'فزّاعة حيّة تتبع اللاعب بين الصفوف؛ تظهر في الضباب.' },
-  { id: 'bees', name: 'برميل العسل', kind: 'hazard', emoji: '🐝', position: [-62, 84], regionId: 'crops', note: 'خطر بيئي متحرك: سرب نحل يطارد عند الاقتراب.' },
+  { id: 'live-scarecrow', name: 'روح الحقل', kind: 'hazard', emoji: '🌫️', position: [-66, 20], regionId: 'crops', note: 'فزّاعة حيّة تتبع اللاعب بين الصفوف؛ تظهر في الضباب.' },
+  { id: 'bees', name: 'برميل العسل', kind: 'hazard', emoji: '🐝', position: [-62, 20], regionId: 'crops', note: 'خطر بيئي متحرك: سرب نحل يطارد عند الاقتراب.' },
   { id: 'silo-crops', name: 'صومعة الغلال', kind: 'building', emoji: '🌾', position: [-50, 20], regionId: 'crops', note: 'صومعة صغيرة تربط الزراعة بالمزرعة بصريًا.' },
   { id: 'pumpkin-item', name: 'قرعة الشمندر', kind: 'item', emoji: '🎃', position: [-78, 30], regionId: 'crops', note: 'مؤونة: تعيد ملء عصير الشمندر.' },
 
@@ -642,11 +641,11 @@ export const LANDMARKS: LandmarkDef[] = [
   { id: 'quill-chest', name: 'تابوت المؤن', kind: 'secret', emoji: '🧰', position: [-86, -120], regionId: 'pens', note: 'يحتاج ٣ مفاتيح صغيرة موزّعة في المنطقة.' },
 
   // ── palace
-  { id: 'palace-gate', name: 'بوابة القفل', kind: 'gate', emoji: '🔒', position: [-44, -106], regionId: 'final', note: 'قفل على شكل دجاجة يُفتح بـ«ريشة صياح».' },
-  { id: 'palace-throne', name: 'عرش التبن', kind: 'summit', emoji: '👑', position: [-46, -130], regionId: 'final', note: 'غرفة العرش؛ البوس النهائي كلوكزيلا.', bossId: 'cluckzilla' },
-  { id: 'golden-egg', name: 'البيضة الذهبية', kind: 'secret', emoji: '🥚', position: [-62, -136], regionId: 'final', note: 'غنيمة النهاية خلف العرش.' },
-  { id: 'court-hens', name: 'دجاجات البلاط', kind: 'npc', emoji: '🐔', position: [-30, -122], regionId: 'final', note: 'دجاجات واقفة في صفوف مرتّبة تتفرّج؛ لا تهاجم.' },
-  { id: 'palace-brazier', name: 'فوانيس السقف', kind: 'hazard', emoji: '🏮', position: [-54, -116], regionId: 'final', note: 'تتساقط وتُشعل القشّ في المرحلة ٢.' },
+  { id: 'palace-gate', name: 'بوابة القفل', kind: 'gate', emoji: '🔒', position: [-44, -106], regionId: 'pens', note: 'قفل على شكل دجاجة يُفتح بـ«ريشة صياح».' },
+  { id: 'palace-throne', name: 'عرش التبن', kind: 'summit', emoji: '👑', position: [-46, -130], regionId: 'pens', note: 'غرفة العرش؛ البوس النهائي كلوكزيلا.', bossId: 'cluckzilla' },
+  { id: 'golden-egg', name: 'البيضة الذهبية', kind: 'secret', emoji: '🥚', position: [-62, -136], regionId: 'pens', note: 'غنيمة النهاية خلف العرش.' },
+  { id: 'court-hens', name: 'دجاجات البلاط', kind: 'npc', emoji: '🐔', position: [-30, -122], regionId: 'pens', note: 'دجاجات واقفة في صفوف مرتّبة تتفرّج؛ لا تهاجم.' },
+  { id: 'palace-brazier', name: 'فوانيس السقف', kind: 'hazard', emoji: '🏮', position: [-54, -116], regionId: 'pens', note: 'تتساقط وتُشعل القشّ في المرحلة ٢.' },
 ];
 
 export const LANDMARK_BY_ID: Record<string, LandmarkDef> = Object.fromEntries(
@@ -759,166 +758,110 @@ export const BALANCE_TARGETS = [
 /* ------------------------------------------------------------ placements */
 
 export const BUILDINGS: BuildingSpec[] = [
-  // Scales are ~1.5x what they were: the diorama is framed from 380 units up, and
-  // at that distance 1:1 farm buildings were specks on a green field. A barn that
-  // reads as a barn has to be as tall as the treeline it stands in.
-  { id: 'gatehouse-start', kind: 'gatehouse', position: [0, 124], rotation: 0, scale: 1.45 },
-  { id: 'farmhouse', kind: 'farmhouse', position: [40, 80], rotation: -Math.PI / 2, scale: 1.75 },
-  { id: 'barn', kind: 'barn', position: [-52, 74], rotation: 0, scale: 1.95 },
-  { id: 'silo-farm', kind: 'silo', position: [52, 44], rotation: 0, scale: 1.5 },
-  { id: 'silo-crops', kind: 'silo', position: [-50, 20], rotation: 0, scale: 1.5 },
-  { id: 'shed', kind: 'shed', position: [68, 22], rotation: -Math.PI / 2, scale: 1.4 },
-  { id: 'market-a', kind: 'market', position: [14, 58], rotation: Math.PI, scale: 1.35 },
-  { id: 'market-b', kind: 'market', position: [-10, 58], rotation: Math.PI, scale: 1.35 },
-  { id: 'well', kind: 'well', position: [0, 20], rotation: 0, scale: 1.4 },
-  { id: 'windmill-farm', kind: 'windmill', position: [64, 90], rotation: 0, scale: 1.7 },
-  { id: 'windmill-crops', kind: 'windmill', position: [-76, 76], rotation: Math.PI / 2, scale: 1.7 },
-  { id: 'rooster-gate', kind: 'gatehouse', position: [6, -32], rotation: 0, scale: 1.45 },
-  { id: 'duck-house', kind: 'duckHouse', position: [-64, -50], rotation: 0, scale: 1.35 },
-  { id: 'hen-nursery-a', kind: 'nursery', position: [-34, -52], rotation: 0, scale: 1.3 },
-  { id: 'hen-nursery-b', kind: 'nursery', position: [26, -54], rotation: 0, scale: 1.3 },
-  { id: 'stable', kind: 'stable', position: [66, -52], rotation: -Math.PI / 2, scale: 1.6 },
-  { id: 'sheep-shelter', kind: 'sheepShelter', position: [70, -104], rotation: Math.PI, scale: 1.45 },
-  { id: 'hen-palace', kind: 'henPalace', position: [-46, -128], rotation: 0, scale: 1.75 },
-  { id: 'tower-check', kind: 'tower', position: [64, -82], rotation: 0, scale: 1.5 },
+  // Laid out in four bands, gate (south) -> animals (north):
+  //   z 126..156  the gate and the approach
+  //   z  40..126  homestead: house, well, kennel, barn, markets, windmills
+  //   z -30.. 40  fields: the two crop blocks and their silos and mill
+  //   z-152..-30  animals: every shelter, the arenas and the palace
+  { id: 'gatehouse-start', kind: 'gatehouse', position: [0, 132], rotation: 0, scale: 1.45 },
+  { id: 'farmhouse', kind: 'farmhouse', position: [42, 84], rotation: -Math.PI / 2, scale: 1.75 },
+  { id: 'barn', kind: 'barn', position: [-54, 80], rotation: 0, scale: 1.95 },
+  { id: 'silo-farm', kind: 'silo', position: [58, 74], rotation: 0, scale: 1.5 },
+  { id: 'well', kind: 'well', position: [0, 60], rotation: 0, scale: 1.4 },
+  { id: 'rooster-gate', kind: 'gatehouse', position: [40, 54], rotation: 0, scale: 1.45 },
+  { id: 'shed', kind: 'shed', position: [-70, 52], rotation: 0, scale: 1.4 },
+  { id: 'market-a', kind: 'market', position: [16, 68], rotation: Math.PI, scale: 1.35 },
+  { id: 'market-b', kind: 'market', position: [-12, 68], rotation: Math.PI, scale: 1.35 },
+  { id: 'windmill-farm', kind: 'windmill', position: [76, 96], rotation: 0, scale: 1.7 },
+  { id: 'silo-crops', kind: 'silo', position: [-94, 34], rotation: 0, scale: 1.5 },
+  { id: 'windmill-crops', kind: 'windmill', position: [-94, -4], rotation: Math.PI / 2, scale: 1.7 },
+  { id: 'duck-house', kind: 'duckHouse', position: [-72, -64], rotation: 0, scale: 1.35 },
+  { id: 'hen-nursery-a', kind: 'nursery', position: [-24, -64], rotation: 0, scale: 1.3 },
+  { id: 'hen-nursery-b', kind: 'nursery', position: [30, -62], rotation: 0, scale: 1.3 },
+  { id: 'stable', kind: 'stable', position: [74, -60], rotation: -Math.PI / 2, scale: 1.6 },
+  { id: 'sheep-shelter', kind: 'sheepShelter', position: [78, -110], rotation: Math.PI, scale: 1.45 },
+  { id: 'tower-check', kind: 'tower', position: [70, -42], rotation: 0, scale: 1.5 },
+  { id: 'hen-palace', kind: 'henPalace', position: [-62, -114], rotation: 0, scale: 1.75 },
 ];
 
 export const FIELDS: FieldSpec[] = [
-  { kind: 'wheat', x: -82, z: 84, w: 16, d: 10 },
-  { kind: 'wheat', x: -64, z: 84, w: 16, d: 10 },
-  { kind: 'wheat', x: -86, z: 66, w: 14, d: 12 },
-  { kind: 'vegetable', x: -66, z: 64, w: 16, d: 12 },
-  { kind: 'pumpkin', x: -88, z: 46, w: 12, d: 12 },
-  { kind: 'sunflower', x: -70, z: 44, w: 14, d: 12 },
-  { kind: 'clover', x: -60, z: 30, w: 14, d: 10 },
-  { kind: 'vegetable', x: -82, z: 28, w: 14, d: 10 },
-  // East half: the reference has two thirds of its cropland on the east side of
-  // the main road, and the old map left that whole flank empty pasture.
-  { kind: 'maize', x: 34, z: 78, w: 20, d: 14 },
-  { kind: 'maize', x: 58, z: 78, w: 20, d: 14 },
-  { kind: 'vine', x: 34, z: 54, w: 20, d: 14 },
-  { kind: 'vine', x: 58, z: 54, w: 20, d: 14 },
-  { kind: 'maize', x: 44, z: 30, w: 22, d: 12 },
-  { kind: 'vine', x: 44, z: 8, w: 22, d: 12 },
-  { kind: 'maize', x: 88, z: 62, w: 18, d: 16 },
-  { kind: 'vegetable', x: 88, z: 40, w: 18, d: 14 },
-  { kind: 'vine', x: 88, z: 18, w: 18, d: 14 },
-  { kind: 'maize', x: 74, z: -14, w: 20, d: 12 },
-  { kind: 'maize', x: 40, z: -26, w: 18, d: 12 },
+  // Two blocks, flanking the road through the field band (z -30..40) so the
+  // middle stays walkable and the lanes can run between the rows.
+  { kind: 'wheat', x: -82, z: 26, w: 16, d: 10 },
+  { kind: 'wheat', x: -62, z: 26, w: 16, d: 10 },
+  { kind: 'vegetable', x: -82, z: 8, w: 16, d: 12 },
+  { kind: 'sunflower', x: -62, z: 8, w: 14, d: 12 },
+  { kind: 'pumpkin', x: -86, z: -12, w: 12, d: 12 },
+  { kind: 'clover', x: -64, z: -12, w: 14, d: 10 },
+  { kind: 'maize', x: 34, z: 26, w: 20, d: 14 },
+  { kind: 'maize', x: 58, z: 26, w: 20, d: 14 },
+  { kind: 'vine', x: 34, z: 6, w: 20, d: 14 },
+  { kind: 'vine', x: 58, z: 6, w: 20, d: 14 },
+  { kind: 'maize', x: 84, z: 24, w: 18, d: 16 },
+  { kind: 'vegetable', x: 84, z: 4, w: 18, d: 14 },
+  { kind: 'maize', x: 46, z: -16, w: 22, d: 12 },
+  { kind: 'vine', x: 76, z: -18, w: 18, d: 12 },
 ];
 
 export const FENCES: FenceRun[] = [
-  // A rail fence around every east-side field. The reference is fenced to the
-  // horizon, and an unfenced crop block reads as a texture patch rather than a
-  // field somebody farms.
-  { id: 'field-ring-0-n', points: [[23, 86], [45, 86]], style: 'rail' },
-  { id: 'field-ring-0-s', points: [[23, 70], [45, 70]], style: 'rail' },
-  { id: 'field-ring-0-e', points: [[45, 70], [45, 86]], style: 'rail' },
-  { id: 'field-ring-0-w', points: [[23, 70], [23, 86]], style: 'rail', gaps: [{ start: 3, end: 7 }] },
-  { id: 'field-ring-1-n', points: [[47, 86], [69, 86]], style: 'rail' },
-  { id: 'field-ring-1-s', points: [[47, 70], [69, 70]], style: 'rail' },
-  { id: 'field-ring-1-e', points: [[69, 70], [69, 86]], style: 'rail' },
-  { id: 'field-ring-1-w', points: [[47, 70], [47, 86]], style: 'rail', gaps: [{ start: 3, end: 7 }] },
-  { id: 'field-ring-2-n', points: [[23, 62], [45, 62]], style: 'rail' },
-  { id: 'field-ring-2-s', points: [[23, 46], [45, 46]], style: 'rail' },
-  { id: 'field-ring-2-e', points: [[45, 46], [45, 62]], style: 'rail' },
-  { id: 'field-ring-2-w', points: [[23, 46], [23, 62]], style: 'rail', gaps: [{ start: 3, end: 7 }] },
-  { id: 'field-ring-3-n', points: [[47, 62], [69, 62]], style: 'rail' },
-  { id: 'field-ring-3-s', points: [[47, 46], [69, 46]], style: 'rail' },
-  { id: 'field-ring-3-e', points: [[69, 46], [69, 62]], style: 'rail' },
-  { id: 'field-ring-3-w', points: [[47, 46], [47, 62]], style: 'rail', gaps: [{ start: 3, end: 7 }] },
-  { id: 'field-ring-4-n', points: [[32, 37], [56, 37]], style: 'rail' },
-  { id: 'field-ring-4-s', points: [[32, 23], [56, 23]], style: 'rail' },
-  { id: 'field-ring-4-e', points: [[56, 23], [56, 37]], style: 'rail' },
-  { id: 'field-ring-4-w', points: [[32, 23], [32, 37]], style: 'rail', gaps: [{ start: 3, end: 6 }] },
-  { id: 'field-ring-5-n', points: [[32, 15], [56, 15]], style: 'rail' },
-  { id: 'field-ring-5-s', points: [[32, 1], [56, 1]], style: 'rail' },
-  { id: 'field-ring-5-e', points: [[56, 1], [56, 15]], style: 'rail' },
-  { id: 'field-ring-5-w', points: [[32, 1], [32, 15]], style: 'rail', gaps: [{ start: 3, end: 6 }] },
-  { id: 'field-ring-6-n', points: [[78, 71], [98, 71]], style: 'rail' },
-  { id: 'field-ring-6-s', points: [[78, 53], [98, 53]], style: 'rail' },
-  { id: 'field-ring-6-e', points: [[98, 53], [98, 71]], style: 'rail' },
-  { id: 'field-ring-6-w', points: [[78, 53], [78, 71]], style: 'rail', gaps: [{ start: 3, end: 8 }] },
-  { id: 'field-ring-7-n', points: [[78, 48], [98, 48]], style: 'rail' },
-  { id: 'field-ring-7-s', points: [[78, 32], [98, 32]], style: 'rail' },
-  { id: 'field-ring-7-e', points: [[98, 32], [98, 48]], style: 'rail' },
-  { id: 'field-ring-7-w', points: [[78, 32], [78, 48]], style: 'rail', gaps: [{ start: 3, end: 7 }] },
-  { id: 'field-ring-8-n', points: [[78, 26], [98, 26]], style: 'rail' },
-  { id: 'field-ring-8-s', points: [[78, 10], [98, 10]], style: 'rail' },
-  { id: 'field-ring-8-e', points: [[98, 10], [98, 26]], style: 'rail' },
-  { id: 'field-ring-8-w', points: [[78, 10], [78, 26]], style: 'rail', gaps: [{ start: 3, end: 7 }] },
-  { id: 'field-ring-9-n', points: [[63, -7], [85, -7]], style: 'rail' },
-  { id: 'field-ring-9-s', points: [[63, -21], [85, -21]], style: 'rail' },
-  { id: 'field-ring-9-e', points: [[85, -21], [85, -7]], style: 'rail' },
-  { id: 'field-ring-9-w', points: [[63, -21], [63, -7]], style: 'rail', gaps: [{ start: 3, end: 6 }] },
-  { id: 'field-ring-10-n', points: [[30, -19], [50, -19]], style: 'rail' },
-  { id: 'field-ring-10-s', points: [[30, -33], [50, -33]], style: 'rail' },
-  { id: 'field-ring-10-e', points: [[50, -33], [50, -19]], style: 'rail' },
-  { id: 'field-ring-10-w', points: [[30, -33], [30, -19]], style: 'rail', gaps: [{ start: 3, end: 6 }] },
-  // Farm north wall with the gate gap.
-  { id: 'farm-north', points: [[-40, 122], [40, 122]], style: 'rail', gaps: [{ start: 34, end: 46 }] },
-  // Farm east boundary.
-  { id: 'farm-east', points: [[86, 122], [86, -40]], style: 'rail', gaps: [{ start: 70, end: 82 }] },
-  // Gateway lane fences.
-  { id: 'lane-a', points: [[-8, 116], [-8, 92]], style: 'rail' },
-  { id: 'lane-b', points: [[10, 116], [10, 92]], style: 'rail' },
-  // Market edge fences.
-  { id: 'market-edge', points: [[-22, 50], [24, 50]], style: 'rail', gaps: [{ start: 15, end: 27 }] },
-  // Crops parcel perimeter (with the threshing-yard opening).
-  { id: 'crops-north', points: [[-96, 92], [-44, 92]], style: 'rail' },
-  { id: 'crops-west', points: [[-96, 92], [-96, 18]], style: 'rail' },
-  { id: 'crops-south', points: [[-96, 18], [-42, 18]], style: 'rail', gaps: [{ start: 22, end: 34 }] },
-  { id: 'crops-east', points: [[-42, 92], [-42, 18]], style: 'rail', gaps: [{ start: 22, end: 40 }, { start: 62, end: 74 }] },
-  // Field dividers.
-  { id: 'field-div-a', points: [[-90, 50], [-46, 50]], style: 'rail', gaps: [{ start: 10, end: 16 }] },
-  { id: 'field-div-b', points: [[-58, 88], [-58, 48]], style: 'rail', gaps: [{ start: 12, end: 18 }] },
-  // Yard arena fence (gaps for entry).
-  { id: 'yard-fence-w', points: [[-14, 2], [-14, -22]], style: 'rail' },
-  { id: 'yard-fence-e', points: [[18, 2], [18, -22]], style: 'rail' },
-  // Pens north screen fence.
-  { id: 'pens-screen', points: [[-84, -46], [70, -46]], style: 'bramble', gaps: [{ start: 86, end: 102 }, { start: 120, end: 132 }] },
-  // Pens goatherd paddock.
-  { id: 'goat-paddock', points: [[46, -60], [86, -60], [86, -84], [46, -84]], style: 'rail', gaps: [{ start: 16, end: 26 }] },
-  // Hen alley corridor (frames the final westward walk).
-  { id: 'hen-alley-n', points: [[-10, -100], [-44, -104]], style: 'bramble', gaps: [{ start: 18, end: 26 }] },
-  { id: 'hen-alley-s', points: [[-10, -114], [-44, -110]], style: 'bramble' },
-  // Palace walls.
-  { id: 'palace-wall-w', points: [[-70, -104], [-70, -144]], style: 'stone' },
-  { id: 'palace-wall-e', points: [[-22, -104], [-22, -144]], style: 'stone' },
-  { id: 'palace-wall-n', points: [[-70, -104], [-22, -104]], style: 'stone', gaps: [{ start: 22, end: 30 }] },
-  // South forest boundary.
-  { id: 'south-line', points: [[-104, -142], [78, -142]], style: 'bramble' },
-];
+  // One fence per field, drawn just outside its rows, plus a rail around each
+  // whole band. The bands are the point of the layout: from the air you should
+  // be able to read four strips - gate, homestead, fields, animals.
+  // Field band inner fences (fields are 16-22 wide; these clear the rows).
+  { id: 'field-w0', points: [[-92, 34], [-52, 34], [-52, 18], [-92, 18]], style: 'rail', gaps: [{ start: 6, end: 12 }] },
+  { id: 'field-w1', points: [[-92, 16], [-54, 16], [-54, 0], [-92, 0]], style: 'rail', gaps: [{ start: 27, end: 33 }] },
+  { id: 'field-w2', points: [[-94, -2], [-54, -2], [-54, -20], [-94, -20]], style: 'rail', gaps: [{ start: 20, end: 26 }] },
+  { id: 'field-e0', points: [[22, 36], [96, 36], [96, 14], [22, 14]], style: 'rail', gaps: [{ start: 14, end: 20 }, { start: 62, end: 68 }] },
+  { id: 'field-e1', points: [[34, 14], [96, 14], [96, -8], [34, -8]], style: 'rail', gaps: [{ start: 20, end: 26 }] },
+  { id: 'field-e2', points: [[32, -8], [90, -8], [90, -26], [32, -26]], style: 'rail', gaps: [{ start: 44, end: 50 }] },
+  // Band rails: the homestead / fields seam and the fields / animals seam.
+  { id: 'farm-band-south', points: [[-98, 40], [98, 40]], style: 'rail', gaps: [{ start: 90, end: 106 }] },
+  { id: 'crops-band-south', points: [[-98, -30], [98, -30]], style: 'rail', gaps: [{ start: 92, end: 108 }, { start: 124, end: 136 }] },
+  // Homestead: kennel run and the market edge.
+  { id: 'kennel-run', points: [[26, 62], [56, 62], [56, 44], [26, 44]], style: 'rail', gaps: [{ start: 10, end: 18 }] },
+  { id: 'market-edge', points: [[-24, 58], [24, 58]], style: 'rail', gaps: [{ start: 16, end: 28 }] },
+  // Animal band: paddocks around the shelters, and the palace court.
+  { id: 'duck-paddock', points: [[-84, -74], [-46, -74], [-46, -54], [-84, -54]], style: 'rail', gaps: [{ start: 12, end: 20 }] },
+  { id: 'goat-paddock', points: [[46, -50], [96, -50], [96, -72], [46, -72]], style: 'rail', gaps: [{ start: 18, end: 28 }] },
+  { id: 'sheep-paddock', points: [[56, -96], [96, -96], [96, -124], [56, -124]], style: 'rail', gaps: [{ start: 30, end: 40 }] },
+  { id: 'hen-run-n', points: [[-84, -50], [-2, -50]], style: 'bramble', gaps: [{ start: 40, end: 50 }, { start: 68, end: 78 }] },
+  { id: 'palace-wall-w', points: [[-76, -104], [-76, -148]], style: 'stone' },
+  { id: 'palace-wall-e', points: [[-16, -104], [-16, -148]], style: 'stone' },
+  { id: 'palace-wall-n', points: [[-76, -148], [-16, -148]], style: 'stone' },
+  { id: 'palace-gate-wall', points: [[-76, -104], [-16, -104]], style: 'stone', gaps: [{ start: 26, end: 36 }] },
+  // South rim.
+  { id: 'south-line', points: [[-104, -150], [86, -150]], style: 'bramble' },
+];;
 
 export const CIRCLE_FENCES: CircleFence[] = [
-  { id: 'ram-ring', center: [44, -98], radius: 17, style: 'stone', gapStart: 0.42, gapEnd: 0.5 },
-  { id: 'hen-run-a', center: [-34, -52], radius: 10, style: 'rail', gapStart: 0.05, gapEnd: 0.14 },
-  { id: 'hen-run-b', center: [26, -54], radius: 9, style: 'rail', gapStart: 0.3, gapEnd: 0.4 },
-  { id: 'duck-pond-edge', center: [-58, -60], radius: 15, style: 'bramble', gapStart: 0.55, gapEnd: 0.68 },
-];
+  { id: 'ram-ring', center: [50, -96], radius: 18, style: 'stone', gapStart: 0.42, gapEnd: 0.5 },
+  { id: 'hen-run-a', center: [-38, -64], radius: 10, style: 'rail', gapStart: 0.05, gapEnd: 0.14 },
+  { id: 'hen-run-b', center: [26, -64], radius: 9, style: 'rail', gapStart: 0.3, gapEnd: 0.4 },
+  { id: 'duck-pond-edge', center: [-58, -62], radius: 15, style: 'bramble', gapStart: 0.55, gapEnd: 0.68 },
+];;
 
 export const TREES: TreeZone[] = [
-  { id: 'start-wood', x: 0, z: 141, w: 44, d: 22, count: 34, seed: 11, mix: 'mixed' },
-  { id: 'start-ridge', x: 74, z: 134, w: 34, d: 30, count: 20, seed: 16, mix: 'pine' },
-  { id: 'start-west', x: -84, z: 128, w: 28, d: 34, count: 18, seed: 17, mix: 'mixed' },
-  { id: 'south-meadow-bush', x: -60, z: 156, w: 40, d: 14, count: 12, seed: 18, mix: 'oak' },
-  { id: 'start-sides', x: -30, z: 132, w: 16, d: 18, count: 12, seed: 12, mix: 'oak' },
-  { id: 'fox-den', x: 84, z: 22, w: 40, d: 84, count: 46, seed: 13, mix: 'mixed' },
-  { id: 'farm-south-east', x: 46, z: 6, w: 30, d: 24, count: 16, seed: 14, mix: 'oak' },
-  { id: 'crops-east-line', x: -28, z: 86, w: 10, d: 30, count: 8, seed: 15, mix: 'birch' },
-  { id: 'farm-north-wood', x: -24, z: 108, w: 28, d: 12, count: 10, seed: 21, mix: 'oak' },
-  { id: 'farm-east-wood', x: 80, z: 70, w: 14, d: 60, count: 16, seed: 22, mix: 'birch' },
-  { id: 'crops-windbreak', x: -70, z: 100, w: 54, d: 8, count: 12, seed: 23, mix: 'birch' },
-  { id: 'pens-west-wood', x: -108, z: -80, w: 10, d: 70, count: 18, seed: 31, mix: 'pine' },
-  { id: 'pens-orchard', x: -88, z: -96, w: 14, d: 20, count: 14, seed: 32, mix: 'oak' },
-  { id: 'pens-east-wood', x: 82, z: -80, w: 12, d: 50, count: 14, seed: 33, mix: 'pine' },
-  { id: 'south-forest', x: 6, z: -138, w: 60, d: 10, count: 18, seed: 34, mix: 'pine' },
-  { id: 'palace-garden', x: -80, z: -118, w: 9, d: 10, count: 5, seed: 35, mix: 'birch' },
-];
+  // Treelines only: the bands are meant to read as open ground, so no wood
+  // stands in the middle of a band. Everything hugs the rim or a seam.
+  { id: 'start-wood', x: 0, z: 158, w: 60, d: 16, count: 30, seed: 11, mix: 'mixed' },
+  { id: 'start-ridge', x: 88, z: 142, w: 30, d: 30, count: 18, seed: 16, mix: 'pine' },
+  { id: 'start-west', x: -96, z: 136, w: 24, d: 34, count: 16, seed: 17, mix: 'mixed' },
+  { id: 'gate-sides-e', x: 26, z: 132, w: 14, d: 22, count: 9, seed: 12, mix: 'oak' },
+  { id: 'gate-sides-w', x: -26, z: 132, w: 14, d: 22, count: 9, seed: 19, mix: 'oak' },
+  { id: 'homestead-rim-e', x: 96, z: 78, w: 16, d: 52, count: 18, seed: 22, mix: 'birch' },
+  { id: 'homestead-rim-w', x: -98, z: 76, w: 14, d: 48, count: 16, seed: 23, mix: 'birch' },
+  { id: 'crops-rim-e', x: 104, z: 4, w: 14, d: 44, count: 14, seed: 24, mix: 'oak' },
+  { id: 'crops-rim-w', x: -106, z: 4, w: 12, d: 40, count: 12, seed: 25, mix: 'pine' },
+  { id: 'pens-rim-w', x: -110, z: -92, w: 12, d: 62, count: 18, seed: 31, mix: 'pine' },
+  { id: 'pens-rim-e', x: 108, z: -92, w: 12, d: 60, count: 16, seed: 33, mix: 'pine' },
+  { id: 'pens-orchard', x: -88, z: -104, w: 14, d: 22, count: 12, seed: 32, mix: 'oak' },
+  { id: 'south-forest', x: 0, z: -156, w: 90, d: 12, count: 22, seed: 34, mix: 'pine' },
+  { id: 'palace-garden', x: -86, z: -126, w: 10, d: 12, count: 6, seed: 35, mix: 'birch' },
+];;
 
 export const BRIDGES: BridgeSpec[] = [
   { id: 'river-bridge', position: [10, -80], rotation: 0, length: 22, width: 7.5, style: 'plank' },
-  { id: 'canal-bridge', position: [-100, 63], rotation: Math.PI / 2, length: 9, width: 4.2, style: 'stone' },
+  { id: 'canal-bridge', position: [-101, 63], rotation: Math.PI / 2, length: 9, width: 4.2, style: 'stone' },
 ];
 
 export const WATER: WorldWater = {
@@ -939,181 +882,38 @@ export const WATER: WorldWater = {
     [-99, -78],
   ],
   canalWidth: 5,
-  pond: { x: -58, z: -60, r: 11 },
+  pond: { x: -58, z: -62, r: 11 },
 };
 
 export const ROADS: { id: string; name: string; width: number; points: [number, number][] }[] = [
+  // One spine, gate -> palace, with short spurs. The old lanes ended at buildings
+  // that the banding moved, so the network was rebuilt with the layout.
   {
     id: 'main-avenue',
     name: 'الطريق الرئيسي',
-    width: 4.2,
+    width: 4.6,
     points: [
-      [0, 150],
-      [-2, 132],
-      [2, 116],
-      [4, 98],
-      [4, 82],
-      [-2, 68],
-      [2, 52],
-      [0, 36],
-      [-4, 22],
-      [0, 6],
-      [4, -10],
-      [6, -26],
-      [9, -40],
-      [11, -56],
-      [10, -70],
-      [12, -88],
-      [10, -98],
-      [-8, -104],
-      [-28, -106],
-      [-42, -108],
+      [0, 150], [0, 142], [0, 134], [0, 126], [0, 112], [0, 98],
+      [0, 82], [0, 66], [0, 52], [0, 36], [0, 20],
+      [0, 4], [0, -12], [2, -28], [6, -40],
+      [4, -52], [6, -64], [10, -76], [10, -86],
+      [2, -96], [-16, -106], [-32, -118], [-46, -124],
     ],
   },
-  {
-    id: 'crops-lane',
-    name: 'درب البيدر',
-    width: 3,
-    points: [
-      [0, 40],
-      [-8, 42],
-      [-18, 44],
-      [-30, 45],
-      [-42, 44],
-    ],
-  },
-  {
-    id: 'barn-lane',
-    name: 'درب الجرن',
-    width: 2.4,
-    points: [
-      [-42, 44],
-      [-48, 52],
-      [-56, 58],
-      [-64, 64],
-      [-74, 68],
-      [-84, 72],
-      [-88, 80],
-    ],
-  },
-  {
-    id: 'orchard-lane',
-    name: 'درب الحقول',
-    width: 2,
-    points: [
-      [-42, 44],
-      [-48, 36],
-      [-54, 30],
-      [-64, 27],
-      [-76, 24],
-      [-88, 20],
-    ],
-  },
-  {
-    id: 'market-lane',
-    name: 'درب السوق',
-    width: 2.4,
-    points: [
-      [4, 72],
-      [18, 68],
-      [30, 62],
-      [38, 52],
-      [44, 40],
-    ],
-  },
-  {
-    id: 'windmill-lane',
-    name: 'درب الطاحونة',
-    width: 2.4,
-    points: [
-      [44, 40],
-      [52, 46],
-      [58, 60],
-      [60, 74],
-      [60, 86],
-    ],
-  },
-  {
-    id: 'pens-east',
-    name: 'درب المراعي',
-    width: 2.4,
-    points: [
-      [12, -88],
-      [26, -92],
-      [38, -96],
-      [52, -98],
-      [60, -104],
-    ],
-  },
-  {
-    id: 'pens-goat',
-    name: 'درب الماعز',
-    width: 2,
-    points: [
-      [12, -88],
-      [24, -80],
-      [38, -74],
-      [52, -70],
-      [64, -66],
-      [72, -56],
-    ],
-  },
-  {
-    id: 'duck-lane',
-    name: 'درب البط',
-    width: 2,
-    points: [
-      [10, -70],
-      [-8, -66],
-      [-28, -64],
-      [-42, -58],
-      [-52, -54],
-    ],
-  },
-  {
-    id: 'hen-alley',
-    name: 'ممرّ الحضيرة',
-    width: 2.4,
-    points: [
-      [10, -100],
-      [-8, -104],
-      [-24, -106],
-      [-34, -108],
-      [-44, -108],
-    ],
-  },
-  {
-    id: 'palace-court',
-    name: 'درب العرش',
-    width: 3,
-    points: [
-      [-44, -108],
-      [-46, -114],
-      [-46, -122],
-      [-46, -132],
-    ],
-  },
-  {
-    id: 'start-lookout',
-    name: 'درب العرعر',
-    width: 2,
-    points: [
-      [0, 146],
-      [-8, 143],
-      [-16, 145],
-      [-24, 143],
-    ],
-  },
-  {
-    id: 'canal-crossing',
-    name: 'ممرّ الخور',
-    width: 2,
-    points: [
-      [-88, 66],
-      [-95, 64],
-      [-101, 62],
-    ],
-  },
+  { id: 'homestead-lane', name: 'درب البيت', width: 2.6, points: [[0, 96], [18, 92], [36, 88], [54, 88], [72, 94]] },
+  { id: 'barn-lane', name: 'درب الجرن', width: 2.4, points: [[0, 92], [-20, 88], [-40, 84], [-54, 80]] },
+  { id: 'market-lane', name: 'درب السوق', width: 2.2, points: [[0, 68], [8, 68], [16, 68]] },
+  { id: 'crops-west', name: 'درب البيدر', width: 3, points: [[0, 20], [-20, 20], [-44, 20], [-70, 20], [-94, 16]] },
+  { id: 'crops-east', name: 'درب الحقول', width: 3, points: [[0, 20], [20, 20], [44, 20], [70, 20], [92, 16]] },
+  { id: 'crops-south', name: 'درب القطاع الجنوبي', width: 2.4, points: [[0, -14], [24, -14], [52, -14], [80, -14]] },
+  { id: 'threshing-lane', name: 'درب الدراس', width: 2.4, points: [[0, 4], [-12, -14], [-22, -30], [-28, -46]] },
+  { id: 'pens-east', name: 'درب المراعي', width: 2.6, points: [[6, -40], [22, -46], [36, -52], [50, -62], [60, -78], [74, -74]] },
+  { id: 'pens-goat', name: 'درب الماعز', width: 2.2, points: [[8, -44], [26, -56], [44, -74], [50, -96]] },
+  { id: 'duck-lane', name: 'درب البط', width: 2.2, points: [[0, -46], [-16, -56], [-34, -68], [-48, -76], [-58, -76]] },
+  { id: 'hen-alley', name: 'ممرّ الحضيرة', width: 2.4, points: [[-4, -52], [-16, -66], [-28, -80], [-34, -96], [-44, -110]] },
+  { id: 'palace-court', name: 'درب العرش', width: 3, points: [[-44, -102], [-46, -112], [-46, -120], [-46, -126]] },
+  { id: 'river-crossing', name: 'جسر الخور', width: 2.6, points: [[36, -52], [44, -66], [48, -82], [50, -96]] },
+  { id: 'bridge-approach', name: 'ممرّ الجسر', width: 2.4, points: [[6, -40], [2, -60], [6, -78], [12, -92], [14, -96]] },
 ];
 
 /** Suggested boss progression order, exported for the UI. */
