@@ -811,17 +811,33 @@ function seededRng(seed: number) {
  * a mustard-yellow block of corn looks from the air next to a green block of
  * cabbages, so each one is normalised to the silhouette the old geometry had.
  */
-const CROP_MODELS: Partial<Record<FieldKind, { model: string; height: number }>> = {
+const CROP_MODELS: Partial<Record<FieldKind, { model: string; height: number }[]>> = {
   // The first-detail variants: 40-130 triangles each. A field is a thousand
   // plants, so this is the only level where the whole farm still fits in a
   // phone's frame budget. Second and third detail live in the pack for props.
-  wheat: { model: 'Wheat_4', height: 2.3 },
-  maize: { model: 'Corn_1', height: 4.3 },
-  sunflower: { model: 'Flower_2', height: 3.4 },
-  vine: { model: 'BushBerries_1', height: 2.6 },
-  pumpkin: { model: 'Pumpkin_1', height: 1.1 },
-  vegetable: { model: 'Lettuce_1', height: 1.3 },
-  clover: { model: 'Grass_1', height: 0.55 },
+  //
+  // Two packs, alternating by field: Quaternius's single plants for the open
+  // fields, Kenney's planted rows — a whole row in one model — for the market
+  // garden, where the row *is* the thing you see from above.
+  wheat: [
+    { model: 'Wheat_4', height: 2.3 },
+    { model: 'Wheat_4', height: 2.1 },
+  ],
+  maize: [
+    { model: 'Corn_1', height: 4.3 },
+    { model: 'Corn_1', height: 3.9 },
+  ],
+  sunflower: [{ model: 'Flower_2', height: 3.4 }],
+  vine: [{ model: 'BushBerries_1', height: 2.6 }],
+  pumpkin: [
+    { model: 'Pumpkin_1', height: 1.1 },
+    { model: 'Pumpkin_1', height: 0.95 },
+  ],
+  vegetable: [
+    { model: 'Lettuce_1', height: 1.3 },
+    { model: 'Carrot_1', height: 1.15 },
+  ],
+  clover: [{ model: 'Grass_1', height: 0.55 }],
 };
 
 /**
@@ -900,8 +916,13 @@ function buildField(
   field: FieldSpec,
   heightAt: (x: number, z: number) => number,
 ) {
-  const replacement = CROP_MODELS[field.kind];
-  if (replacement && buildModelField(root, field, replacement.model, replacement.height, heightAt, materials)) return;
+  // Variants alternate by position, so two wheat fields a valley apart are not
+  // the same crop drawn twice.
+  const variants = CROP_MODELS[field.kind];
+  if (variants?.length) {
+    const variant = variants[Math.abs(Math.round(field.x * 31 + field.z * 17)) % variants.length]!;
+    if (buildModelField(root, field, variant.model, variant.height, heightAt, materials)) return;
+  }
   const group = new THREE.Group();
   const { x, z, w, d } = field;
   const halfW = w / 2;
@@ -1266,7 +1287,8 @@ function buildModelTreeZone(
     const pz = zone.z + (rng() - 0.5) * zone.d;
     const py = heightAt(px, pz);
     // Pines use the conifer of the three, broadleaf and birch pick between the
-    // rounder two; the choice is deterministic from the zone's own seed.
+    // rounder two; the choice is deterministic from the zone's own seed, so a
+    // treeline looks the same every time the map is built.
     const species = pines ? 2 : birches ? (rng() < 0.5 ? 0 : 1) : rng() < 0.45 ? 2 : rng() < 0.6 ? 0 : 1;
     const target = (pines ? 11 : 9) * (0.82 + rng() * 0.5);
     const scale = target / heights[species]!;
@@ -1769,36 +1791,40 @@ const BUILDING_KITS: Record<BuildingKind, BuildingKit> = {
 };
 
 /**
- * Which Quaternius building stands in for each procedural kind.
+ * Which packed building stands in for each procedural kind.
  *
- * Kinds with no replacement keep their hand-built geometry: a silo, a windmill
- * and a hen palace are bespoke silhouettes that no pack here has, and swapping
- * them for a cottage would lose the thing that makes the homestead read as a
- * working farm. `height` is the authored world height the model is normalised
- * to, chosen so a barn still overhangs its neighbours the way it did before.
+ * Two packs share the village: Kenney's modular fantasy-town kit, assembled into
+ * cottages by `tools/compose.mjs` (the timber-framed houses and the little hut),
+ * and Quaternius's medieval set for the two shapes no cottage can be — the silo
+ * and the well. The windmill is Kenney's own finished model, sails included.
+ *
+ * `height` is the authored world height the model is normalised to. `fit` says
+ * whether that height is the hard limit or whether the model also has to fit the
+ * footprint the kit gave the building: a barn is wide and low, and scaling a wide
+ * model by height alone turns it into a wall across the farmyard.
  */
-const BUILDING_MODELS: Partial<Record<BuildingKind, { model: string; height: number }>> = {
+const BUILDING_MODELS: Partial<
+  Record<BuildingKind, { model: string; height: number; fit?: 'height' | 'both' }>
+> = {
   // Heights are authored world units, picked against two references: the fox the
-  // player drives (about 2.7 tall) and a real farmhouse. The first pass normalised
-  // the models to the *procedural* kits' heights, which were themselves authored
-  // for a much smaller map, and the whole homestead came out doll-sized.
-  farmhouse: { model: 'House_1', height: 11.5 },
-  barn: { model: 'House_2', height: 14.0 },
-  stable: { model: 'Stable', height: 9.5 },
-  shed: { model: 'House_3', height: 6.5 },
-  market: { model: 'MarketStand_1', height: 6.2 },
-  well: { model: 'Well', height: 5.6 },
-  sheepShelter: { model: 'Stable', height: 6.0 },
-  dogHouse: { model: 'House_3', height: 5.4 },
-  duckHouse: { model: 'House_3', height: 4.2 },
-  nursery: { model: 'House_3', height: 5.2 },
-  threshingGranary: { model: 'Stable', height: 10.5 },
-  scarecrowShed: { model: 'House_3', height: 5.0 },
-  gatehouse: { model: 'House_2', height: 10.0 },
-  silo: { model: 'Mill', height: 15.0 },
-  windmill: { model: 'Mill', height: 16.0 },
-  tower: { model: 'House_1', height: 13.0 },
-  henPalace: { model: 'House_2', height: 12.5 },
+  // player drives (about 2.7 tall) and a real farmhouse.
+  farmhouse: { model: 'Cottage_House', height: 15.0 },
+  barn: { model: 'Cottage_Barn', height: 12.0 },
+  stable: { model: 'Cottage_Long', height: 10.5 },
+  shed: { model: 'Cottage_Small', height: 7.6 },
+  market: { model: 'MarketStand_1', height: 6.2, fit: 'height' },
+  well: { model: 'Well', height: 5.2, fit: 'height' },
+  sheepShelter: { model: 'Cottage_Small', height: 7.0 },
+  dogHouse: { model: 'Cottage_Hut', height: 2.8 },
+  duckHouse: { model: 'Cottage_Hut', height: 2.4 },
+  nursery: { model: 'Cottage_Hut', height: 4.8 },
+  threshingGranary: { model: 'Cottage_Barn', height: 11.0 },
+  scarecrowShed: { model: 'Cottage_Hut', height: 3.9 },
+  gatehouse: { model: 'Cottage_Tower', height: 12.0 },
+  silo: { model: 'Mill', height: 15.0, fit: 'height' },
+  windmill: { model: 'windmill', height: 12.0, fit: 'height' },
+  tower: { model: 'Cottage_Tower', height: 15.0 },
+  henPalace: { model: 'Cottage_Plaster', height: 13.5 },
 };
 
 /**
@@ -1812,13 +1838,22 @@ function placeBuildingModel(
   root: THREE.Group,
   spec: BuildingSpec,
   heightAt: (x: number, z: number) => number,
-  choice: { model: string; height: number },
+  choice: { model: string; height: number; fit?: 'height' | 'both' },
 ): boolean {
   const loaded = getModel(choice.model);
   if (!loaded) return false;
   const [x, z] = spec.position;
   const group = loaded.group.clone(true);
-  const scale = (spec.scale ?? 1) * (choice.height / loaded.height);
+  const kit = BUILDING_KITS[spec.kind];
+  const byHeight = choice.height / loaded.height;
+  // The kit's footprint is the size the building had before it had a model; it is
+  // the ceiling a wide model may grow to, not a target in itself.
+  // A model may stand a little wider than the kit it replaces: the cottages are
+  // squatter than the boxes they replace, and at kit width they read as sheds.
+  const byFootprint =
+    (Math.max(kit.width, kit.depth) * 1.15) / Math.max(loaded.size.x, loaded.size.z);
+  const scale =
+    (spec.scale ?? 1) * (choice.fit === 'height' ? byHeight : Math.min(byHeight, byFootprint));
   group.scale.setScalar(scale);
   group.position.set(x, heightAt(x, z), z);
   group.rotation.y = spec.rotation;
@@ -2297,11 +2332,15 @@ function buildCritters(
     place(makeChicken(0.95), -66 + index * 4.4, -118 + (index % 2) * 5, index * 0.7);
   }
 
-  // Sheep on the pasture and around the ram ring.
+  // Sheep on the pasture and around the ram ring: the farm-animals pack's own
+  // sheep, not the procedural blob they used to be. `placeAnimal` takes authored
+  // coordinates, so these are the same spots the blobs stood on.
   const sheepSpots: [number, number][] = [
     [52, -70], [58, -76], [46, -72], [66, -72], [70, -78], [54, -64], [30, -80], [24, -72],
   ];
-  for (const [x, z] of sheepSpots) place(makeSheep(0.95 + hash2(x, z) * 0.2), x, z, hash2(z, x) * 6);
+  for (const [x, z] of sheepSpots) {
+    placeAnimal('Sheep', x, z, hash2(z, x) * 6, 1.5 + hash2(x, z) * 0.25);
+  }
 
   // Ducks on the pond and the river.
   const duckSpots: [number, number][] = [
@@ -2346,6 +2385,13 @@ function buildCritters(
   for (const animal of herd) {
     placeAnimal(animal.model, animal.x, animal.z, animal.rotation, animal.height);
   }
+
+  // Pigs rooting in the mud by the barn: the one farm animal the animated pack
+  // never had, and the reason the farm-animals pack is here at all.
+  const pigSpots: [number, number, number][] = [
+    [-72, 26, 1.2], [-66, 30, 2.7], [-77, 32, 0.4], [-70, 37, 3.6],
+  ];
+  for (const [x, z, rotation] of pigSpots) placeAnimal('Pig', x, z, rotation, 1.35);
 
   // Two farm dogs by the kennel, and a deer at the edge of the wood.
   placeAnimal('Husky', 44, 70, 2.4, 1.8);

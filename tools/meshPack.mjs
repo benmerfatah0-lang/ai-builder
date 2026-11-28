@@ -14,6 +14,12 @@
  *   - positions become 16-bit, normalised to the model's bounding box,
  *   - vertices that share a quantised position *and* a colour are welded.
  *
+ * Some packs (Kenney's kits) have no per-material colour at all: every face
+ * points into one shared `colormap.png` atlas. Those are baked too — the atlas is
+ * sampled at each triangle's centroid and the result becomes the triangle's
+ * vertex colour, which is why a Kenney house ends up with the same blob layout as
+ * a Quaternius one.
+ *
  * No normals (the loader recomputes flat ones), no UVs, no skin, no animation.
  * The 5.82 MB source set lands around 0.4 MB and needs no loader on the page.
  *
@@ -26,6 +32,8 @@
  *   u16 per index       triangles
  */
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import sharp from 'sharp';
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
@@ -47,7 +55,50 @@ export function openGlb(path) {
   const binStart = 20 + jsonLength;
   const binLength = glb.readUInt32LE(binStart);
   const bin = glb.subarray(binStart + 8, binStart + 8 + binLength);
-  return { json, bin };
+  return { json, bin, dir: dirname(path) };
+}
+
+/**
+ * Decodes an image from a glTF to straight RGBA bytes.
+ *
+ * Kenney ships its atlas as a sidecar PNG next to the model, relative to the GLB;
+ * embedded images sit in the BIN chunk. Both end up here, because a texture the
+ * packer cannot read is a model that would bake out flat white.
+ */
+async function loadImage(json, bin, index, dir) {
+  const image = json.images?.[index];
+  if (!image) return null;
+  let bytes;
+  if (image.bufferView !== undefined) {
+    const view = json.bufferViews?.[image.bufferView];
+    if (!view) return null;
+    const start = view.byteOffset ?? 0;
+    bytes = bin.subarray(start, start + view.byteLength);
+  } else if (image.uri?.startsWith('data:')) {
+    bytes = Buffer.from(image.uri.slice(image.uri.indexOf(',') + 1), 'base64');
+  } else if (image.uri) {
+    bytes = readFileSync(join(dir, decodeURIComponent(image.uri)));
+  } else return null;
+  const { data, info } = await sharp(bytes).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  return { data, width: info.width, height: info.height, channels: info.channels };
+}
+
+/** sRGB byte to linear float: the blob stores linear, `vertexColors` expects linear. */
+const srgbToLinear = (value) => {
+  const c = value / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+
+/** Nearest sample of an atlas with repeat wrapping, as linear RGB. */
+function sampleAtlas(atlas, u, v) {
+  const x = Math.floor(((u % 1) + 1) % 1 * atlas.width) % atlas.width;
+  const y = Math.floor(((v % 1) + 1) % 1 * atlas.height) % atlas.height;
+  const offset = (y * atlas.width + x) * atlas.channels;
+  return [
+    srgbToLinear(atlas.data[offset]),
+    srgbToLinear(atlas.data[offset + 1]),
+    srgbToLinear(atlas.data[offset + 2]),
+  ];
 }
 
 /** glTF node -> column-major 4x4 matrix. */
@@ -133,14 +184,24 @@ function readIndices(json, bin, index) {
  *
  * @returns {{ triangles: { p: number[], colour: number[] }[], stats: object }}
  */
-export function flattenScene(json, bin) {
+export async function flattenScene(json, bin, dir = '.') {
   const materials = (json.materials ?? []).map((mat) => {
     const factor = mat.pbrMetallicRoughness?.baseColorFactor ?? [1, 1, 1, 1];
+    const source = mat.pbrMetallicRoughness?.baseColorTexture?.index;
+    const image = source === undefined ? undefined : json.textures?.[source]?.source;
     return {
       colour: [clamp(factor[0]), clamp(factor[1]), clamp(factor[2])],
       alpha: factor[3] ?? 1,
+      image,
     };
   });
+
+  // Decode each atlas once, not once per primitive.
+  const atlases = new Map();
+  for (const material of materials) {
+    if (material.image === undefined || atlases.has(material.image)) continue;
+    atlases.set(material.image, await loadImage(json, bin, material.image, dir));
+  }
   const nodes = json.nodes ?? [];
   const triangles = [];
   let skipped = 0;
@@ -161,6 +222,8 @@ export function flattenScene(json, bin) {
           skipped += 1;
           continue;
         }
+        const atlas = material.image === undefined ? null : atlases.get(material.image);
+        const uv = atlas ? readAccessor(json, bin, prim.attributes?.TEXCOORD_0) : null;
         const order = prim.indices !== undefined ? readIndices(json, bin, prim.indices) : null;
         const count = read.count;
         const vertices = new Float64Array(count * 3);
@@ -179,13 +242,23 @@ export function flattenScene(json, bin) {
           const i2 = order ? order[t + 2] : t + 2;
           if (i0 === i1 || i1 === i2 || i0 === i2) continue;
           if (i0 >= count || i1 >= count || i2 >= count) continue;
+          // Atlas colour is read at the centroid: Kenney's colormap is a grid of
+          // flat cells, one per face, so the middle of a triangle is inside its
+          // own cell and never on a seam.
+          const colour = uv
+            ? sampleAtlas(
+                atlas,
+                (uv.data[i0 * 2] + uv.data[i1 * 2] + uv.data[i2 * 2]) / 3,
+                (uv.data[i0 * 2 + 1] + uv.data[i1 * 2 + 1] + uv.data[i2 * 2 + 1]) / 3,
+              )
+            : material.colour;
           triangles.push({
             p: [
               vertices[i0 * 3], vertices[i0 * 3 + 1], vertices[i0 * 3 + 2],
               vertices[i1 * 3], vertices[i1 * 3 + 1], vertices[i1 * 3 + 2],
               vertices[i2 * 3], vertices[i2 * 3 + 1], vertices[i2 * 3 + 2],
             ],
-            colour: material.colour,
+            colour,
           });
         }
       }
